@@ -22,7 +22,7 @@ You are building **EggHeadStudio DAW**, a professional, mobile-first, browser-ba
 
 ## 1. PRODUCT SUMMARY
 
-EggHeadStudio DAW is a local-first DAW that runs as a static website, including on smartphones. Its primary workspace is an **Arrangement View**. There is **NO Session View**. The bottom panel of Arrangement contains a contextual **Mixer & Effects / Device Chain** just as in a traditional arrangement-centric DAW. Dedicated **Sample Studio** enables recording, editing, previewing, and saving a newly created sample BEFORE it enters the library. Dedicated **Mastering Studio** supports sophisticated final-stage processing, analysis, A/B comparison and multiple export formats. The user can produce an entire song from start to finish on a phone without needing a desktop application, subject to browser/platform audio and filesystem limits.
+EggHeadStudio DAW is a local-first, sample-driven DAW served as a static website, including on smartphones. Its primary workspace is an **Arrangement View**. There is **NO Session View**. The core creation workflow is record or import a sound, edit it into a sample, assign it to a sampler or drum pad, compose structured note events in the piano roll, arrange patterns and audio clips, mix, master, and export. The piano roll uses internal pitch/time/duration/velocity events to control sample instruments; external MIDI hardware and MIDI files are not required. The bottom panel of Arrangement contains a contextual **Mixer & Effects / Device Chain**. Dedicated **Sample Studio** and **Mastering Studio** provide the recording/editing and finalization workflows. The app must not claim professional mastering accuracy until measurement and audio-quality tests prove it.
 
 ### Non-negotiable requirements
 
@@ -31,7 +31,7 @@ EggHeadStudio DAW is a local-first DAW that runs as a static website, including 
 3. User-selected sample folder should be immediately browsable and usable without manually importing each sample. Preserve folder hierarchy, search, previews, favorites, indexing and drag/drop. On browsers that allow it, write finished samples back to that authorized folder. Offer fallback import/download/share where unsupported.
 4. **Record Own** workflow: microphone or supported input -> capture -> nondestructive edit -> repeated audition -> choose name/format/location -> save -> immediately available in library and arrangement.
 5. Responsive desktop and touch-first mobile workflows with identical project/audio engine and functional parity for essential creation tasks.
-6. Multi-track arrangement with audio clips, MIDI clips, automation lanes, bus/return tracks, effects chains, recording, instruments, sampler, sequencer, mixing and project persistence.
+6. Multi-track arrangement with audio clips and sample-instrument patterns, internal note-event editing, optional later automation, effects chains, recording, sampler, drum rack, mixing and project persistence. External MIDI is optional and not part of the core workflow.
 7. Dedicated Mastering Studio with Ozone-inspired **functional breadth** (not copied branding/UI) and scientifically defensible measurements.
 8. Export WAV plus MP3 and additional feasible formats using legally compatible browser/WASM encoders, with metadata and render verification.
 9. Strong undo/redo, autosave, recoverability, privacy and performance.
@@ -49,11 +49,11 @@ EggHeadStudio DAW is a local-first DAW that runs as a static website, including 
 
 ### 2.2 Arrange a song
 
-- Add unlimited logical audio/MIDI tracks, subject to performance budget.
+- Add audio and sample-instrument tracks, subject to performance budget.
 - Drag/tap a sample to insert it at playhead, timeline location, or instrument pad.
 - Edit clip position, trim, split, slip, duplicate, fade, crossfade, reverse, stretch, pitch, gain and warp markers where implemented.
 - Snap to beat/grid, zoom horizontally/vertically, select multiple clips, group, rename, color and undo.
-- Create MIDI clip; open Piano Roll; edit notes, velocities, lengths, quantization, scales, chords and instrument routing.
+- Create a sample-instrument pattern; open Piano Roll; edit internal note events (pitch, velocity, duration), quantization, scales, chords and sample-instrument routing. This is not an external MIDI workflow.
 - Arrange automation for volume, pan, effects and instrument parameters.
 - Record vocals, instruments or a live take into an audio track with latency calibration, count-in, monitoring and take management.
 
@@ -99,11 +99,11 @@ Target: Vite + React + TypeScript; CSS tokens and component library with accessi
 
 ### 4.2 Core domain and state
 
-Separate serializable `ProjectDocument` from runtime state (AudioNode references, File handles, decoded buffers). Use schema validation (e.g., Zod), migrations and deterministic stable IDs. Entities: Project, Track, AudioClip, MidiClip, ClipSource, Asset, Note, AutomationLane, AutomationPoint, Device, Parameter, Bus, Send, Return, MasterChain, Marker, LoopRegion, Take, Preset, ExportJob. Store project schema version, BPM/time-signature/tempo-map, track order, asset content hashes and relative identifiers. Undo/redo via reversible commands or patches with transaction grouping.
+Separate serializable project data from runtime state (AudioNode references, File handles, decoded buffers). Use schema validation, migrations and deterministic stable IDs. Entities: Project, Track, AudioClip, SamplePattern, NoteEvent (pitch, beat, duration, velocity), SamplerSettings, DrumPad, Asset, AutomationLane, AutomationPoint, Device, Parameter, Bus, Send, Return, MasterChain, Marker, LoopRegion, Take, Preset, ExportJob. Store schema version, BPM/time-signature/tempo-map, track order, asset identifiers, note events, sampler settings and effects. External MIDI device/file support is optional future work, not a required domain workflow. Undo/redo via reversible commands or patches with transaction grouping.
 
 ### 4.3 Audio engine
 
-Use Web Audio graph, AudioWorklet for realtime DSP and scheduling-critical functions, WebAssembly for computationally expensive transforms. The UI must not schedule notes based on React rerenders. Implement look-ahead scheduling with a monotonic audio clock, event queue, tempo-map mapping and bounded scheduling horizon; handle transport seek/loop/stop/edit mid-playback. Audio tracks -> gain/pan -> device chain -> bus/returns -> master chain -> output. Include metering taps. Prevent clicks at clip boundaries with fades. Instrument engines must have voice management and sample-accurate MIDI scheduling where possible.
+Use Web Audio graph, AudioWorklet for realtime DSP and scheduling-critical functions, WebAssembly for computationally expensive transforms. The UI must not schedule notes based on framework rerenders. Implement look-ahead scheduling with a monotonic audio clock, event queue, tempo-map mapping and bounded scheduling horizon; handle transport seek/loop/stop/edit mid-playback. Audio tracks and sample voices -> gain/pan -> device chain -> bus/returns -> master chain -> output. Include metering taps. Prevent clicks at clip boundaries with fades. Sample instruments need polyphonic voice management, pitch transposition, sample zones/looping and internal note-event scheduling. The engine must share processing semantics between live playback and offline render.
 
 ### 4.4 Media library and storage
 
@@ -122,7 +122,7 @@ Cloudflare Workers for small API endpoints, Firebase Auth/Firestore/Storage for 
 
 ### Desktop
 
-Header transport (BPM, time signature, play/stop/record, loop, metronome), left resizable sample browser, main arrangement with tracks and automation, bottom resizable contextual Device Chain/Mixer/Piano Roll/Clip Editor, right inspector optional, dedicated full-screen Sample Studio and Mastering Studio. Keyboard shortcuts, multi-select, drag/drop, zoom, scroll, MIDI mapping.
+Header transport (BPM, time signature, play/stop/record, loop, metronome), left resizable sample browser, main arrangement with audio and sample-instrument tracks, bottom resizable contextual Device Chain/Mixer/Piano Roll/Clip Editor, optional right inspector, dedicated full-screen Sample Studio and Mastering Studio. Keyboard shortcuts, multi-select, drag/drop, zoom and scroll. External MIDI mapping is optional, not required for music creation.
 
 ### Mobile
 
@@ -140,10 +140,24 @@ No miniature desktop clone. Bottom navigation or tabs: Arrange, Samples, Record,
 - Nondestructive trims, split, merge/bounce, fades, crossfades, reverse, gain, time stretch, pitch shift, warping, transient detection, clip envelopes and take lanes.
 - Acceptance: source media remains unchanged; rendered result agrees with preview; undo/redo returns exact prior state.
 
-### MIDI and instruments
+### Sample instruments and piano roll
 
-- Piano Roll, note/velocity editing, quantize, swing, scales, chords, MIDI input/output, Drum Rack, multisample Sampler, subtractive synth, ADSR, filters, polyphony, presets.
-- Acceptance: MIDI notes produce deterministic audio at correct times, no stuck notes after stop/seek, presets round-trip through save/load.
+- Internal note-event Piano Roll, pitch/velocity/duration editing, quantize, swing, scales/chords, sample-based Sampler, Drum Rack, ADSR, filters, polyphony and presets.
+- Acceptance: note events produce deterministic sample audio at correct pitches/times; overlapping notes work; stop/seek releases voices; sampler presets and note patterns round-trip through save/load.
+- Detect fundamental frequency only when confidence is sufficient; display note and confidence and permit manual root-key correction. Noise/percussion/chords without a stable fundamental must report no reliable pitch.
+- Support sample start/end and pitched gate, one-shot and loop modes; transpose, fine tuning, velocity sensitivity, ADSR and on-screen note preview. Piano-roll note events contain pitch, beat, duration and velocity and never require MIDI devices/files.
+- Piano-roll acceptance additionally includes note movement/resizing, multiple octaves, touch editing, zoom/scroll, copy/paste, undo/redo and a cursor synchronized with the shared arrangement transport.
+
+### Drum Rack
+
+- User-assigned sample pads with mouse/touch/keyboard triggering, per-pad level/pan/pitch, one-shot playback, simultaneous hits, editable sample references, kit persistence and a piano-roll or step-sequencer pattern.
+- Acceptance: a recorded sample can be assigned to a pad and triggered immediately; two different pads produce their respective sample audio simultaneously and round-trip with the project.
+
+### Beat grid and Arrangement
+
+- Arrangement snap resolutions: 1 bar, 1/2 bar, quarter, eighth, sixteenth, thirty-second, sixty-fourth and off. Bar divisions and note divisions must be labeled distinctly.
+- Grid, clip placement, piano-roll note timing and the transport must use the same tempo/time-signature model. Keep horizontal scrolling and zoom usable on touch screens.
+- Acceptance: placement error is within the chosen grid step; snap-off preserves the requested beat; loop, seek and tempo changes do not desynchronize sample patterns.
 
 ### Mixer/effects
 
@@ -160,50 +174,50 @@ No miniature desktop clone. Bottom navigation or tabs: Arrange, Samples, Record,
 - Dedicated view with validated metering, reference tracks, A/B, EQ, dynamics, imaging, exciter, limiter, loudness normalization, dithering and format export.
 - Acceptance: measured LUFS/true peak within specified tolerance against reference fixtures, no unexpected clipping, export file metadata correct.
 
+### Local persistence and export
+
+- Keep project/note/instrument/effect metadata in a versioned project format and large sample bytes in IndexedDB/OPFS or user-selected folders, never localStorage. Preserve existing project migration behavior and clearly report missing samples.
+- Provide a portable project archive as a later required batch; current JSON export is metadata-only and is not a portable project.
+- WAV export is the first supported delivery target. Additional formats must use legally compatible browser codecs and pass decoded-output tests. Mastering options must affect the rendered final mix identically to live monitoring.
+
+### GitHub Pages and device support
+
+- Keep application assets relative and all core editing, recording, sampler playback, arrangement, effects and WAV export client-side; Flask is optional development serving only.
+- Test mobile browser microphone permissions, audio-context unlock, file picker/share fallbacks, viewport scrolling, touch targets, interruption recovery and bounded memory on real devices before claiming full mobile parity.
+
 ## 7. DEVELOPMENT BATCHES (STRICT ORDER, EACH TESTED)
 
 | Batch | Deliverable | Acceptance gate | Status |
 |---|---|---|---|
-| 000 | Baseline static prototype, core sample workflow | Opens locally, core functions present | IMPLEMENTED — NOT FULLY VERIFIED IN BROWSER |
-| 001 | Architecture audit, tests, TS/React/Vite migration, GitHub Pages CI | Existing features retained, smoke tests pass | TODO |
-| 002 | Versioned project model, commands, undo/redo, IndexedDB/OPFS | Reload, migrations, undo tests | TODO |
-| 003 | Accurate transport/scheduler, loop/seek, metronome | Timing and regression tests | TODO |
-| 004 | Folder adapter, indexing worker, lazy audio decode, relinking | Desktop folder + mobile fallback tests | TODO |
-| 005 | Professional arrangement editing, touch gestures, waveform cache | Drag/touch, snap, fades, split tests | TODO |
-| 006 | Advanced Sample Studio capture/edit/save/recovery | Record→preview→save on phone/desktop | TODO |
-| 007 | Audio track recording, take lanes, monitoring, calibration | Device permission/interruption tests | TODO |
-| 008 | Piano Roll, MIDI domain, quantize and velocity | Notes save/play reliably | TODO |
-| 009 | Drum Rack, Sampler, synth, MIDI input mapping | Polyphony, note-off, preset tests | TODO |
-| 010 | Mixer, buses, sends/returns, device rack and effects | Routing and DSP tests | TODO |
-| 011 | Automation lanes, parameter binding, curves | Automation audio/visual agreement | TODO |
-| 012 | Mastering view v1: EQ, dynamics, true peak limiting, LUFS | Reference measurement tests | TODO |
-| 013 | Mastering v2: multiband, imaging, reference A/B, diagnostics | DSP quality and stability tests | TODO |
-| 014 | Offline export WAV/MP3/FLAC (where supported), project archive | File decode and quality tests | TODO |
-| 015 | Mobile UX and performance optimization | Real Android/iPhone end-to-end song creation | TODO |
-| 016 | PWA, offline recovery, accessibility, translations | Offline and accessibility tests | TODO |
-| 017 | Optional cloud sync, accounts, backups (opt-in) | Privacy/security tests | OPTIONAL |
-| 018 | Optional Stripe billing and entitlements | Secure webhook and access tests | OPTIONAL |
-| 019 | Release candidate, QA, docs, GitHub Pages launch | Complete regression and device matrix | TODO |
+| 000 | Static browser prototype: audio import, arrangement, recording/editor, basic WAV render | Existing flows open without a backend | PARTIAL — prototype flows exist; not full-device verified |
+| 001 | Sample recording/editor reliability: waveform zoom, trim/crop/split, undo/redo, save/reuse | Record → edit → preview → save and reuse verified on desktop/mobile | TODO |
+| 002 | Pitch detection and sample sampler: confidence, root key, pitch/transpose, ADSR, one-shot/gate/loop, polyphony | Test fixtures cover tonal/noise audio; sampler renders overlapping notes | PARTIAL — pitch estimate and basic sample-note rendering smoke-tested; full ADSR/loop/polyphony regression remains |
+| 003 | Piano Roll: note create/select/delete, duration/velocity, multi-octave view, zoom, copy/paste, undo, transport cursor | Note events persist, quantize and play in sync with transport | PARTIAL — click-to-create/select and note audition are implemented; editing tools and transport cursor remain |
+| 004 | Drum Rack: sample pads, touch/keyboard trigger, kit persistence, step sequencer | Multiple pads trigger distinct samples and pattern round-trips | TODO |
+| 005 | Arrangement: 1 bar through 1/64 and snap off, accurate clip positioning, trim/split/duplicate, loop regions | Beat/time math and transport regression tests pass | PARTIAL — selectable snap and basic drag placement exist; expanded clip editing and time signatures remain |
+| 006 | Mixer/effects: reusable chains, bypass, EQ, reverb, distortion, compressor/limiter, meters | Live and offline audio agree; effects controls alter measured signal | PARTIAL — track filter/delay and master EQ/compressor work; broader device chain/meters remain |
+| 007 | Project persistence: migrations, IndexedDB asset mapping, portable archive and missing-asset relink | Save/reopen, reload and cross-device archive tests pass | PARTIAL — metadata/note patterns are local JSON; project export does not package audio assets |
+| 008 | Mastering/export: verified loudness/peak, A/B, export settings, WAV quality; optional encoders later | Measurements checked against known audio fixtures | PARTIAL — stereo PCM WAV and basic EQ/compressor/output gain; no LUFS/true-peak guarantee |
+| 009 | Mobile UX, accessibility and performance | Real end-to-end song creation on representative desktop and mobile browsers | TODO |
+| 010 | GitHub Pages release verification, regression suite, privacy/performance documentation | Static deploy and project workflows pass browser/device matrix | TODO |
+| 011 | Optional cloud sync, accounts and backups (opt-in) | Privacy/security review and user-controlled sync | OPTIONAL |
 
-### Batch 001 exact instructions
+### Next batch instructions
 
-1. Inventory prototype behavior and log known issues. Write testable specifications for current features.
-2. Create TypeScript domain models and isolated audio service adapters.
-3. Migrate the static site to Vite + React while keeping all URLs and GitHub Pages publishing working; use relative base `./` or correct repository base.
-4. Split into `features/arrangement`, `features/sample-studio`, `features/mastering`, `audio`, `storage`, `domain`, `ui`.
-5. Add Vitest unit tests and Playwright browser tests for import, clip insert, transport, project save, record permission denial, sample trim and WAV render.
-6. Add GitHub Actions build/test/deploy pipeline (deploy only on main with required Pages permissions).
-7. Verify on Chromium and Firefox desktop, mobile emulation; record actual-device gaps separately.
-8. Update this document status only after checks pass; create `BATCH_001_REPORT.md` with files changed, tests, screenshots, remaining issues.
+1. Complete Batch 001's recording/editing vertical slice against actual browser permissions, waveform, trim, and local reuse.
+2. Extend automated unit/browser tests before marking any incomplete table item done.
+3. Preserve vanilla static deployment until an independently tested architecture migration is justified; GitHub Pages must continue working without a backend.
+4. Verify at desktop and mobile viewports; test actual mobile devices separately before claiming device compatibility.
+5. Update a batch status only after its acceptance checks pass; document unavailable test environments and residual issues in this file.
 
 ### Agent continuation prompt (copy/paste)
 
-> Read `IDEA.md`, `README.md`, the current source code and latest `BATCH_*_REPORT.md`. Determine the first incomplete batch from the roadmap. Implement ONLY that batch end-to-end, preserving static GitHub Pages deployment and the local-first design. Write/update automated tests, run them, verify desktop and mobile viewport behavior, report measured results and remaining limitations, and update the batch status in IDEA.md only when acceptance criteria are met. Do not claim features or tests passed unless actually verified. Ask before any irreversible external actions, deployments or paid-service setup.
+> Read `IDEA.md`, `README.md` and the current source. Work on the first incomplete product batch in the roadmap, preserving static GitHub Pages deployment and the local-first, sample-driven workflow. Do not require external MIDI hardware/files. Implement real audio behavior, add/update tests, run available tests, verify desktop/mobile viewports, report actual measurements and remaining limitations, and update status only when the acceptance criteria pass. Do not claim unverified features. Ask before irreversible external actions or paid-service setup.
 
 ## 8. TEST PLAN
 
 - Unit: project schema, tempo conversion, clip math, PCM/WAV encoding, sample trim/fade, gain, resampling, export settings, permissions adapter.
-- Integration: AudioWorklet graph, MIDI scheduling, storage roundtrip, project migration, asset relink, recording take lifecycle, mastering chain bypass.
+- Integration: AudioWorklet graph, internal note-event scheduling, storage roundtrip, project migration, asset relink, recording take lifecycle, mastering chain bypass.
 - Browser: Chrome/Edge, Firefox, Safari (supported behavior), iOS Safari, Android Chrome. Test offline, reload, backgrounding, permission denial, low storage, large sample library, empty project, sample missing, decode errors.
 - Audio golden fixtures: silence, sine wave, impulses, stereo correlation, clipping, dynamic range, latency drift, loop boundary clicks, sample-rate conversion and loudness reference files.
 - Performance targets (initial engineering budgets, not promises): interactive startup under 3 s on typical desktop and 5 s on midrange phone on warm cache; smooth timeline pan/zoom near 60 fps; bounded cache; no audible dropouts for realistic 8-track mobile and 32-track desktop reference projects; log actual test hardware and limits.
@@ -245,10 +259,14 @@ Premium dark production aesthetic, neutral charcoal surfaces, subdued track colo
 - Cloud accounts, Firebase, Cloudflare, Stripe, collaboration and paid tiers are optional follow-on features. They may incur usage charges.
 - Validate licensing of MP3/FLAC/WASM components and third-party DSP packages before distribution.
 
-## 12. KNOWN LIMITATIONS OF CURRENT PROTOTYPE v0.1
+## 12. VERIFIED IMPLEMENTATION SNAPSHOT — 2026-10-26
 
-The starter currently uses vanilla JS, not the target React stack. It can import and decode audio, play clips, provide track-level gain/pan, record and edit short samples, preview before save, cache assets in IndexedDB, store project metadata and offline-render WAV with a basic master bus. It does **not** yet meet full DAW, advanced mastering or complete touch/mobile requirements. A JSON project export does not bundle media. Whole-buffer decoding, simplified scheduling and coarse sample editing are intentional starter limitations. The current mastering bus is **not** a verified limiter or loudness-normalization engine. The folder adapter does not persist handles across sessions yet. Treat all remaining items as engineering work, not existing functionality.
+The app remains a no-build vanilla JavaScript static site. The sampler vertical slice now includes imported/recorded sample reuse, autocorrelation pitch estimation with confidence, manual root-note selection, gated/one-shot/loop modes, sample range, attack/decay/sustain/release, transpose/fine tune, a two-octave four-bar piano roll, note create/select/delete, note length/velocity, on-screen sample preview keys, beat snapping through 1/64 and snap-off, per-track filter/delay, and offline sampler WAV rendering. Browser smoke checks verified A4 detection from an imported WAV fixture, piano note persistence, simultaneous 440/880 Hz sampler voices, non-silent offline renders, and a mobile-sized layout with contained horizontal editor scrolling. These are smoke checks, not full regression certification. The Node test suite was not run because Node/npm are unavailable in the current development environment; the added pitch/snap tests still require execution in a Node-equipped environment.
+
+Still incomplete: precise recorder waveform editing/zoom/split and undo/redo; pitch detection across diverse real samples; sampler voice stealing, release behavior under all stop/seek conditions and comprehensive polyphony tests; more piano-roll octaves, move/resize/copy/paste and transport cursor; multi-pad Drum Rack; broad effect chain/reverb/distortion/meters; timeline clip trim/split/duplicate; complete time-signature-aware transport; portable project archives/media relinking; validated LUFS/true-peak mastering; MP3 export; and actual mobile-device verification. A JSON project export does not bundle media. Whole-buffer decoding and simplified scheduling remain resource limits. The mastering bus is **not** a verified limiter or loudness-normalization engine. The folder adapter does not persist handles across sessions.
+
+Update this checklist only after relevant test evidence is recorded. A feature existing in UI is not evidence that its audio behavior is complete.
 
 ## 13. NEXT IMMEDIATE ACTION
 
-Complete Batch 001 after verifying the prototype. Then continue strictly in order, with acceptance reports and real-device testing. Prioritize correct audio scheduling, sample recording/editing and storage portability over decorative UI work. Keep the application deployable to GitHub Pages after every batch.
+Continue with the first incomplete batch in section 7. Prioritize a complete recorder/editor workflow, then sampler/piano-roll correctness and a user-owned-sample Drum Rack. Keep the application deployable to GitHub Pages after every batch, and do not mark partially implemented or untested requirements complete.
