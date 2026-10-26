@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {encodeWav,processSample} from '../src/audio.js';
+import {encodeWav,processSample,patternLengthBeats} from '../src/audio.js';
 import {detectPitch,noteName,snapBeats} from '../src/music.js';
 test('WAV header, sample rate and length',async()=>{const blob=encodeWav([new Float32Array([0,1,-1])],44100);const bytes=new DataView(await blob.arrayBuffer());assert.equal(blob.size,50);assert.equal(bytes.getUint32(24,true),44100);assert.equal(bytes.getUint16(22,true),1);assert.equal(bytes.getInt16(46,true),32767);assert.equal(bytes.getInt16(48,true),-32768)});
 test('trim and reverse preserve expected samples',()=>{const source=Float32Array.from([.1,.2,.3,.4]);const ctx={createBuffer:(_,n,sr)=>{const d=new Float32Array(n);return {numberOfChannels:1,sampleRate:sr,length:n,getChannelData:()=>d}}};const b={sampleRate:4,length:4,duration:1,numberOfChannels:1,getChannelData:()=>source};const result=processSample(ctx,b,{start:.25,end:.75,reverse:true});assert.equal(result.length,2);assert.ok(Math.abs(result.getChannelData(0)[0]-.3)<1e-6);assert.ok(Math.abs(result.getChannelData(0)[1]-.2)<1e-6)});
@@ -9,3 +9,4 @@ test('pitch detector rejects silence',()=>{const data=new Float32Array(22050),bu
 test('pitch detector rejects broadband noise',()=>{let seed=91273;const data=Float32Array.from({length:22050},()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return (seed>>>0)/2147483648-1});const buffer={sampleRate:22050,length:data.length,duration:1,numberOfChannels:1,getChannelData:()=>data};assert.equal(detectPitch(buffer),null)});
 test('snap grid, snap-off and note names use musical values',()=>{assert.equal(snapBeats(1.13,.25),1.25);assert.equal(snapBeats(-1,.25),0);assert.equal(snapBeats(1.13,0),1.13);assert.equal(noteName(60),'C4');assert.equal(noteName(69),'A4')});
 test('snap grid rejects invalid resolutions',()=>{assert.throws(()=>snapBeats(1,Number.NaN),RangeError);assert.throws(()=>snapBeats(1,-.25),RangeError)});
+test('drum rack pattern length follows duplicated bars and stays within 16 bars',()=>{assert.equal(patternLengthBeats({pattern:{notes:[{beat:0,durationBeats:.25}]}}),4);assert.equal(patternLengthBeats({pattern:{notes:[{beat:4,durationBeats:1}]}}),8);assert.equal(patternLengthBeats({pattern:{notes:[{beat:63,durationBeats:4}]}}),64)});
