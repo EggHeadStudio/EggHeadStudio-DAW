@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {encodeWav,processSample,patternLengthBeats} from '../src/audio.js';
+import {AudioEngine,encodeWav,processSample,patternLengthBeats,createTrackEffect,createTrackGraph} from '../src/audio.js';
 import {detectPitch,noteName,snapBeats} from '../src/music.js';
 test('WAV header, sample rate and length',async()=>{const blob=encodeWav([new Float32Array([0,1,-1])],44100);const bytes=new DataView(await blob.arrayBuffer());assert.equal(blob.size,50);assert.equal(bytes.getUint32(24,true),44100);assert.equal(bytes.getUint16(22,true),1);assert.equal(bytes.getInt16(46,true),32767);assert.equal(bytes.getInt16(48,true),-32768)});
 test('trim and reverse preserve expected samples',()=>{const source=Float32Array.from([.1,.2,.3,.4]);const ctx={createBuffer:(_,n,sr)=>{const d=new Float32Array(n);return {numberOfChannels:1,sampleRate:sr,length:n,getChannelData:()=>d}}};const b={sampleRate:4,length:4,duration:1,numberOfChannels:1,getChannelData:()=>source};const result=processSample(ctx,b,{start:.25,end:.75,reverse:true});assert.equal(result.length,2);assert.ok(Math.abs(result.getChannelData(0)[0]-.3)<1e-6);assert.ok(Math.abs(result.getChannelData(0)[1]-.2)<1e-6)});
@@ -10,3 +10,35 @@ test('pitch detector rejects broadband noise',()=>{let seed=91273;const data=Flo
 test('snap grid, snap-off and note names use musical values',()=>{assert.equal(snapBeats(1.13,.25),1.25);assert.equal(snapBeats(-1,.25),0);assert.equal(snapBeats(1.13,0),1.13);assert.equal(noteName(60),'C4');assert.equal(noteName(69),'A4')});
 test('snap grid rejects invalid resolutions',()=>{assert.throws(()=>snapBeats(1,Number.NaN),RangeError);assert.throws(()=>snapBeats(1,-.25),RangeError)});
 test('drum rack pattern length follows duplicated bars and stays within 16 bars',()=>{assert.equal(patternLengthBeats({pattern:{notes:[{beat:0,durationBeats:.25}]}}),4);assert.equal(patternLengthBeats({pattern:{notes:[{beat:4,durationBeats:1}]}}),8);assert.equal(patternLengthBeats({pattern:{notes:[{beat:63,durationBeats:4}]}}),64)});
+test('track effect descriptors validate types and preserve independent EQ band defaults',()=>{const first=createTrackEffect('eq','one'),second=createTrackEffect('eq','two');first.params.bands[1].gain=6;assert.equal(second.params.bands[1].gain,0);assert.equal(first.params.bands.length,4);assert.equal(first.enabled,true);assert.throws(()=>createTrackEffect('unknown'),RangeError)});
+test('compressor makeup gain is routed after dynamics processing',()=>{
+ const param=()=>({value:0}),node=()=>({connections:[],connect(target){this.connections.push(target);return target},disconnect(){},gain:param(),pan:param(),frequency:param(),Q:param(),threshold:param(),ratio:param(),knee:param(),attack:param(),release:param(),delayTime:param()});
+ const context={createGain:node,createStereoPanner:node,createBiquadFilter:()=>Object.assign(node(),{type:'lowpass'}),createDelay:node,createChannelSplitter:node,createAnalyser:()=>Object.assign(node(),{fftSize:32,smoothingTimeConstant:0,getFloatTimeDomainData(data){data.fill(0)}}),createDynamicsCompressor:node,createWaveShaper:()=>Object.assign(node(),{curve:null}),createConvolver:()=>Object.assign(node(),{buffer:null}),createBuffer(channels,length){const data=Array.from({length:channels},()=>new Float32Array(length));return{numberOfChannels:channels,getChannelData:index=>data[index]}}};
+ const compressor=createTrackEffect('compressor','comp');compressor.params.makeup=6;
+ const graph=createTrackGraph(context,{id:'t',volume:1,pan:0,fx:{effects:[compressor]}},node()),device=graph.instances.get('comp');
+ assert.equal(device.node.connections[0],device.makeup);assert.ok(Math.abs(device.makeup.gain.value-10**(6/20))<1e-6);
+});
+test('track graph applies enabled effects in stored order and updates mixer settings',()=>{
+ const param=()=>({value:0}),node=()=>({connections:[],connect(target){this.connections.push(target);return target},disconnect(){},gain:param(),pan:param(),frequency:param(),Q:param(),threshold:param(),ratio:param(),knee:param(),attack:param(),release:param(),delayTime:param()});
+ let analyserIndex=0;
+ const context={sampleRate:1000,createGain:node,createStereoPanner:node,createBiquadFilter:()=>Object.assign(node(),{type:'lowpass'}),createDelay:node,createChannelSplitter:node,createAnalyser:()=>{const value=analyserIndex++===0?.5:.25;return Object.assign(node(),{fftSize:32,smoothingTimeConstant:0,getFloatTimeDomainData(data){data.fill(value)}})},createDynamicsCompressor:node,createWaveShaper:()=>Object.assign(node(),{curve:null}),createConvolver:()=>Object.assign(node(),{buffer:null}),createBuffer(channels,length){const data=Array.from({length:channels},()=>new Float32Array(length));return{numberOfChannels:channels,getChannelData:index=>data[index]}}};
+ const eq=createTrackEffect('eq','eq'),delay=createTrackEffect('delay','delay'),disabled=createTrackEffect('compressor','off');disabled.enabled=false;
+ eq.params.bands[2]={frequency:3200,gain:7,q:1.4};
+ const track={id:'track',volume:.8,pan:-.25,mute:false,solo:false,fx:{effects:[eq,disabled,delay]}},graph=createTrackGraph(context,track,node());
+ assert.equal(graph.signature,'eq:eq|delay:delay');
+ assert.equal(graph.instances.get('eq').nodes.length,4);assert.equal(graph.instances.get('eq').nodes[0].connections[0],graph.instances.get('eq').nodes[1]);
+ assert.equal(graph.instances.get('eq').nodes[2].frequency.value,3200);assert.equal(graph.instances.get('eq').nodes[2].gain.value,7);assert.equal(graph.instances.get('eq').nodes[2].Q.value,1.4);
+ const delayInput=graph.instances.get('eq').nodes[3].connections[0];assert.equal(delayInput.connections[0],graph.instances.get('delay').dry);assert.equal(delayInput.connections[1],graph.instances.get('delay').delay);
+ graph.update(track,false);assert.equal(graph.gain.gain.value,.8);assert.equal(graph.pan.pan.value,-.25);
+ assert.deepEqual(graph.readMeter(),{leftPeak:.5,rightPeak:.25,leftRms:.5,rightRms:.25});
+ track.solo=true;graph.update(track,true);assert.equal(graph.gain.gain.value,.8);
+ track.solo=false;graph.update(track,true);assert.equal(graph.gain.gain.value,0);
+ graph.disconnect();
+});
+test('engine meters retain a track clipping warning briefly after a peak',()=>{
+ const engine=new AudioEngine(),graph={readMeter:()=>({leftPeak:1,rightPeak:.2,leftRms:.4,rightRms:.1})};
+ engine.trackNodes.set('track',graph);
+ assert.equal(engine.readMeters().track.clipped,true);
+ graph.readMeter=()=>({leftPeak:.2,rightPeak:.1,leftRms:.1,rightRms:.05});
+ assert.equal(engine.readMeters().track.clipped,true);
+});

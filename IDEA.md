@@ -189,26 +189,40 @@ No miniature desktop clone. Bottom navigation or tabs: Arrange, Samples, Record,
 
 | Batch | Deliverable | Acceptance gate | Status |
 |---|---|---|---|
-| 000 | Static browser prototype: audio import, arrangement, recording/editor, basic WAV render | Existing flows open without a backend | PARTIAL — prototype flows exist; not full-device verified |
-| 001 | Sample recording/editor reliability: waveform zoom, trim/crop/split, undo/redo, save/reuse | Record → edit → preview → save and reuse verified on desktop/mobile | TODO |
-| 002 | Pitch detection and sample sampler: confidence, root key, pitch/transpose, ADSR, one-shot/gate/loop, polyphony | Test fixtures cover tonal/noise audio; sampler renders overlapping notes | PARTIAL — pitch estimate and basic sample-note rendering smoke-tested; full ADSR/loop/polyphony regression remains |
-| 003 | Piano Roll: note create/select/delete, duration/velocity, multi-octave view, zoom, copy/paste, undo, transport cursor | Note events persist, quantize and play in sync with transport | PARTIAL — click-to-create/select and note audition are implemented; editing tools and transport cursor remain |
-| 004 | Drum Rack: sample pads, touch/keyboard trigger, kit persistence, step sequencer | Multiple pads trigger distinct samples and pattern round-trips | TODO |
-| 005 | Arrangement: 1 bar through 1/64 and snap off, accurate clip positioning, trim/split/duplicate, loop regions | Beat/time math and transport regression tests pass | PARTIAL — selectable snap and basic drag placement exist; expanded clip editing and time signatures remain |
-| 006 | Mixer/effects: reusable chains, bypass, EQ, reverb, distortion, compressor/limiter, meters | Live and offline audio agree; effects controls alter measured signal | PARTIAL — track filter/delay and master EQ/compressor work; broader device chain/meters remain |
-| 007 | Project persistence: migrations, IndexedDB asset mapping, portable archive and missing-asset relink | Save/reopen, reload and cross-device archive tests pass | PARTIAL — metadata/note patterns are local JSON; project export does not package audio assets |
-| 008 | Mastering/export: verified loudness/peak, A/B, export settings, WAV quality; optional encoders later | Measurements checked against known audio fixtures | PARTIAL — stereo PCM WAV and basic EQ/compressor/output gain; no LUFS/true-peak guarantee |
-| 009 | Mobile UX, accessibility and performance | Real end-to-end song creation on representative desktop and mobile browsers | TODO |
-| 010 | GitHub Pages release verification, regression suite, privacy/performance documentation | Static deploy and project workflows pass browser/device matrix | TODO |
-| 011 | Optional cloud sync, accounts and backups (opt-in) | Privacy/security review and user-controlled sync | OPTIONAL |
+| 000 | Static browser prototype: audio import, arrangement, recording, basic WAV render | Core opens without a backend | PARTIAL — browser prototype opens and renders WAV; broad integration remains untested |
+| 001 | Sample Studio: non-destructive waveform selection, crop/split/delete, fades/gain/normalize/reverse, silence trim, preview, undo/redo and save/reuse | Editor operations and save/reuse tested; record permission tested in browser | PARTIAL — editor/model and browser smoke checks completed; Node tests blocked, microphone capture not verified |
+| 002 | Sample-based instruments, pitch detection, Piano Roll and Drum Rack sequencing | Notes/pads persist and produce sample audio | PARTIAL — sampler, internal note editor, 16-pad rack and shared step/piano pattern exist; regression suite remains unrun |
+| 003 | Professional mixing/effects architecture, arrangement clip editing, live/offline consistency | Reorderable tested device chains and equivalent live/offline signal measurements | PARTIAL — shared live/offline track-graph builder, live stereo track peak meters/clipping warnings, and reorderable four-band EQ/compressor/delay/reverb/saturation/sample-peak limiter subset added; no presets, low/high-cut EQ filters, true-peak limiter or complete clip-operation history |
+| 004 | Mastering Studio (prepared next) | Measurement-driven mastering chain, validated export and A/B | TODO — see Batch 004 scope below |
+| 005 | Arrangement clip editing and undo history | Move/resize/split/duplicate/copy/paste/loop/fade/gain snap correctly in playback and export | PARTIAL — basic placement/drag and trim controls; remaining operations not implemented |
+| 006 | Persistence and portable projects | Versioned save/reopen, sample relink and media archive round-trip | PARTIAL — project JSON metadata in localStorage/download and sample bytes in IndexedDB; JSON does not bundle assets |
+| 007 | Mobile UX, accessibility and performance | End-to-end workflow on physical desktop and mobile browsers | PARTIAL — browser-emulated responsive smoke checks only; physical devices, long recordings and memory budgets unverified |
+| 008 | GitHub Pages release verification | Static deployment smoke checks at repository subpath across target browsers | PARTIAL — relative static asset paths and no required backend; hosted URL not tested in this batch |
+| 009 | Optional cloud sync, accounts and backups (opt-in) | Privacy/security review and user-controlled sync | OPTIONAL |
+
+### Batch 003 implementation and test status
+
+Batch 003 work added `src/sample-editor.js`: a frame-indexed non-destructive edit model over immutable decoded source audio, region split/delete/crop, reverse, gain in dB, peak normalization, fades, silence trimming, zero-crossing selection snap, undo/redo, waveform selection/zoom, A/B and loop previews, and rendering to a new buffer for save. Gain and normalization cover -60 to +120 dB; waveform metadata, duration limits and gain controls now refresh after crop and undo/redo, and the waveform can receive keyboard shortcuts when focused. `src/audio.js` now builds one track routing graph for real-time playback and offline WAV rendering. Track chains support ordered/bypassable four-band peaking EQ, compression with makeup gain, delay, generated-impulse reverb, waveshaper saturation, and compressor-assisted sample-peak limiting. EQ frequencies are bounded to the active audio context's Nyquist limit, and effect instances receive independent parameter defaults. The EQ UI includes band controls and a response curve. The mixer device panel can add, reorder, configure, bypass and remove devices; effect chain state is project metadata.
+
+This is still **not** completion of Batch 003. EQ has four peaking bands but no low/high-cut filters. The limiter combines dynamics compression and a sample-peak waveshaper ceiling (not a true-peak limiter). The mixer now shows separate live left/right track peaks and a transient clipping warning held for one second after a sample reaches full scale; it does not provide gain-reduction metering, persistent clip history, presets, automation, or sends/returns. Aggressive EQ or gain can exceed full scale when the limiter is bypassed. The same graph is used by live and offline paths, but sample-rate-dependent output and detailed parity tolerances have not been validated. A synthetic boosted-sine export measured a 0.885 sample peak after limiting versus 3.096 without it; that single fixture is not a universal ceiling guarantee. Full arrangement clip editing and history remain open.
+
+Node.js, npm, Bun and Deno were not available in the environment. The automated Node suite could not run; `tests/audio.test.js` contains effect descriptor, four-band graph/order, stereo meter and clipping-hold tests, and `tests/sample-editor.test.js` covers non-destructive edit operations and normalization, but neither file was executed by Node. Browser verification during this continuation used the integrated Chromium page: sample model checks passed for crop/split/delete/undo, immutable source audio, independent EQ defaults, and normalization of a -80 dBFS signal to -3 dBFS; a mounted Sample Studio UI verified duration/max-bound updates after crop and undo, gain restoration through undo, and the focused-waveform reverse shortcut. `OfflineAudioContext` checks confirmed EQ boost, compressor reduction, effect-order-dependent PCM, measurable delay tails, mute exclusion, hard-right pan routing, and graph rendering at 22.05 kHz. `AudioEngine.render` also produced EQ-affected WAV PCM, retained delay-tail energy, excluded muted audio, and yielded a WAV blob with the expected PCM data size. A local synthetic WAV was imported in the browser, cropped, normalized, faded, previewed, saved, and used to create a Sampler track. Chromium-emulated Sample Studio and Arrangement layouts at 360, 390, 430, 768 and 1280 CSS-pixel widths had no page-level horizontal overflow; waveform and mixer overflow is contained within their intended scroll regions. This is browser emulation, not physical-device verification. No console events were produced during the sample-rate clamp check. Live-device meter timing was not verified because this browser environment did not advance real-time AudioContext time. These checks do not establish comprehensive live/offline parity tolerances, true-peak safety, microphone capture, physical-device behavior, or performance on long recordings.
+
+### Batch 004 — Mastering Studio (planned, not implemented)
+
+- Reusable, measured mastering chain with EQ, multiband dynamics, stereo imaging, harmonic saturation and a peak limiter.
+- Integrated LUFS and true-peak metering verified against known fixtures; gain staging and A/B reference comparison.
+- Save/load mastering presets with parameter validation.
+- Professional WAV export controls (sample rate, bit depth, channel layout, dither as appropriate) and legal browser-compatible MP3 encoding.
+- Compare offline export against reference signals, verify tails/peak behavior and disclose measurement tolerance. No mastering feature is complete until tests establish its behavior.
 
 ### Next batch instructions
 
-1. Complete Batch 001's recording/editing vertical slice against actual browser permissions, waveform, trim, and local reuse.
-2. Extend automated unit/browser tests before marking any incomplete table item done.
+1. Make Node-based model/DSP tests runnable in CI or a Node-equipped environment; retain browser smoke tests as integration coverage.
+2. Continue Batch 003 with effect meters/presets, multi-band EQ, robust limiter validation and measured live/offline parity; extend arrangement clip editing and history without bypassing the shared routing graph.
 3. Preserve vanilla static deployment until an independently tested architecture migration is justified; GitHub Pages must continue working without a backend.
-4. Verify at desktop and mobile viewports; test actual mobile devices separately before claiming device compatibility.
-5. Update a batch status only after its acceptance checks pass; document unavailable test environments and residual issues in this file.
+4. Verify at 360, 390, 430, 768 and desktop viewports; test physical devices separately before claiming mobile compatibility.
+5. Implement Batch 004 only after its measurement, export and preset requirements can be tested without overstating mastering quality.
 
 ### Agent continuation prompt (copy/paste)
 
