@@ -1,0 +1,5 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {encodeWav,processSample} from '../src/audio.js';
+test('WAV header, sample rate and length',async()=>{const blob=encodeWav([new Float32Array([0,1,-1])],44100);const bytes=new DataView(await blob.arrayBuffer());assert.equal(blob.size,50);assert.equal(bytes.getUint32(24,true),44100);assert.equal(bytes.getUint16(22,true),1);assert.equal(bytes.getInt16(46,true),32767);assert.equal(bytes.getInt16(48,true),-32768)});
+test('trim and reverse preserve expected samples',()=>{const source=Float32Array.from([.1,.2,.3,.4]);const ctx={createBuffer:(_,n,sr)=>{const d=new Float32Array(n);return {numberOfChannels:1,sampleRate:sr,length:n,getChannelData:()=>d}}};const b={sampleRate:4,length:4,duration:1,numberOfChannels:1,getChannelData:()=>source};const result=processSample(ctx,b,{start:.25,end:.75,reverse:true});assert.equal(result.length,2);assert.ok(Math.abs(result.getChannelData(0)[0]-.3)<1e-6);assert.ok(Math.abs(result.getChannelData(0)[1]-.2)<1e-6)});
