@@ -94,3 +94,16 @@
 .eq-band legend{padding:0 4px;color:#e9be62;font-size:12px}
 .eq-band label{display:grid;grid-template-columns:30px 1fr;align-items:center;gap:4px;font-size:11px}
 .eq-band input[type=range]{grid-column:1/-1}
+.effect-presets{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.effect-presets label{display:flex;align-items:center;gap:6px;color:#aebdcb}
+.effect-presets input,.effect-presets select{min-height:38px;max-width:180px}
+.reduction-meter{display:flex;align-items:center;gap:8px;color:#e9be62}
+.clip-controls select{max-width:160px;background:#191e29;color:#e8ebf1;border:1px solid #343c4c;border-radius:5px;padding:7px}
+.clip{display:flex;align-items:center;justify-content:space-between;gap:5px}
+.clip span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.clip-handle{position:absolute;top:0;bottom:0;width:10px;background:#ffffff33;touch-action:none;cursor:ew-resize}
+.clip-handle-start{left:0;border-radius:4px 0 0 4px}
+.clip-handle-end{right:0;border-radius:0 4px 4px 0}
+.clip-handle::after{content:"";position:absolute;top:35%;bottom:35%;left:4px;width:2px;background:#fff9}
+.clip-controls input[type=checkbox]{width:24px;height:24px}
+@media(max-width:700px){.effect-presets{align-items:stretch}.effect-presets button{min-height:44px}.clip-controls input,.clip-controls select,.clip-controls button{min-height:44px}.clip-handle{width:18px}}

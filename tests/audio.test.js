@@ -12,11 +12,11 @@ test('snap grid rejects invalid resolutions',()=>{assert.throws(()=>snapBeats(1,
 test('drum rack pattern length follows duplicated bars and stays within 16 bars',()=>{assert.equal(patternLengthBeats({pattern:{notes:[{beat:0,durationBeats:.25}]}}),4);assert.equal(patternLengthBeats({pattern:{notes:[{beat:4,durationBeats:1}]}}),8);assert.equal(patternLengthBeats({pattern:{notes:[{beat:63,durationBeats:4}]}}),64)});
 test('track effect descriptors validate types and preserve independent EQ band defaults',()=>{const first=createTrackEffect('eq','one'),second=createTrackEffect('eq','two');first.params.bands[1].gain=6;assert.equal(second.params.bands[1].gain,0);assert.equal(first.params.bands.length,4);assert.equal(first.enabled,true);assert.throws(()=>createTrackEffect('unknown'),RangeError)});
 test('compressor makeup gain is routed after dynamics processing',()=>{
- const param=()=>({value:0}),node=()=>({connections:[],connect(target){this.connections.push(target);return target},disconnect(){},gain:param(),pan:param(),frequency:param(),Q:param(),threshold:param(),ratio:param(),knee:param(),attack:param(),release:param(),delayTime:param()});
+ const param=()=>({value:0}),node=()=>({connections:[],reduction:-3,connect(target){this.connections.push(target);return target},disconnect(){},gain:param(),pan:param(),frequency:param(),Q:param(),threshold:param(),ratio:param(),knee:param(),attack:param(),release:param(),delayTime:param()});
  const context={createGain:node,createStereoPanner:node,createBiquadFilter:()=>Object.assign(node(),{type:'lowpass'}),createDelay:node,createChannelSplitter:node,createAnalyser:()=>Object.assign(node(),{fftSize:32,smoothingTimeConstant:0,getFloatTimeDomainData(data){data.fill(0)}}),createDynamicsCompressor:node,createWaveShaper:()=>Object.assign(node(),{curve:null}),createConvolver:()=>Object.assign(node(),{buffer:null}),createBuffer(channels,length){const data=Array.from({length:channels},()=>new Float32Array(length));return{numberOfChannels:channels,getChannelData:index=>data[index]}}};
  const compressor=createTrackEffect('compressor','comp');compressor.params.makeup=6;
  const graph=createTrackGraph(context,{id:'t',volume:1,pan:0,fx:{effects:[compressor]}},node()),device=graph.instances.get('comp');
- assert.equal(device.node.connections[0],device.makeup);assert.ok(Math.abs(device.makeup.gain.value-10**(6/20))<1e-6);
+ assert.equal(device.node.connections[0],device.makeup);assert.ok(Math.abs(device.makeup.gain.value-10**(6/20))<1e-6);assert.deepEqual(graph.readMeter().reductions,{comp:3});
 });
 test('track graph applies enabled effects in stored order and updates mixer settings',()=>{
  const param=()=>({value:0}),node=()=>({connections:[],connect(target){this.connections.push(target);return target},disconnect(){},gain:param(),pan:param(),frequency:param(),Q:param(),threshold:param(),ratio:param(),knee:param(),attack:param(),release:param(),delayTime:param()});
@@ -26,11 +26,11 @@ test('track graph applies enabled effects in stored order and updates mixer sett
  eq.params.bands[2]={frequency:3200,gain:7,q:1.4};
  const track={id:'track',volume:.8,pan:-.25,mute:false,solo:false,fx:{effects:[eq,disabled,delay]}},graph=createTrackGraph(context,track,node());
  assert.equal(graph.signature,'eq:eq|delay:delay');
- assert.equal(graph.instances.get('eq').nodes.length,4);assert.equal(graph.instances.get('eq').nodes[0].connections[0],graph.instances.get('eq').nodes[1]);
- assert.equal(graph.instances.get('eq').nodes[2].frequency.value,3200);assert.equal(graph.instances.get('eq').nodes[2].gain.value,7);assert.equal(graph.instances.get('eq').nodes[2].Q.value,1.4);
+ assert.equal(graph.instances.get('eq').nodes.length,4);assert.equal(graph.instances.get('eq').lowCut.type,'highpass');assert.equal(graph.instances.get('eq').highCut.type,'lowpass');assert.equal(graph.instances.get('eq').lowCut.frequency.value,20);assert.equal(graph.instances.get('eq').highCut.frequency.value,500);assert.equal(graph.instances.get('eq').nodes[0].connections[0],graph.instances.get('eq').nodes[1]);
+ assert.equal(graph.instances.get('eq').nodes[2].frequency.value,500);assert.equal(graph.instances.get('eq').nodes[2].gain.value,7);assert.equal(graph.instances.get('eq').nodes[2].Q.value,1.4);
  const delayInput=graph.instances.get('eq').nodes[3].connections[0];assert.equal(delayInput.connections[0],graph.instances.get('delay').dry);assert.equal(delayInput.connections[1],graph.instances.get('delay').delay);
  graph.update(track,false);assert.equal(graph.gain.gain.value,.8);assert.equal(graph.pan.pan.value,-.25);
- assert.deepEqual(graph.readMeter(),{leftPeak:.5,rightPeak:.25,leftRms:.5,rightRms:.25});
+ assert.deepEqual(graph.readMeter(),{leftPeak:.5,rightPeak:.25,leftRms:.5,rightRms:.25,reductions:{}});
  track.solo=true;graph.update(track,true);assert.equal(graph.gain.gain.value,.8);
  track.solo=false;graph.update(track,true);assert.equal(graph.gain.gain.value,0);
  graph.disconnect();
