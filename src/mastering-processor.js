@@ -1,4 +1,4 @@
-import {LookaheadLimiter} from './mastering-dsp.js';
+import {LookaheadLimiter,MultibandCompressor} from './mastering-dsp.js';
 
 class MasteringLimiterProcessor extends AudioWorkletProcessor{
  constructor(options){
@@ -33,3 +33,30 @@ class MasteringLimiterProcessor extends AudioWorkletProcessor{
 }
 
 registerProcessor('egghead-lookahead-limiter',MasteringLimiterProcessor);
+
+class MasteringMultibandProcessor extends AudioWorkletProcessor{
+ constructor(options){
+  super();
+  this.channels=options.processorOptions?.channels||2;
+  this.settings={enabled:false,...options.processorOptions?.settings};
+  this.processor=new MultibandCompressor(sampleRate,this.channels,this.settings);
+  this.processor.onGainReduction=bands=>this.port.postMessage({type:'gain-reduction',bands});
+  this.port.onmessage=event=>{
+   if(event.data?.type==='settings'){
+    this.settings=event.data.settings||{};
+    this.processor.update(this.settings);
+    this.port.postMessage({type:'settings-applied'});
+   }
+  };
+  this.port.postMessage({type:'ready'});
+ }
+ process(inputs,outputs){
+  const input=inputs[0],output=outputs[0];
+  if(!output?.length)return true;
+  if(!input?.length||!input[0]?.length){for(const channel of output)channel.fill(0);return true}
+  this.processor.process(input,output,undefined,output[0].length);
+  return true;
+ }
+}
+
+registerProcessor('egghead-mastering-multiband',MasteringMultibandProcessor);

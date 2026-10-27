@@ -1,10 +1,10 @@
-# Batch 004C — Phase 1 Sidechain Stabilization and Phase 2 Mastering Report
+# Batch 004C — Phase 1–3 Sidechain and Mastering Report
 
 ## Current status
 
-**BATCH 004C PHASE 2 INCOMPLETE — CRITICAL REQUIREMENTS REMAIN**
+**PHASE 3 FUNCTIONALLY COMPLETE — READY FOR PHASE 4**
 
-Phase 1 sidechain stabilization remains complete (59/59 tests at that boundary). Phase 2 now implements loudness analysis, oversampled peak estimation and a shared lookahead limiter, with the current full suite passing **69/69** and browser OfflineAudioContext/WAV ceiling measurements passing. Phase 2 is not marked complete because true-peak/LRA validation against independent published vectors, physical/live-output equivalence and percentage progress/long-file performance remain unverified. Phases 3–6 were not started.
+Phase 1 sidechain stabilization passed 59/59 tests at that boundary. Phase 2 implemented loudness analysis, oversampled peak estimation and a shared lookahead limiter; independent true-peak/LRA reference validation and physical live-output checks remain release-validation tasks, not Phase 3 blockers. Phase 3 adds multiband dynamics, spectrum and stereo monitoring, loudness-matched A/B, mastering-chain management and Worker-based analysis. The current full Node suite passes **81/81**. Phase 4–6 remain future work.
 
 ## Phase 2 acceptance matrix
 
@@ -19,8 +19,8 @@ Phase 1 sidechain stabilization remains complete (59/59 tests at that boundary).
 | Shared live/offline DSP and latency compensation | Yes | Same `LookaheadLimiter` implementation in the AudioWorklet; offline mastering render adds/trims measured processor latency | **PARTIAL PASS** | Browser OAC and decoded WAV validated; physical real-time acoustic loopback and exact live-vs-offline null comparison unavailable. |
 | Limiter included in offline WAV | Yes | Rendered arrangement at -2 dBTP, encoded with `toWav`, decoded in Chromium, measured -2.099 dBTP estimated; duration preserved at 8.30 s | **PASS — Chromium fixture** | Stereo 16-bit/44.1 kHz remains the only WAV export format. |
 | Project settings persistence | Yes | JSON round-trip covers enabled state, ceiling, lookahead and release | **PASS** | No separate UI-driven close/reopen scenario in this phase. |
-| Basic/Advanced mastering UI, warnings, before/after | Yes | Chromium Mastering view render and 5 responsive viewport widths | **PARTIAL PASS** | Analysis is synchronous; status shows the analysis stage but no percentage progress. Gain-reduction display is the live AudioWorklet value, not a rendered offline history. |
-| Full Node.js suite | Yes | Portable Node.js 22.23.4, `node --test` over every `tests/*.test.js` | **PASS — 69/69** | `npm` unavailable; equivalent complete test-file list executed directly. Remote Actions pending. |
+| Basic/Advanced mastering UI, warnings, before/after | Yes | Chromium Mastering view and 5 responsive viewport widths; progress/cancel exercised with the analysis Worker | **PASS — browser workflow** | Gain-reduction display is live AudioWorklet telemetry, not a rendered offline history. |
+| Full Node.js suite at Phase 2 boundary | Yes | Portable Node.js 22.23.4, `node --test` over every `tests/*.test.js` | **PASS — 69/69 at Phase 2 boundary** | Current Phase 3 suite is 81/81; `npm` unavailable, so test files were run directly. Remote Actions pending. |
 | Browser/device verification | Browser checks only | HTTP-served Chromium worklet, OfflineAudioContext limiter and WAV decode; 360/390/430/768/1280 CSS px | **PARTIAL PASS** | Emulation is not physical iOS/Android or real-time audio loopback testing. Long-project performance is not measured. |
 
 ### Phase 2 algorithm and tolerance details
@@ -28,8 +28,29 @@ Phase 1 sidechain stabilization remains complete (59/59 tests at that boundary).
 - The integrated loudness reference is the `pyloudnorm` published 1 kHz full-scale test expectation (**-3.0523438444 LUFS**); an equivalent generated 44.1 kHz sine measured within **0.1 LU**. A -23 LUFS alignment signal is within **0.15 LU** at 44.1, 48 and 96 kHz.
 - Integrated blocks are 400 ms with 100 ms hops; absolute gate is -70 LUFS and relative gate is -10 LU. Short-term/LRA blocks are 3 s with 100 ms hops; LRA applies -70 LUFS absolute and -20 LU relative gates and the 10th/95th percentiles.
 - True peak is a 4×, 16-tap windowed-sinc estimate. Limiter integration uses 0.1 dB internal detector margin; tests accept no more than **+0.15 dB** above the requested ceiling. Chromium fixture outputs were below the ceiling.
-- Analysis holds a 3-second energy ring and compact block histories; it does not allocate full-length filtered audio copies. The synchronous analysis loop still risks UI stalls on long mixes.
+- Analysis holds a 3-second energy ring and compact block histories; it does not allocate full-length filtered audio copies. Rendered-buffer analysis now runs in a cancellable progress-reporting Worker and transfers one temporary copy per channel. Long-file performance on physical mobile devices remains unmeasured.
 - References: [ITU-R BS.1770](https://www.itu.int/rec/R-REC-BS.1770/en), [EBU Tech 3342](https://tech.ebu.ch/docs/tech/tech3342.pdf), and the [pyloudnorm 1 kHz test expectation](https://github.com/csteinmetz1/pyloudnorm/blob/master/tests/test_loudness.py). The EBU/ITU downloadable gating/LRA/true-peak reference files themselves were not run in this environment.
+
+## Phase 3 acceptance matrix
+
+| Requirement | Implemented | Tested / observed | Result | Remaining limitations |
+|---|---|---|---|---|
+| Three-band compressor with adjustable LR4 crossovers, per-band dynamics, bypass/solo, output gain and GR | Yes; shared DSP processor is used by mastering graph | Deterministic reconstruction, low-band solo, compression/release, and render-quantum tests | **PASS — automated fixtures** | Reconstruction tolerance is 1.5% RMS for bypassed-band fixture; solo-level deviation tolerance is 4%. No independent analog crossover comparison. |
+| Frequency spectrum analyzer with log scale, dB scale, smoothing and peak hold | Yes; active preview feeds Web Audio analyser and Canvas | Chromium preview painted live spectrum; FFT unit fixture locates 1 kHz within 15 Hz | **PASS — browser and unit fixture** | No WebGL; visualization is throttled and hidden/preview-dependent. |
+| Stereo correlation/balance, mid-side and L/R/mono audition | Yes; metrics and audition matrices process preview only | Deterministic stereo/cancellation measurements; browser mono audition and stereo metrics | **PASS — automated and browser** | Monitor modes do not alter export. No calibrated hardware measurement. |
+| Loudness-matched A/B, position preservation and monitoring-only gain | Yes; measured integrated loudness informs attenuation of louder comparison | Browser displayed 4.4 LU difference; playback continued from comparison position | **PASS — browser workflow** | Matching attenuates only the louder side; the legacy master bus is present on both comparison paths. |
+| Mastering modules enable/disable, order, presets and parameter persistence | Yes; EQ/saturation/imager/multiband are reorderable; output gain and limiter are fixed after them | Automated graph-order/persistence tests and browser project/order check | **PASS** | Safety limiter intentionally cannot be moved ahead of reorderable modules. No export-preset import/export file format beyond project/local presets. |
+| One mastering path for live, preview, offline rendering and export | Yes; shared DSP definitions and mastering graph; final limiter remains last | Chromium initialized live multiband and limiter worklets; offline generated project rendered and decoded from WAV | **PASS — browser workflow** | No physical live-output null test. True-peak value remains an estimate, not independent certification. |
+| Progress, cancellation, responsive layout and efficient analysis | Yes; analysis Worker reports progress and terminates on cancellation; analyzer is preview-driven | Chromium observed 27 monotonic Worker progress updates through 100%, cancellation, and no horizontal overflow at 360/390/430/768/1280 CSS px | **PASS — emulated browser** | No physical iOS/Android, prolonged mobile memory, or long-recording stress test. Worker transfer temporarily copies each audio channel once. |
+| Deterministic Phase 3 tests and full regression suite | Yes | Portable Node.js 22.23.4: **81 passed, 0 failed** | **PASS** | Remote GitHub Actions was not run; independent loudness certification remains release validation. |
+| WAV export with multiband processing and limiter | Yes | Chromium decoded stereo 44.1 kHz WAV, 8.300 s; fixture measured -15.06 LUFS and -13.17 dBTP estimated | **PASS — test fixture** | This fixture validates routing/decoding, not universal true-peak ceiling or live/offline sample-null equivalence. |
+
+### Phase 3 DSP tolerances and limitations
+
+- The LR4 crossover test permits at most 1.5% RMS reconstruction error for bypassed bands; low-band solo permits 4% level deviation. Compressor tests verify reduction greater than 10 dB for the selected fixture and recovery after release; results are deterministic-fixture checks, not subjective sound-quality certification.
+- FFT fixture tolerance is 15 Hz at 1 kHz. A/B matching only attenuates the louder side, preventing comparison gain from introducing clipping; it is confined to preview monitoring.
+- Browser measurements for one generated multiband WAV were -15.06 LUFS and -13.17 dBTP estimated. These are fixture observations, not independent reference validation. The project still requires published EBU LRA/true-peak vectors and a physical live-output/device test for release validation.
+- The limiter remains the final peak-protection stage. Chain bypass disables reorderable mastering modules but does not bypass the limiter; preview monitor matrices and A/B compensation do not enter export.
 
 ## Phase 1 sidechain report (historical)
 
@@ -113,6 +134,6 @@ This procedure was not performed on a physical audio device for this report.
 
 ## Next phase boundary
 
-Phase 1 is complete for the automated and offline criteria above. Before declaring Batch 004 complete, proceed in order through Phase 2's reference-validated BS.1770/EBU R128 analyzer and genuine lookahead limiter, then Phase 3 mastering modules, Phase 4 formats/encoding, Phase 5 metadata/artwork/release packaging, and Phase 6 complete acceptance. Existing long-term roadmap scope for automation, further effects, sampler improvements, plugin architecture and optional VST bridging remains intact.
+Phase 3 is functionally complete and ready for Phase 4. Phase 2's independent BS.1770/EBU R128 reference-vector validation, physical live-output checks, and long-duration mobile performance remain release-validation tasks. Batch 004 still needs Phase 4 formats/encoding, Phase 5 metadata/artwork/release packaging, and Phase 6 full end-to-end acceptance. Existing long-term roadmap scope for automation, further effects, sampler improvements, plugin architecture and optional VST bridging remains intact.
 
 No GitHub Pages deployment was performed. Static relative-path compatibility is preserved by the changes, but the updated worktree itself has not been deployment-tested.

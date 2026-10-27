@@ -63,19 +63,24 @@ function interpolatedPeak(getSample,frame){
  return peak;
 }
 
-export function estimateTruePeak(channels){
+export function estimateTruePeak(channels,onProgress){
  if(!Array.isArray(channels)||!channels.length)throw new TypeError('At least one audio channel is required.');
  const length=channels[0].length;
  let peak=0;
- for(const channel of channels){
+ for(let channelIndex=0;channelIndex<channels.length;channelIndex++){
+  const channel=channels[channelIndex];
   if(channel.length!==length)throw new RangeError('True-peak channels must have equal lengths.');
   const sample=index=>index<0||index>=length?0:channel[index];
-  for(let frame=0;frame<length;frame++)peak=Math.max(peak,interpolatedPeak(sample,frame));
+  const progressStep=Math.max(1,Math.floor(length/20));
+  for(let frame=0;frame<length;frame++){
+   peak=Math.max(peak,interpolatedPeak(sample,frame));
+   if(onProgress&&channelIndex===channels.length-1&&frame%progressStep===0)onProgress(frame/length);
+  }
  }
  return peak;
 }
 
-export function analyzeLoudness(channels,sampleRate){
+export function analyzeLoudness(channels,sampleRate,{onProgress}={}){
  if(!Array.isArray(channels)||!channels.length||!Number.isFinite(sampleRate)||sampleRate<8000)throw new TypeError('Audio channels and a valid sample rate are required.');
  const length=channels[0].length,weights=channelWeights(channels.length);
  if(!length||channels.some(channel=>channel.length!==length))throw new TypeError('A non-empty, equal-length audio buffer is required.');
@@ -84,6 +89,7 @@ export function analyzeLoudness(channels,sampleRate){
  const blockFrames=Math.max(1,Math.round(sampleRate*.4)),hopFrames=Math.max(1,Math.round(sampleRate*.1));
  const shortFrames=Math.round(sampleRate*3),shortHop=Math.round(sampleRate*.1),energyRing=new Float64Array(Math.max(blockFrames,shortFrames)),states=channels.map(()=>({shelf:{x1:0,x2:0,y1:0,y2:0},highpass:{x1:0,x2:0,y1:0,y2:0}})),blockEnergies=[],shortTerm=[];
  let rawSquares=0,samplePeak=0,clippedSamples=0,momentarySum=0,shortSum=0;
+ const progressStep=Math.max(1,Math.floor(sampleRate/2));
  for(let frame=0;frame<length;frame++){
   let weightedEnergy=0;
   for(let index=0;index<channels.length;index++){
@@ -98,6 +104,7 @@ export function analyzeLoudness(channels,sampleRate){
   const count=frame+1;
   if(count>=blockFrames&&(count-blockFrames)%hopFrames===0)blockEnergies.push(momentarySum/blockFrames);
   if(count>=shortFrames&&(count-shortFrames)%shortHop===0)shortTerm.push(loudnessFromEnergy(shortSum/shortFrames));
+  if(onProgress&&frame%progressStep===0)onProgress(frame/length*.8);
  }
  const absolute=blockEnergies.filter(value=>loudnessFromEnergy(value)>=ABSOLUTE_GATE),preliminary=absolute.length?absolute.reduce((sum,value)=>sum+value,0)/absolute.length:0;
  const relativeGate=preliminary?loudnessFromEnergy(preliminary)-10:-Infinity;
@@ -105,7 +112,8 @@ export function analyzeLoudness(channels,sampleRate){
  const lraCandidates=shortTerm.filter(value=>value>=ABSOLUTE_GATE&&value>=integrated-20),lra=lraCandidates.length?Math.max(0,percentile(lraCandidates,.95)-percentile(lraCandidates,.1)):null;
  const momentary=blockEnergies.length?loudnessFromEnergy(blockEnergies.at(-1)):-Infinity;
  const shortTermLufs=shortTerm.length?shortTerm.at(-1):-Infinity;
- const rms=Math.sqrt(rawSquares/(length*channels.length)),truePeak=estimateTruePeak(channels);
+ const rms=Math.sqrt(rawSquares/(length*channels.length)),truePeak=estimateTruePeak(channels,progress=>onProgress?.(.8+progress*.2));
+ onProgress?.(1);
  return{
   integratedLufs:integrated,momentaryLufs:momentary,shortTermLufs,lra,
   rms,rmsDbfs:20*Math.log10(Math.max(1e-12,rms)),
@@ -116,6 +124,149 @@ export function analyzeLoudness(channels,sampleRate){
   loudnessHistory:blockEnergies.map((value,index)=>({seconds:(index*hopFrames+blockFrames)/sampleRate,lufs:loudnessFromEnergy(value)})),
   gate:{absoluteLufs:ABSOLUTE_GATE,relativeLufs:relativeGate,integratedBlocks:gated.length}
  };
+}
+
+function biquadCoefficients(type,frequency,sampleRate){
+ const omega=2*Math.PI*Math.min(frequency,sampleRate*.45)/sampleRate,cos=Math.cos(omega),alpha=Math.sin(omega)/Math.SQRT2;
+ const a0=1+alpha;
+ if(type==='lowpass')return{b0:(1-cos)/(2*a0),b1:(1-cos)/a0,b2:(1-cos)/(2*a0),a1:-2*cos/a0,a2:(1-alpha)/a0};
+ return{b0:(1+cos)/(2*a0),b1:-(1+cos)/a0,b2:(1+cos)/(2*a0),a1:-2*cos/a0,a2:(1-alpha)/a0};
+}
+
+function runBiquad(sample,coefficients,state){
+ const value=coefficients.b0*sample+coefficients.b1*state.x1+coefficients.b2*state.x2-coefficients.a1*state.y1-coefficients.a2*state.y2;
+ state.x2=state.x1;state.x1=sample;state.y2=state.y1;state.y1=value;
+ return value;
+}
+
+function runFourthOrder(sample,filters,states){
+ let output=sample;
+ for(let stage=0;stage<2;stage++)output=runBiquad(output,filters[stage],states[stage]);
+ return output;
+}
+
+function compressionGainDb(levelDb,band){
+ const threshold=band.threshold,ratio=band.ratio,knee=band.knee;
+ if(knee>0&&levelDb>threshold-knee/2&&levelDb<threshold+knee/2){
+  const distance=levelDb-threshold+knee/2;
+  return(1/ratio-1)*distance*distance/(2*knee);
+ }
+ return levelDb>threshold?threshold+(levelDb-threshold)/ratio-levelDb:0;
+}
+
+export class MultibandCompressor{
+ constructor(sampleRate,channels=2,settings={}){
+  if(!Number.isFinite(sampleRate)||sampleRate<8000||!Number.isInteger(channels)||channels<1||channels>2)throw new RangeError('Multiband compressor requires a valid sample rate and one or two channels.');
+  this.sampleRate=sampleRate;this.channels=channels;this.frame=0;this.lastMeterFrame=0;
+  this.filterStates=Array.from({length:channels},()=>Array.from({length:4},()=>[{x1:0,x2:0,y1:0,y2:0},{x1:0,x2:0,y1:0,y2:0}]));
+  this.bandFrames=Array.from({length:3},()=>new Float64Array(channels));this.channelMix=new Float64Array(channels);
+  this.envelopes=Array.from({length:channels},()=>[0,0,0]);this.gainReduction=[0,0,0];
+  this.settings={};this.update(settings);
+ }
+ update(settings={}){
+  const crossovers=settings.crossovers||[250,2500],low=Math.max(40,Math.min(this.sampleRate*.2,Number(crossovers[0])||250)),high=Math.max(low*1.25,Math.min(this.sampleRate*.45,Number(crossovers[1])||2500));
+  this.crossovers=[low,high];
+  this.filters=[biquadCoefficients('lowpass',low,this.sampleRate),biquadCoefficients('highpass',low,this.sampleRate),biquadCoefficients('lowpass',high,this.sampleRate),biquadCoefficients('highpass',high,this.sampleRate)];
+  this.settings={enabled:Boolean(settings.enabled),bands:Array.from({length:3},(_,index)=>{
+   const band=settings.bands?.[index]||{};
+   return{enabled:band.enabled!==false,solo:Boolean(band.solo),threshold:Math.max(-60,Math.min(0,Number(band.threshold??-18))),ratio:Math.max(1,Math.min(20,Number(band.ratio??2))),attack:Math.max(.001,Math.min(1,Number(band.attack??.01))),release:Math.max(.01,Math.min(2,Number(band.release??.15))),knee:Math.max(0,Math.min(24,Number(band.knee??6))),makeup:Math.max(-24,Math.min(24,Number(band.makeup??0))),outputGain:Math.max(-24,Math.min(24,Number(band.outputGain??0)))};
+  })};
+ }
+ process(inputChannels,outputChannels,settings=this.settings,frameCount=inputChannels[0]?.length||0){
+  if(settings!==this.settings)this.update(settings);
+  if(inputChannels.length!==this.channels||outputChannels.length!==this.channels)throw new RangeError('Multiband channel count changed after initialization.');
+  const config=this.settings,active=config.enabled,soloed=config.bands.some(band=>band.solo);
+  if(!active){
+   for(let channel=0;channel<this.channels;channel++)outputChannels[channel].set(inputChannels[channel].subarray(0,frameCount),0);
+   return;
+  }
+  for(let offset=0;offset<frameCount;offset++,this.frame++){
+   this.channelMix.fill(0);
+   for(let channel=0;channel<this.channels;channel++){
+    const sample=inputChannels[channel][offset]||0,states=this.filterStates[channel];
+    const low=runFourthOrder(sample,[this.filters[0],this.filters[0]],states[0]);
+    const upper=runFourthOrder(sample,[this.filters[1],this.filters[1]],states[1]);
+    const mid=runFourthOrder(upper,[this.filters[2],this.filters[2]],states[2]);
+    const high=runFourthOrder(upper,[this.filters[3],this.filters[3]],states[3]);
+    this.bandFrames[0][channel]=low;this.bandFrames[1][channel]=mid;this.bandFrames[2][channel]=high;
+   }
+   for(let bandIndex=0;bandIndex<3;bandIndex++){
+    const band=config.bands[bandIndex];let peak=0;
+    for(let channel=0;channel<this.channels;channel++)peak=Math.max(peak,Math.abs(this.bandFrames[bandIndex][channel]));
+    const envelope=this.envelopes[0][bandIndex],time=peak>envelope?band.attack:band.release,coefficient=Math.exp(-1/(time*this.sampleRate)),nextEnvelope=peak+(envelope-peak)*coefficient;
+    for(let channel=1;channel<this.channels;channel++)this.envelopes[channel][bandIndex]=nextEnvelope;
+    this.envelopes[0][bandIndex]=nextEnvelope;
+    const targetReduction=band.enabled?compressionGainDb(20*Math.log10(Math.max(1e-12,nextEnvelope)),band):0,currentReduction=this.gainReduction[bandIndex],smooth=Math.exp(-1/((targetReduction<currentReduction?band.attack:band.release)*this.sampleRate));
+    this.gainReduction[bandIndex]=targetReduction+(currentReduction-targetReduction)*smooth;
+    const audible=!soloed||band.solo;
+    if(!audible)continue;
+    const gain=band.enabled?10**((this.gainReduction[bandIndex]+band.makeup+band.outputGain)/20):1;
+    for(let channel=0;channel<this.channels;channel++)this.channelMix[channel]+=this.bandFrames[bandIndex][channel]*gain;
+   }
+   for(let channel=0;channel<this.channels;channel++)outputChannels[channel][offset]=this.channelMix[channel];
+   if(this.frame-this.lastMeterFrame>=Math.round(this.sampleRate*.05)){this.lastMeterFrame=this.frame;this.onGainReduction?.(this.gainReduction.map(value=>-value))}
+  }
+ }
+}
+
+export function analyzeStereo(channels){
+ if(!Array.isArray(channels)||channels.length<2||channels[0].length!==channels[1].length||!channels[0].length)throw new TypeError('Stereo analysis requires two non-empty, equal-length channels.');
+ let leftEnergy=0,rightEnergy=0,cross=0,monoEnergy=0;
+ for(let index=0;index<channels[0].length;index++){
+  const left=channels[0][index],right=channels[1][index];
+  leftEnergy+=left*left;rightEnergy+=right*right;cross+=left*right;
+  const mono=(left+right)*.5;monoEnergy+=mono*mono;
+ }
+ const frames=channels[0].length,leftRms=Math.sqrt(leftEnergy/frames),rightRms=Math.sqrt(rightEnergy/frames),correlation=cross/Math.sqrt(Math.max(1e-20,leftEnergy*rightEnergy));
+ return{correlation:Math.max(-1,Math.min(1,correlation)),balanceDb:20*Math.log10(Math.max(1e-10,leftRms)/Math.max(1e-10,rightRms)),leftRms,rightRms,monoRms:Math.sqrt(monoEnergy/frames),monoLossDb:20*Math.log10(Math.max(1e-10,Math.sqrt(monoEnergy/frames))/Math.max(1e-10,Math.sqrt((leftEnergy+rightEnergy)/(2*frames))))};
+}
+
+export function loudnessMatchGainDb(aLufs,bLufs,activeLufs,enabled=true){
+ if(!enabled||![aLufs,bLufs,activeLufs].every(Number.isFinite))return 0;
+ return Math.min(0,Math.min(aLufs,bLufs)-activeLufs);
+}
+
+export function stereoMonitorMatrix(mode='stereo'){
+ if(mode==='mono'||mode==='mid')return[[.5,.5],[.5,.5]];
+ if(mode==='left')return[[1,0],[1,0]];
+ if(mode==='right')return[[0,1],[0,1]];
+ if(mode==='side')return[[.5,-.5],[-.5,.5]];
+ return[[1,0],[0,1]];
+}
+
+export function analyzeSpectrum(channels,sampleRate,{fftSize=2048,channel='mix'}={}){
+ if(!Array.isArray(channels)||!channels.length||channels.some(data=>data.length<1)||!Number.isFinite(sampleRate))throw new TypeError('Spectrum analysis requires audio channels and a valid sample rate.');
+ if(!Number.isInteger(fftSize)||fftSize<256||(fftSize&(fftSize-1))!==0)throw new RangeError('FFT size must be a power of two of at least 256.');
+ const real=new Float64Array(fftSize),imag=new Float64Array(fftSize),hop=Math.min(fftSize,channels[0].length),offset=Math.max(0,channels[0].length-hop);
+ for(let index=0;index<fftSize;index++){
+  const frame=offset+index-(fftSize-hop),window=.5-.5*Math.cos(2*Math.PI*index/(fftSize-1));
+  let sample=0,count=0;
+  for(let channelIndex=0;channelIndex<channels.length;channelIndex++){
+   if(channel==='left'&&channelIndex!==0||channel==='right'&&channelIndex!==1)continue;
+   sample+=channels[channelIndex][frame]||0;count++;
+  }
+  real[index]=count?sample/count*window:0;
+ }
+ for(let index=1,j=0;index<fftSize;index++){
+  let bit=fftSize>>1;
+  for(;j&bit;bit>>=1)j^=bit;
+  j^=bit;
+  if(index<j){[real[index],real[j]]=[real[j],real[index]];[imag[index],imag[j]]=[imag[j],imag[index]]}
+ }
+ for(let size=2;size<=fftSize;size<<=1){
+  const angle=-2*Math.PI/size,stepReal=Math.cos(angle),stepImag=Math.sin(angle);
+  for(let start=0;start<fftSize;start+=size){
+   let wr=1,wi=0;
+   for(let offsetIndex=0;offsetIndex<size/2;offsetIndex++){
+    const even=start+offsetIndex,odd=even+size/2,tr=wr*real[odd]-wi*imag[odd],ti=wr*imag[odd]+wi*real[odd];
+    real[odd]=real[even]-tr;imag[odd]=imag[even]-ti;real[even]+=tr;imag[even]+=ti;
+    const nextWr=wr*stepReal-wi*stepImag;wi=wr*stepImag+wi*stepReal;wr=nextWr;
+   }
+  }
+ }
+ const bins=new Float32Array(fftSize/2+1),windowGain=fftSize/4;
+ for(let index=0;index<bins.length;index++)bins[index]=20*Math.log10(Math.max(1e-9,Math.hypot(real[index],imag[index])/windowGain));
+ return{sampleRate,fftSize,bins};
 }
 
 export class LookaheadLimiter{
