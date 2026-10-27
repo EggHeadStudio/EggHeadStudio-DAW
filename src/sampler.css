@@ -160,3 +160,51 @@
   .sample-effect .eq-band{grid-column:1/-1}
   .sample-wave-toolbar #sampleDuration{flex-basis:100%}
 }
+.mastering-studio{max-width:1450px}
+.mastering-toolbar,.master-play-controls{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 0}
+.mastering-toolbar label{display:flex;align-items:center;gap:8px;color:#b5c0d0}
+.mastering-toolbar select{max-width:min(260px,70vw);background:#191e29;color:#e8ebf1;border:1px solid #343c4c;border-radius:5px;padding:9px}
+.mastering-toolbar input[type=range]{width:min(150px,28vw);min-height:30px}
+.mastering-toolbar output{min-width:50px;color:#e9be62;font-variant-numeric:tabular-nums}
+.master-wave-panel,.master-module,.master-meters article{min-width:0;padding:14px;background:#1a222e;border:1px solid #374354;border-radius:10px}
+.master-wave-heading{display:flex;justify-content:space-between;gap:8px;color:#d9e3ed}
+.master-wave-wrap{position:relative;margin-top:12px;background:#111923;border-radius:8px;overflow:hidden}
+#masterWaveform{display:block;width:100%;height:130px}
+#masterCursor{position:absolute;top:0;bottom:0;left:0;width:2px;background:#f37787;box-shadow:0 0 5px #111;pointer-events:none}
+.master-play-controls #masterRenderStatus{flex:1 1 240px;color:#aab8c8;font-size:12px}
+.master-meters{display:grid;grid-template-columns:repeat(2,minmax(140px,1fr));gap:10px;margin:12px 0}
+.master-meters article{display:grid;gap:6px}
+.master-meters article span{color:#aab8c8;font-size:12px}
+.master-meters article strong{font-variant-numeric:tabular-nums;font-size:20px}
+.master-warning{grid-column:1/-1;color:#ff9f91;background:#392321;border:1px solid #8a4c45;border-radius:8px;padding:10px}
+.master-advanced{margin:12px 0;border:1px solid #364253;border-radius:10px;background:#141b25}
+.master-advanced summary{padding:14px;color:#dce7f1;font-weight:700;cursor:pointer}
+.master-module{margin:10px;display:grid;gap:12px}
+.master-module>header{font-weight:700;color:#e5edf5}
+.master-module>header input{width:20px;height:20px;vertical-align:middle}
+.master-eq-graph{display:block;width:100%;height:auto;max-height:230px;background:#121923;border:1px solid #354050;border-radius:8px;touch-action:none}
+.master-eq-grid{fill:none;stroke:#334052;stroke-width:1}
+.master-eq-response{fill:none;stroke:#72d5bd;stroke-width:3}
+.master-eq-graph circle{cursor:grab;touch-action:none}
+.master-eq-graph circle:active{cursor:grabbing}
+.master-filter-controls,.master-band-grid,.master-module-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.master-band{min-width:0;margin:0;padding:9px;border:1px solid #354152;border-radius:8px}
+.master-band legend{color:#d5e0ec}
+.master-band legend label{display:flex;align-items:center;gap:5px}
+.master-band input[type=checkbox]{width:18px;height:18px}
+.master-band>label,.master-filter-controls>label,.master-module>label{display:grid;gap:4px;margin:7px 0;color:#aebdcb;font-size:12px}
+.master-band input[type=range],.master-filter-controls input[type=range],.master-module input[type=range]{width:100%;min-height:30px}
+.master-band output,.master-filter-controls output,.master-module output{color:#e9be62;font-variant-numeric:tabular-nums}
+.mastering-studio button{min-height:42px}
+@media(max-width:700px){
+ .mastering-toolbar{align-items:stretch}
+ .mastering-toolbar label{justify-content:space-between;flex:1 1 100%}
+ .mastering-toolbar select{flex:1}
+ .master-play-controls button{min-height:46px;flex:1 1 calc(50% - 10px)}
+ .master-play-controls #masterRenderStatus{flex-basis:100%}
+ .master-wave-heading{flex-direction:column}
+ #masterWaveform{height:110px}
+ .master-meters{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .master-module-grid,.master-filter-controls,.master-band-grid{grid-template-columns:minmax(0,1fr)}
+ .master-module{margin:7px;padding:10px}
+}

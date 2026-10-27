@@ -1,4 +1,5 @@
 import {isTrackAudible} from './project-state.js';
+import {createMasteringGraph,DEFAULT_MASTERING_SETTINGS,normalizeMasteringSettings} from './mastering.js';
 
 export const uid=()=>crypto.randomUUID();
 export function patternLengthBeats(track){
@@ -163,9 +164,10 @@ export function download(blob,name){const a=document.createElement('a');const ur
 export function processSample(ctx,buffer,{start=0,end=buffer.duration,gain=1,fadeIn=0,fadeOut=0,reverse=false}={}){const s=Math.max(0,Math.floor(start*buffer.sampleRate)),e=Math.min(buffer.length,Math.ceil(end*buffer.sampleRate)),length=Math.max(1,e-s),out=ctx.createBuffer(buffer.numberOfChannels,length,buffer.sampleRate);for(let ch=0;ch<out.numberOfChannels;ch++){const src=buffer.getChannelData(ch),dst=out.getChannelData(ch);for(let i=0;i<length;i++){const t=i/buffer.sampleRate;let g=gain;if(fadeIn>0)g*=Math.min(1,t/fadeIn);if(fadeOut>0)g*=Math.min(1,(length/buffer.sampleRate-t)/fadeOut);dst[i]=(src[reverse?e-1-i:s+i]||0)*g}}return out}
 export function drawWave(canvas,buffer,color='#79d5c1',start=0,end=buffer?.duration||0){if(!canvas||!buffer)return;const dpr=Math.min(devicePixelRatio||1,2),w=canvas.clientWidth||300,h=canvas.clientHeight||80;canvas.width=w*dpr;canvas.height=h*dpr;const x=canvas.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,w,h);x.strokeStyle=color;x.lineWidth=1;const data=buffer.getChannelData(0),s=Math.floor(start*buffer.sampleRate),e=Math.min(data.length,Math.ceil(end*buffer.sampleRate)),step=Math.max(1,Math.floor((e-s)/w));for(let i=0;i<w;i++){let lo=1,hi=-1;for(let j=s+i*step;j<Math.min(e,s+(i+1)*step);j++){const z=data[j]||0;if(z<lo)lo=z;if(z>hi)hi=z}x.beginPath();x.moveTo(i,(1-hi)*h/2);x.lineTo(i,(1-lo)*h/2);x.stroke()}}
 export class AudioEngine{
- constructor(){this.ctx=null;this.master=null;this.compressor=null;this.eq=null;this.trackNodes=new Map();this.sources=[];this.sourceNodes=new WeakMap();this.playing=false;this.startedAt=0;this.offset=0;this.timer=null;this.raf=null;this.onTick=()=>{};this.onMeter=()=>{};this.onEnd=()=>{};this.loop=false;this.bpm=120;this.masterSettings={eq:0,threshold:-12,makeup:0,volume:1};this.clipHoldUntil=new Map();}
- async init(){if(!this.ctx){this.ctx=new (window.AudioContext||window.webkitAudioContext)();this.eq=this.ctx.createBiquadFilter();this.eq.type='highshelf';this.eq.frequency.value=4500;this.compressor=this.ctx.createDynamicsCompressor();this.master=this.ctx.createGain();this.eq.connect(this.compressor).connect(this.master).connect(this.ctx.destination);this.setMaster(this.masterSettings)}await this.ctx.resume();return this.ctx}
+ constructor(){this.ctx=null;this.master=null;this.compressor=null;this.eq=null;this.masteringGraph=null;this.masteringSettings=normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS);this.trackNodes=new Map();this.sources=[];this.sourceNodes=new WeakMap();this.playing=false;this.startedAt=0;this.offset=0;this.timer=null;this.raf=null;this.onTick=()=>{};this.onMeter=()=>{};this.onEnd=()=>{};this.loop=false;this.bpm=120;this.masterSettings={eq:0,threshold:-12,makeup:0,volume:1};this.clipHoldUntil=new Map();}
+ async init(){if(!this.ctx){this.ctx=new (window.AudioContext||window.webkitAudioContext)();this.eq=this.ctx.createBiquadFilter();this.eq.type='highshelf';this.eq.frequency.value=4500;this.compressor=this.ctx.createDynamicsCompressor();this.master=this.ctx.createGain();this.eq.connect(this.compressor).connect(this.master);this.setMaster(this.masterSettings);this.setMastering(this.masteringSettings)}await this.ctx.resume();return this.ctx}
  setMaster(s){this.masterSettings={...this.masterSettings,...s};if(!this.ctx)return;const eq=Number(this.masterSettings.eq),threshold=Number(this.masterSettings.threshold),makeup=Number(this.masterSettings.makeup),volume=Number(this.masterSettings.volume);this.eq.gain.value=Number.isFinite(eq)?eq:0;this.compressor.threshold.value=Number.isFinite(threshold)?threshold:-12;this.compressor.ratio.value=3;this.master.gain.value=Math.max(0,Number.isFinite(volume)?volume:1)*Math.pow(10,(Number.isFinite(makeup)?makeup:0)/20)}
+ setMastering(settings){this.masteringSettings=normalizeMasteringSettings(settings);if(!this.ctx||!this.master)return;if(this.masteringGraph){this.masteringGraph.update(this.masteringSettings);return}this.masteringGraph=createMasteringGraph(this.ctx,this.masteringSettings,this.ctx.destination);this.master.connect(this.masteringGraph.input)}
  syncTracks(tracks,bpm=this.bpm){
   if(!this.ctx)return;
   this.bpm=Number.isFinite(Number(bpm))&&Number(bpm)>0?Number(bpm):120;
@@ -227,12 +229,14 @@ export class AudioEngine{
   this.timer=setInterval(()=>{if(!this.playing)return;const p=this.position();if(project.loop&&p>=project.loopEnd*bar){this.play(project,buffers,project.loopStart*bar);return}if(p>max+.15){this.stop();this.onEnd()}},70);
   const tick=()=>{if(this.playing){this.onTick(this.position());this.onMeter(this.readMeters());this.raf=requestAnimationFrame(tick)}};tick();
  }
- async render(project,buffers){
+ async render(project,buffers,{bypassMastering=false}={}){
   const beat=60/project.bpm,bar=beat*4,patternBeats=project.patternBeats||16;let end=bar*4;
   for(const track of project.tracks){for(const clip of track.clips){const b=buffers.get(clip.asset);if(b)end=Math.max(end,clip.bar*bar+clipDurationSeconds(clip))}if((track.sampler?.asset||track.drumRack)&&track.pattern?.notes?.length)end=Math.max(end,bar*(track.drumRack?patternLengthBeats(track)/4:patternBeats/4))}
   if(end>600)throw Error('Export is limited to 10 minutes in this prototype.');
   const tail=Math.max(.3,...project.tracks.map(track=>Math.max(0,...(track.fx?.effects||[]).filter(effect=>effect.enabled).map(effect=>effect.type==='reverb'?Math.max(.1,Number(effect.params?.decay)||1.5)*1.5:effect.type==='delay'?Math.min(20,delayTimeSeconds(effect.params,project.bpm)/(1-Math.min(.85,Number(effect.params?.feedback)||0))):0),track.fx?.delay>0?(track.fx.delayTime||.25)/(1-Math.min(.75,track.fx.feedback||0)):0))),sr=44100,ctx=new OfflineAudioContext(2,Math.ceil((end+tail)*sr),sr),eq=ctx.createBiquadFilter(),comp=ctx.createDynamicsCompressor(),master=ctx.createGain();
-  eq.type='highshelf';eq.frequency.value=4500;eq.gain.value=this.masterSettings.eq;comp.threshold.value=this.masterSettings.threshold;comp.ratio.value=3;master.gain.value=Math.max(0,Number(this.masterSettings.volume??1))*Math.pow(10,this.masterSettings.makeup/20);eq.connect(comp).connect(master).connect(ctx.destination);
+  eq.type='highshelf';eq.frequency.value=4500;eq.gain.value=this.masterSettings.eq;comp.threshold.value=this.masterSettings.threshold;comp.ratio.value=3;master.gain.value=Math.max(0,Number(this.masterSettings.volume??1))*Math.pow(10,this.masterSettings.makeup/20);eq.connect(comp).connect(master);
+  if(bypassMastering)master.connect(ctx.destination);
+  else master.connect(createMasteringGraph(ctx,project.mastering||this.masteringSettings,ctx.destination).input);
   for(const track of project.tracks){
    if(!isTrackAudible(track,project.tracks))continue;
    const graph=createTrackGraph(ctx,track,eq,null,project.bpm);
