@@ -1,7 +1,10 @@
 export const DEFAULT_MASTER_SETTINGS=Object.freeze({eq:0,threshold:-12,makeup:0,volume:1});
+export const PROJECT_SCHEMA_VERSION=1;
 
 export function createEmptyProject(name='Untitled Project'){
   return{
+    id:globalThis.crypto?.randomUUID?.()||`project-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    schemaVersion:PROJECT_SCHEMA_VERSION,
     name,
     bpm:120,
     loop:false,
@@ -20,6 +23,9 @@ export function serializeProject(project){
 export function parseProject(serialized){
   const project=JSON.parse(serialized);
   if(!project||!Array.isArray(project.tracks)||!Number.isFinite(project.bpm))throw new Error('Invalid project');
+  if(project.schemaVersion!==undefined&&(!Number.isInteger(project.schemaVersion)||project.schemaVersion>PROJECT_SCHEMA_VERSION))throw new Error(`Unsupported project schema version: ${project.schemaVersion}`);
+  project.schemaVersion=PROJECT_SCHEMA_VERSION;
+  project.id||=globalThis.crypto?.randomUUID?.()||`project-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return project;
 }
 

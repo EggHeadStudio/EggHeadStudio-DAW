@@ -2,9 +2,9 @@
 
 ## Status
 
-**BATCH 004 IN PROGRESS — FUNCTIONAL VERTICAL SLICE**
+**BATCH 004 IN PROGRESS — PHASES 1–5 FUNCTIONALLY COMPLETE**
 
-Phases 1–3 of Batch 004C have implementation and automated/browser evidence in this worktree. Independent Phase 2 certification/device checks remain release validation; Phases 4–6 (extended export, metadata/artwork/release package and full acceptance) are unfinished.
+Phases 1–5 of Batch 004C have implementation and automated/browser evidence in this worktree. Phase 6 full acceptance remains. Independent Phase 2 certification/device checks and deployment of this unpushed worktree remain release validation.
 
 ## Implemented
 
@@ -66,9 +66,46 @@ Local Chromium testing used the existing generated-audio multi-track acceptance 
 - A/B preview with matching displayed the measured **4.4 LU** difference and attenuated the louder comparison only. Live spectrum canvas painted during preview; mono audition and stereo metrics were available. Responsive emulation at **360/390/430/768/1280 CSS px** had no horizontal overflow; controls met 40 px minimum aside from hidden controls. This is browser emulation, not physical-device verification.
 - No independent EBU LRA/true-peak vectors, physical acoustic output or long-duration mobile memory/performance benchmark were run. True peak remains an estimate; A/B uses the existing legacy master bus on both A/B buffers.
 
-Phase 3 functionally completes multiband dynamics, monitoring, A/B, module order/presets, worker analysis and shared live/offline routing. Phase 2 independent standards/device checks remain release validation. Batch 004 remains in progress pending Phases 4–6.
+Phase 3 functionally completed multiband dynamics, monitoring, A/B, module order/presets, Worker analysis and shared live/offline routing. Phase 4 export is now functionally complete; Phase 2 independent standards/device checks remain release validation. Batch 004 remains in progress pending Phases 5–6.
+
+## Phase 4 — Export Studio and format pipeline
+
+- Added persistent Basic/Advanced Export Studio settings for WAV/MP3, sample rate, bit depth or bitrate, channel count, optional mastering, and integer-WAV dithering. Returning to Basic mode restores the recommended 24-bit/44.1 kHz stereo WAV or 320 kbps/44.1 kHz stereo MP3 defaults.
+- Renders the project once through the existing offline arrangement, effects, mixer, sidechain and mastering path. The resulting same master buffer feeds every encoder, so format conversion does not construct a second audio mix or apply mastering twice.
+- WAV output: mono/stereo 16-bit and 24-bit PCM or 32-bit IEEE float; 44.1, 48, 88.2 and 96 kHz. Optional TPDF dither is used only at integer PCM quantization. Float WAV remains unclipped and undithered.
+- MP3 output: mono/stereo CBR at 128, 192, 256 or 320 kbps and 44.1 or 48 kHz. The ES-module encoder is locally bundled from `@breezystack/lamejs` 1.2.7 as a separate LGPL-3.0 component with the upstream notice and license included; there is no runtime CDN or backend.
+- Both encoders and resampling run in a cancellable Worker with progress messages. WAV conversion uses a 32-tap Blackman-windowed sinc low-pass interpolator. Encoded WAV/MP3 output is inspected, decoded at the requested rate and re-analyzed for loudness, sample peak and estimated true peak before download.
+- Export estimates memory before rendering, warns above 192 MiB, blocks estimates above 768 MiB, and uses the existing 10-minute arrangement render limit. Worker-side resample/encode cancellation is verified. Browser `OfflineAudioContext` rendering itself cannot be interrupted; cancellation during that stage discards the completed render.
+
+### Phase 4 automated and browser verification
+
+- Portable Node.js 22.23.4 ran the current complete test suite: **109 passed, 0 failed**. Phase 4's historical boundary was 97/97. Changed JavaScript files pass `node --check`; final whitespace validation is recorded after documentation edits.
+- Deterministic export tests cover PCM/float WAV headers and sample conversion, optional dither, all four supported WAV sample rates, resampling response/DC preservation, MP3 frame rate/bitrate/channel inspection, settings and memory policy, render duration including sampler note tails, and Worker cancellation. Full regression suite retained earlier DAW, DSP and project-persistence tests.
+- Chromium UI exports succeeded for **16-bit/44.1 kHz WAV**, **dithered 24-bit/48 kHz WAV**, **32-bit float/96 kHz WAV**, and **320 kbps/48 kHz MP3**. Export settings survived reload. A Worker cancellation initiated from the encoding progress callback rejected with `AbortError`.
+- After the Basic-mode defaults were finalized, Chromium also completed a **320 kbps/44.1 kHz stereo MP3** export from the saved 34-second project. The encoded-file analysis reported **-17.7 LUFS**, **-8.8 dBFS sample peak**, and **-8.8 dBTP estimated**. Advanced bitrate/rate settings persisted through reload, and switching to Basic restored 320 kbps/44.1 kHz defaults.
+- A generated four-track arrangement included audio clips, Sampler, Drum Rack, track EQ/compression/delay, sidechain, multiband mastering, saturation, stereo width and limiter. The same 48 kHz stereo render was encoded to WAV and MP3, then decoded by Chromium at 48 kHz. WAV duration was **8.333 s**; MP3 duration was **8.376 s**. Integrated loudness was **-24.44 LUFS** and **-24.43 LUFS** respectively; estimated true peak was approximately **-5.80 dBTP**. These measurements validate this generated project and the format pipeline, not formal mastering compliance.
+- A separate muted ghost-trigger fixture measured bass transient RMS **25.64 dB lower** with sidechain active than inactive. This confirms the sidechain feeds the shared export renderer; it is a synthetic routing check, not an all-project parity claim.
+- Browser viewport emulation at **360, 390, 430, 768 and 1280 CSS px** found no horizontal overflow. Export mode/format selectors were 42 px high and the primary action was 44–46 px high. This is Chromium emulation, not physical-device verification.
+- MP3 frame padding is currently audible/visible as approximately **43–45 ms** of additional decoded duration (1 s fixture decoded to about 1.045 s). The tested LAMEJS output does not provide a recognized Xing/Info gapless trim header; gapless playback/export is not claimed. Phase 5 implements ID3v2.3 MP3 and RIFF LIST/INFO WAV metadata, artwork, and release archives.
 
 The export is verified for this project/fixture only; these results do not prove a universal ceiling or standards-compliant mastering.
+
+## Phase 5 — Portable projects and release delivery
+
+- Added schema-versioned `.EHS` ZIP-compatible archives with a project manifest, checksummed project data, deduplicated referenced audio, optional prepared/source artwork and custom mastering presets. When original audio bytes are unavailable, an existing decoded buffer is stored as float32 WAV.
+- Added preflight ZIP structure/path/count/size/compression-ratio checks, CRC-32 and SHA-256 verification, image-signature checks, project/asset relationship validation, schema migration and future-version rejection. Media decode and collision handling are staged before batched IndexedDB writes and project replacement.
+- Added release metadata validation and project persistence. MP3 export writes ID3v2.3 UTF-16LE text frames, Producer TXXX, comments and front-cover APIC; WAV export adds RIFF LIST/INFO metadata without changing PCM samples. Artwork crop/resize runs locally and preserves the imported source.
+- Release ZIP renders the arrangement once, then includes selected mastered WAV/MP3 outputs, release metadata/notes and optional cover art. Audio ZIP media is stored rather than compressed to avoid extreme ratios for silence and compressed source audio; Worker compression remains buffered.
+- `EHS_FORMAT_SPEC.md` records archive version 1, entry layout, SHA-256/CRC handling, legacy migration, security/memory limits, supported tags and limitations.
+
+### Phase 5 automated and browser verification
+
+- Portable Node.js 22.23.4 ran all test files: **109 passed, 0 failed**. New coverage includes Unicode ID3v2.3/APIC frames, WAV LIST/INFO sample preservation, archive asset deduplication and float-WAV fallback, CRC/SHA and tampering paths, schema migration, missing media, artwork validation, presets, traversal and ZIP-bomb ratio limits, and Release ZIP entries.
+- Chromium imported a versioned `.EHS` project with a generated sample, restored the sample name through IndexedDB and page reload, and successfully saved/reopened a `.EHS` containing project, sample, and artwork source/prepared media.
+- Release metadata rejected the invalid date `2025-02-29`; valid metadata persisted. A 32×24 PNG was locally cropped/resized to a 1,000×1,000 JPEG and appeared after reload.
+- Chromium produced a 291,082-byte Release ZIP with 5 expected entries. The WAV decoded as stereo 24-bit/44.1 kHz at 8.300 s and contained a RIFF LIST/INFO chunk. The ID3v2.3-tagged stereo MP3 decoded at 44.1 kHz at 8.333 s and included title/year/BPM/art frames. Cover art was present; there were no page errors during this package workflow.
+- At 360/390/430/768/1280 CSS px, fresh stylesheet-loaded Chromium emulation found no page-level horizontal overflow. The responsive header needed a small fix found by this check. Physical device tests are not claimed.
+- MP3/WAV release output was decoded by Chromium after metadata insertion; there is no independent cross-player metadata interoperability matrix. Browser ZIP creation is not streaming and large projects can require substantially more memory than their final archive size.
 
 ### Batch 004C Phase 2 DSP acceptance
 
@@ -97,18 +134,14 @@ These are emulated layout checks, not physical iOS/Android audio or touch tests.
 
 ## Known gaps / next development priorities
 
-- Live sidechain detector-level behavior still needs verification in an audio-capable browser/device; this browser automation environment returned zero from its live AnalyserNode control. The current 59-test Node suite passed locally.
-- Standards-based integrated, short-term, momentary LUFS, LRA, K-weighting, gating and true-peak oversampling/reference validation.
-- A real lookahead peak limiter with oversampled inter-sample ceiling verification and gain-reduction metering; current compressor stage does not guarantee its displayed ceiling.
-- Three-or-more-band dynamics with crossovers, per-band settings/solo and verified phase behavior.
-- Frequency-selective exciter, mono audition/correlation metering, spectrum analyzer and loudness-matched A/B.
-- User-controlled safe module reordering, with tests for order-dependent results.
-- WAV 24-bit/32-bit-float, selectable sample rates, dithering controls, progress reporting for long renders, and legally suitable MP3 encoding.
-- Mobile memory/performance benchmarks and additional browser-engine/physical-device testing.
+- Phase 6: end-to-end project-to-release acceptance, project close/reopen and missing-sample scenarios, broader browser compatibility, GitHub Pages subpath verification, and release sign-off.
+- Independent published EBU/ITU loudness/LRA/true-peak reference audio, formal true-peak certification, physical live-output/device testing, and long-duration mobile memory/performance remain release-validation tasks. The 4× true-peak measurement is an estimate, not certification.
+- Live sidechain signal level and real-time acoustic loopback were not measured in this browser automation route. The offline ghost-trigger fixture verifies signal routing but does not replace physical-device testing.
+- MP3 output is CBR and has about 43–45 ms frame delay/padding in Chromium decode; gapless metadata is not implemented. Offline render cannot be interrupted mid-render, and long-project mobile memory/time remain unmeasured.
 
 ## GitHub Pages and project compatibility
 
-The new files are static browser JavaScript and require no backend, cloud service, or new dependency. Paths remain relative. Existing projects without a `mastering` property receive defaults; no migration drops their legacy master settings. This local worktree was not pushed or deployed, so the changed code has not been verified on GitHub Pages.
+The application remains static and backend-free, and all application/vendor asset paths are relative for GitHub Pages. The MP3 encoder is vendored locally and loaded as a separate ES module with LGPL-3.0 attribution and license files; no runtime network fetch is required. Export settings persist through existing project metadata. This worktree was not pushed or deployed, so the changed code has not been verified on GitHub Pages.
 
 ## Files changed
 
@@ -121,6 +154,16 @@ The new files are static browser JavaScript and require no backend, cloud servic
 - `tests/mastering.test.js` (new)
 - `tests/sidechain.test.js` (new)
 - `tests/project-state.test.js`
+- `src/export-dsp.js` (new)
+- `src/export-worker.js` (new)
+- `src/export.js` (new)
+- `tests/export.test.js` (new)
+- `vendor/lamejs/` (bundled encoder, upstream notice and LGPL-3.0 text)
+- `vendor/fflate/` (ZIP module and MIT license)
+- `src/portable-project.js`, `src/archive-worker.js`, `src/release-metadata.js`
+- `tests/release-package.test.js`, `EHS_FORMAT_SPEC.md`, `src/style.css`
+- `package.json`, `package-lock.json`
 - `README.md`
 - `IDEA.md`
+- `BATCH_004C_REPORT.md`
 - `BATCH_004_REPORT.md` (new)

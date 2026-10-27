@@ -259,3 +259,62 @@
  .multiband-display span{font-size:10px}
  .master-chain-order li{align-items:flex-start}
 }
+.export-studio{max-width:1180px}
+.export-layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);gap:14px;align-items:start}
+.export-card{min-width:0;padding:16px;background:#1d2430;border:1px solid #384253;border-radius:10px}
+.export-card h3{margin:0 0 12px}
+.export-settings-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.export-settings-head h3{margin:0}
+.export-settings-head label,.export-controls>label{display:grid;gap:6px;color:#b5c0d0}
+.export-settings-head select,.export-controls select{width:100%;min-height:42px;background:#191e29;color:#e8ebf1;border:1px solid #343c4c;border-radius:5px;padding:8px}
+.export-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0}
+.export-controls>label{min-width:0}
+.export-controls .export-check{display:flex;align-items:center;gap:9px;min-height:42px}
+.export-check input{width:20px;height:20px;accent-color:#79d5c1}
+.export-summary{display:grid;grid-template-columns:minmax(115px,.65fr) minmax(0,1fr);gap:9px;padding:12px;background:#151b26;border-radius:7px}
+.export-summary span,.export-metrics article span{color:#92a0b2}
+.export-summary strong,.export-metrics article strong{min-width:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.export-actions{display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin-top:15px}
+.export-actions button{min-height:44px}
+.export-actions span{flex:1 1 200px;color:#9eabba}
+.export-progress{min-height:8px;margin-top:8px}
+.export-progress progress{width:100%;height:10px;accent-color:#79d5c1}
+.export-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.export-metrics article{display:grid;gap:5px;padding:11px;background:#151b26;border-radius:7px;min-width:0}
+.export-warning,.export-error{padding:11px;border-radius:7px;line-height:1.5}
+.export-warning{color:#ffe0a6;background:#4b3b1d;border:1px solid #94733b}
+.export-error{color:#ffd2d4;background:#4d2229;border:1px solid #a74853}
+.export-license a{color:#93e5d2}
+.export-studio progress[hidden]{display:none}
+@media(max-width:850px){.export-layout{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){
+ .export-studio{padding:12px}
+ .export-card{padding:12px}
+ .export-controls{grid-template-columns:minmax(0,1fr)}
+ .export-settings-head{align-items:stretch;flex-direction:column}
+ .export-settings-head label{grid-template-columns:auto minmax(0,1fr);align-items:center}
+ .export-summary{grid-template-columns:minmax(100px,.7fr) minmax(0,1fr)}
+ .export-actions{align-items:stretch}
+ .export-actions button{flex:1 1 100%;min-height:46px}
+ .export-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+.release-editor,.release-package-card{margin-top:16px;padding:16px;background:#1d2430;border:1px solid #384253;border-radius:10px}
+.release-editor>summary{cursor:pointer;font-size:16px;font-weight:700}
+.release-editor-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(230px,.7fr);gap:18px;margin-top:14px}
+.release-metadata-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.release-metadata-fields label,.artwork-controls label{display:grid;gap:6px;color:#b5c0d0;min-width:0}
+.release-metadata-fields input,.artwork-controls select{width:100%;min-height:40px}
+.release-comments{grid-column:1/-1}
+.release-artwork h3,.release-metadata h3,.release-package-card h3{margin:0 0 10px}
+.artwork-preview-wrap{position:relative;width:min(100%,300px);aspect-ratio:1;background:#121923;border:1px solid #394457;border-radius:8px;overflow:hidden;display:grid;place-items:center}
+.artwork-preview-image{width:100%;height:100%;object-fit:contain}
+.artwork-placeholder{color:#92a0b2;text-align:center;padding:20px}
+.artwork-controls{display:grid;gap:10px;margin-top:12px}
+.artwork-controls input[type=range]{min-height:34px}
+.artwork-controls span{color:#92a0b2;overflow-wrap:anywhere}
+.release-package-card{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.release-package-card>div{flex:1 1 260px}
+.release-package-card p{color:#99a7b9;margin:6px 0}
+.release-package-card>label{display:flex;align-items:center;gap:6px;min-height:42px}
+.release-package-card button{min-height:44px}
+@media(max-width:700px){.release-editor-grid{grid-template-columns:minmax(0,1fr)}.release-metadata-fields{grid-template-columns:minmax(0,1fr)}.release-comments{grid-column:auto}.release-package-card{align-items:stretch}.release-package-card button{flex:1 1 100%;min-height:46px}}

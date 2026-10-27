@@ -1,4 +1,4 @@
-import {AudioEngine,uid,encodeWav,toWav,download,processSample,drawWave,createTrackEffect,clipDurationSeconds} from './audio.js';
+import {AudioEngine,uid,encodeWav,toWav,download,processSample,drawWave,createTrackEffect,clipDurationSeconds,estimateProjectRender} from './audio.js';
 import {detectPitch,snapBeats} from './music.js';
 import {renderSamplerHTML,wireSamplerUI} from './sampler-ui.js';
 import {renderDrumRackHTML,wireDrumRackUI} from './drum-rack-ui.js';
@@ -9,12 +9,17 @@ import {createEmptyProject,deleteProjectTrack,DEFAULT_MASTER_SETTINGS,parseProje
 import {createEmptySampleSession,resolveRecordingChunks,shouldConfirmSampleDiscard} from './sample-lifecycle.js';
 import {DEFAULT_MASTERING_SETTINGS,MASTERING_PRESETS,analyzeMasterBufferAsync,masteringEqResponse,normalizeMasteringSettings} from './mastering.js';
 import {loudnessMatchGainDb,stereoMonitorMatrix} from './mastering-dsp.js';
-const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null;
+import {encodeExport,exportMemoryWarning,estimateExportMemory,normalizeExportSettings} from './export.js';
+import {EXPORT_BITRATES,EXPORT_SAMPLE_RATES} from './export-dsp.js';
+import {createPortableProjectArchive,getProjectAssetIds,openPortableProjectArchive,createReleaseZip} from './portable-project.js';
+import {addId3v23Metadata,addWavInfoMetadata,normalizeReleaseMetadata,validateReleaseMetadata} from './release-metadata.js';
+const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={id:uid(),schemaVersion:1,name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,releaseMetadata:{},exportSettings:normalizeExportSettings(),tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null,exportController=null,exportRun=null,releaseZipController=null,releaseArtworkBlob=null,releaseArtworkSourceBlob=null,releaseArtworkUrl=null;
 const dbp=new Promise((resolve,reject)=>{const r=indexedDB.open('pulse-studio-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('assets');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
 async function dbSet(k,v){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets','readwrite');t.objectStore('assets').put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}async function dbGet(k){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets');const r=t.objectStore('assets').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+async function dbSetMany(entries){const db=await dbp;return new Promise((resolve,reject)=>{const tx=db.transaction('assets','readwrite'),store=tx.objectStore('assets');for(const[key,value]of entries)value===null?store.delete(key):store.put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Asset cache transaction was aborted.'))})}
 function notify(s){$('#toast').textContent=s;$('#toast').classList.add('show');setTimeout(()=>$('#toast')?.classList.remove('show'),3500)}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function save(markDirty=true){project.masterSettings={...engine.masterSettings};project.mastering=normalizeMasteringSettings(engine.masteringSettings);localStorage.setItem('pulse-project',serializeProject(project));if(markDirty)projectDirty=true;const state=$('#projectSaveState');if(state)state.textContent=projectDirty?'Unsaved changes':'Saved locally'}
+function save(markDirty=true){project.id ||= uid();project.schemaVersion=1;project.modifiedAt=new Date().toISOString();project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.masterSettings={...engine.masterSettings};project.mastering=normalizeMasteringSettings(engine.masteringSettings);localStorage.setItem('pulse-project',serializeProject(project));if(markDirty)projectDirty=true;const state=$('#projectSaveState');if(state)state.textContent=projectDirty?'Unsaved changes':'Saved locally'}
 function barSeconds(){return 240/project.bpm}
 function beatsWidth(){return 156*zoom}
 function timelineScale(){return new TimelineScale(project.bpm,beatsWidth()/4)}
@@ -22,9 +27,89 @@ function timelineBeatsAtClientX(clientX){return timelineBeatsAtScale(clientX,$('
 function timelineTimeAtClientX(clientX,grid=0){return Math.max(0,snapBeats(timelineBeatsAtClientX(clientX),grid)*60/project.bpm)}
 function clipWidth(c){return Math.max(22,timelineScale().timeToPixels(clipDurationSeconds(c)))}
 function setArrangementZoom(value,anchorClientX){const arrangement=$('.arrangement'),ruler=$('#ruler');if(!arrangement||!ruler){zoom=value;render();return}const anchor=anchorClientX??arrangement.getBoundingClientRect().left+arrangement.clientWidth/2,anchorTime=Math.max(0,timelineScale().pixelsToTime(timelinePixelsAtClientX(anchor,ruler,arrangement)));zoom=Math.max(.4,Math.min(4,value));render();const nextArrangement=$('.arrangement'),nextRuler=$('#ruler');if(nextArrangement&&nextRuler){const timelineScreenX=anchor-nextRuler.getBoundingClientRect().left;nextArrangement.scrollLeft=Math.max(0,timelineScale().timeToPixels(anchorTime)-timelineScreenX)}}
-function shell(){app.innerHTML=`<header><div class="brand"><span class="logo">◉</span><b>EggHeadStudio</b><span>DAW</span></div><input id="projectName" value="${esc(project.name)}" aria-label="Project name"><div class="transport"><button id="toStart" title="Back to start" aria-label="Back to start">⏮</button><button id="play" class="primary" title="Play Arrangement" aria-label="Play Arrangement">▶</button><button id="stop" title="Stop Playback" aria-label="Stop Playback">■</button><span class="clock" id="clock">1.1.1</span><label>BPM <input id="bpm" type="number" min="40" max="240" value="${project.bpm}" aria-label="Project tempo in BPM"></label><button id="loop" class="${project.loop?'active':''}" aria-label="Toggle arrangement loop">↻ Loop</button></div><div class="actions"><button id="newProject" title="Create an Empty Project" aria-label="New Project">New Project</button><button id="saveProject" title="Save project as JSON">Save</button><button id="openProject" title="Open a project JSON file">Open</button><button id="exportMix" title="Export arrangement to WAV">Export WAV</button><span id="projectSaveState" role="status">${projectDirty?'Unsaved changes':'Saved locally'}</span></div></header><nav><button data-view="arrange" class="selected">▥ Arrangement</button><button data-view="sample">◉ Sample Studio</button><button data-view="master">▤ Mastering</button><span class="grow"></span><span id="status">Local-first · Browser audio</span></nav><main id="main"></main><footer><span>EggHeadStudio DAW • Prototype v0.1</span><span id="footerInfo">Ready</span></footer><div id="toast" role="status"></div><input id="importProject" type="file" accept="application/json,.json" hidden><input id="importFiles" type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a" multiple hidden><input id="importFolder" type="file" webkitdirectory directory multiple hidden><dialog id="newProjectDialog" class="new-project-dialog" aria-labelledby="newProjectTitle"><h2 id="newProjectTitle">Start a New Project?</h2><p id="newProjectMessage">Your project has unsaved changes. Save a JSON copy before creating an empty project, discard changes, or cancel.</p><div class="new-project-actions"><button id="saveAndNew">Save Current Project</button><button id="discardAndNew" class="accent">Discard Changes</button><button id="cancelNewProject">Cancel</button></div></dialog>`;wireShell();render()}
+function shell(){app.innerHTML=`<header><div class="brand"><span class="logo">◉</span><b>EggHeadStudio</b><span>DAW</span></div><input id="projectName" value="${esc(project.name)}" aria-label="Project name"><div class="transport"><button id="toStart" title="Back to start" aria-label="Back to start">⏮</button><button id="play" class="primary" title="Play Arrangement" aria-label="Play Arrangement">▶</button><button id="stop" title="Stop Playback" aria-label="Stop Playback">■</button><span class="clock" id="clock">1.1.1</span><label>BPM <input id="bpm" type="number" min="40" max="240" value="${project.bpm}" aria-label="Project tempo in BPM"></label><button id="loop" class="${project.loop?'active':''}" aria-label="Toggle arrangement loop">↻ Loop</button></div><div class="actions"><button id="newProject" title="Create an Empty Project" aria-label="New Project">New Project</button><button id="saveProject" title="Save project metadata locally">Save Locally</button><button id="saveEhs" title="Download the complete portable .ehs project">Save .EHS</button><button id="openProject" title="Open a legacy JSON project">Open JSON</button><button id="openEhs" title="Open a portable .ehs project">Open .EHS</button><button id="exportMix" title="Open Export Studio">Export Audio</button><span id="projectSaveState" role="status">${projectDirty?'Unsaved changes':'Saved locally'}</span></div></header><nav><button data-view="arrange" class="selected">▥ Arrangement</button><button data-view="sample">◉ Sample Studio</button><button data-view="master">▤ Mastering</button><button data-view="export">⇩ Export Studio</button><span class="grow"></span><span id="status">Local-first · Browser audio</span></nav><main id="main"></main><footer><span>EggHeadStudio DAW • Prototype v0.1</span><span id="footerInfo">Ready</span></footer><div id="toast" role="status"></div><input id="importProject" type="file" accept="application/json,.json" hidden><input id="importEhs" type="file" accept=".ehs,application/vnd.eggheadstudio.project+zip,application/zip" hidden><input id="artworkFile" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" hidden><input id="importFiles" type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a" multiple hidden><input id="importFolder" type="file" webkitdirectory directory multiple hidden><dialog id="newProjectDialog" class="new-project-dialog" aria-labelledby="newProjectTitle"><h2 id="newProjectTitle">Start a New Project?</h2><p id="newProjectMessage">Your project has unsaved changes. Save a JSON copy before creating an empty project, discard changes, or cancel.</p><div class="new-project-actions"><button id="saveAndNew">Save Current Project</button><button id="discardAndNew" class="accent">Discard Changes</button><button id="cancelNewProject">Cancel</button></div></dialog>`;wireShell();render()}
 document.addEventListener('change',event=>{if(event.target?.id==='snapGrid'){snapGrid=+event.target.value;$$('.lane').forEach(lane=>lane.style.backgroundSize=`${beatsWidth()*(snapGrid||.0625)/4}px 100%`)}});
 function saveProjectFile(serialized=serializeProject(project),name=project.name){download(new Blob([serialized],{type:'application/json'}),`${name.replace(/[^\w-]/g,'_')||'Untitled_Project'}.json`);projectDirty=false;const state=$('#projectSaveState');if(state)state.textContent='Saved locally'}
+function archiveStatus(message){const footer=$('#footerInfo');if(footer)footer.textContent=message}
+function artworkKeys(forProject=project){const id=String(forProject.id||'project');return{current:forProject.releaseArtwork?.key||`${id}:artwork`,source:forProject.releaseArtwork?.sourceKey||`${id}:artwork-source`}}
+function audioBlobName(blob,name){if(!blob||!name||blob.name===name)return blob;if(typeof File==='function')return new File([blob],name,{type:blob.type||'application/octet-stream'});Object.defineProperty(blob,'name',{value:name,configurable:true});return blob}
+async function savePortableProject(){
+ if(releaseZipController)return;
+ save(false);const ids=getProjectAssetIds(project),assetFiles=new Map();
+ try{
+  for(const id of ids){const blob=await dbGet(id);if(blob)assetFiles.set(id,blob)}
+  const keys=artworkKeys(),artworkFile=await dbGet(keys.current),artworkSourceFile=await dbGet(keys.source);
+  const customPresets={};
+  if(project.mastering?.preset){try{const presets=JSON.parse(localStorage.getItem('pulse-master-presets')||'{}');if(presets[project.mastering.preset])customPresets[project.mastering.preset]=presets[project.mastering.preset]}catch(error){throw new Error(`Could not read the active mastering preset: ${error.message}`)}}
+  const estimatedBytes=[...assetFiles.values()].reduce((sum,file)=>sum+(file.size||0),0)+(artworkFile?.size||0)+(artworkSourceFile?.size||0);
+  if(estimatedBytes>192*1024*1024&&!window.confirm(`The portable archive will include about ${Math.ceil(estimatedBytes/1024/1024)} MiB of source audio/artwork in memory. Continue?`))return;
+  archiveStatus('Packaging portable project…');
+  const archive=await createPortableProjectArchive(project,{assetFiles,audioBuffers:buffers,artworkFile,artworkSourceFile,presets:customPresets,onProgress:status=>archiveStatus(status.message)});
+  const filename=`${project.name.replace(/[^\w-]/g,'_')||'Untitled_Project'}.ehs`;
+  download(archive,filename);projectDirty=false;
+  const state=$('#projectSaveState');if(state)state.textContent='Portable project exported';
+  archiveStatus('Ready');notify(`Portable project saved · ${filename} · ${(archive.size/1024/1024).toFixed(1)} MiB.`);
+ }catch(error){archiveStatus('Ready');notify(`Portable project export failed: ${error.message}`)}
+}
+async function importPortableProject(file){
+ if(projectDirty&&!window.confirm('The current project has unsaved changes. Opening this portable project replaces the active arrangement. Continue?'))return;
+ archiveStatus('Validating portable project…');
+ try{
+  const archive=await openPortableProjectArchive(file,{onProgress:status=>archiveStatus(status.message)}),stagedBuffers=new Map(),stagedAssets=new Map(),writes=[],idRemap=new Map(),ctx=await engine.init();
+  for(const[id,blob]of archive.assetFiles){
+   const bytes=await blob.arrayBuffer();let finalId=id,existing=await dbGet(id);
+   if(existing){
+    const newBytes=new Uint8Array(bytes),record=archive.assetMetadata.get(id);
+    const oldBytes=existing.size===newBytes.byteLength?new Uint8Array(await existing.arrayBuffer()):null;
+    const oldDigest=oldBytes?new Uint8Array(await crypto.subtle.digest('SHA-256',oldBytes)):null;
+    const oldHex=oldDigest?[...oldDigest].map(value=>value.toString(16).padStart(2,'0')).join(''):'';
+    const same=oldHex===record?.sha256;
+    if(!same)finalId=uid();
+   }
+   idRemap.set(id,finalId);
+   const buffer=await ctx.decodeAudioData(bytes.slice(0));
+   stagedBuffers.set(finalId,buffer);
+   const record=archive.assetMetadata.get(id),assetBlob=audioBlobName(blob,record?.name||`${id}.audio`);
+   stagedAssets.set(finalId,{id:finalId,name:record?.name||assetBlob.name||'Sample',path:record?.name||assetBlob.name||'Sample',size:blob.size,duration:buffer.duration});
+   writes.push([finalId,assetBlob]);
+  }
+  for(const track of archive.project.tracks){
+   for(const clip of track.clips||[]){
+    const buffer=stagedBuffers.get(idRemap.get(String(clip.asset))||String(clip.asset));
+    if(!buffer||clip.end>buffer.duration+1/buffer.sampleRate)throw new Error(`Clip "${clip.id||clip.asset}" extends beyond its packaged audio.`);
+   }
+   if(track.sampler?.asset){
+    const buffer=stagedBuffers.get(idRemap.get(String(track.sampler.asset))||String(track.sampler.asset));
+    const start=Number.isFinite(track.sampler.start)?track.sampler.start:0,end=Number.isFinite(track.sampler.end)?track.sampler.end:buffer?.duration;
+    if(!buffer||start<0||end>buffer.duration+1/buffer.sampleRate||start>=end)throw new Error(`Sampler track "${track.name||track.id}" has an invalid sample range.`);
+   }
+  }
+  const restored={...archive.project,tracks:archive.project.tracks.map(track=>({...track,clips:(track.clips||[]).map(clip=>({...clip,asset:clip.asset?idRemap.get(String(clip.asset))||clip.asset:clip.asset})),sampler:track.sampler?{...track.sampler,asset:track.sampler.asset?idRemap.get(String(track.sampler.asset))||track.sampler.asset:track.sampler.asset}:track.sampler,drumRack:track.drumRack?{...track.drumRack,pads:(track.drumRack.pads||[]).map(pad=>({...pad,asset:pad.asset?idRemap.get(String(pad.asset))||pad.asset:pad.asset}))}:track.drumRack}))};
+  restored.schemaVersion=1;restored.id ||= uid();restored.releaseMetadata=normalizeReleaseMetadata(restored.releaseMetadata,restored);
+  const artKeys={current:`${restored.id}:artwork`,source:`${restored.id}:artwork-source`};
+  if(archive.artworkFile)restored.releaseArtwork={...(restored.releaseArtwork||{}),key:artKeys.current,sourceKey:artKeys.source};
+  writes.push([artKeys.current,archive.artworkFile],[artKeys.source,archive.artworkSourceFile]);
+  let portablePresets={};
+  if(archive.presetFiles.size){
+   try{portablePresets=JSON.parse(localStorage.getItem('pulse-master-presets')||'{}')}catch(error){throw new Error(`Could not merge custom mastering presets: ${error.message}`)}
+   for(const[name,value]of archive.presetFiles){
+    let target=name,index=2;
+    while(portablePresets[target]&&JSON.stringify(portablePresets[target])!==JSON.stringify(value))target=`${name} (portable ${index++})`;
+    portablePresets[target]=value;
+    if(restored.mastering?.preset===name)restored.mastering.preset=target;
+   }
+  }
+  await dbSetMany(writes);
+  if(archive.presetFiles.size)try{localStorage.setItem('pulse-master-presets',JSON.stringify(portablePresets))}catch(error){notify(`Project opened, but custom presets could not be saved locally: ${error.message}`)}
+  engine.stop(true);engine.setMaster({...DEFAULT_MASTER_SETTINGS,...restored.masterSettings});engine.setMastering(restored.mastering||DEFAULT_MASTERING_SETTINGS);
+  project=restored;normalizeProject();for(const[id,buffer]of stagedBuffers)buffers.set(id,buffer);for(const[id,asset]of stagedAssets)assets.set(id,asset);
+  releaseArtworkBlob=archive.artworkFile;releaseArtworkSourceBlob=archive.artworkSourceFile;
+  if(releaseArtworkUrl)URL.revokeObjectURL(releaseArtworkUrl);releaseArtworkUrl=releaseArtworkBlob?URL.createObjectURL(releaseArtworkBlob):null;
+  projectDirty=false;selectedTrack=0;selectedClip=null;playhead=0;masteringPreview=null;view='arrange';save(false);shell();
+  notify(`Portable project opened · ${archive.assetFiles.size} audio assets verified and restored.`);
+ }catch(error){notify(`Could not open portable project: ${error.message}`)}
+ finally{archiveStatus('Ready')}
+}
 function resetTemporarySample(){recordingToken++;stopSampleStudioPreview();if(recorder?.state==='recording')cancelSampleRecording(true,false);sampleEditor=null;recordBuffer=null;recordBlob=null;savedSampleId=null;sampleFilename=createEmptySampleSession().filename}
 function applyNewProject(choice){
  const plan=planProjectReset(project,choice);
@@ -58,9 +143,12 @@ function wireShell(){
  $('#stop').onclick=()=>{engine.stop(true);playhead=0;$('#play').textContent='▶';tick(0)};
  $('#toStart').onclick=()=>{engine.stop(true);playhead=0;tick(0);$('#play').textContent='▶'};
  $('#saveProject').onclick=()=>saveProjectFile();
+ $('#saveEhs').onclick=savePortableProject;
+ $('#openEhs').onclick=()=>$('#importEhs').click();
+ $('#importEhs').onchange=async event=>{const file=event.target.files?.[0];if(file)await importPortableProject(file);event.target.value=''};
  $('#openProject').onclick=()=>$('#importProject').click();
- $('#importProject').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const p=parseProject(await file.text());engine.stop();project=p;normalizeProject();engine.setMaster({...DEFAULT_MASTER_SETTINGS,...p.masterSettings});engine.setMastering(p.mastering||DEFAULT_MASTERING_SETTINGS);await restoreAssets();save(false);projectDirty=false;shell();notify('Project loaded; missing samples can be reimported.')}catch(err){notify(err.message)}finally{e.target.value=''}};
- $('#exportMix').onclick=exportMix;
+ $('#importProject').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;if(projectDirty&&!window.confirm('The current project has unsaved changes. Open this JSON project anyway?')){e.target.value='';return}try{const p=parseProject(await file.text());engine.stop();project=p;normalizeProject();engine.setMaster({...DEFAULT_MASTER_SETTINGS,...p.masterSettings});engine.setMastering(p.mastering||DEFAULT_MASTERING_SETTINGS);await restoreAssets();save(false);projectDirty=false;shell();notify('JSON project loaded; samples not present in the local library may need relinking.')}catch(err){notify(err.message)}finally{e.target.value=''}};
+ $('#exportMix').onclick=()=>openExportStudio();
  $$('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;render()});
  $('#importFiles').onchange=e=>importFiles([...e.target.files]);
  $('#importFolder').onchange=e=>importFiles([...e.target.files]);
@@ -72,7 +160,7 @@ const $$=s=>[...document.querySelectorAll(s)];
 async function addAsset(file){const id=uid(),ctx=await engine.init(),buffer=await ctx.decodeAudioData(await file.arrayBuffer());assets.set(id,{id,name:file.name,path:file.webkitRelativePath||file.name,size:file.size,duration:buffer.duration});buffers.set(id,buffer);await dbSet(id,file);return id}
 async function importFiles(files){let ok=0;for(const f of files){if(!/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(f.name)&&!f.type.startsWith('audio/'))continue;try{await addAsset(f);ok++}catch(e){console.warn(f.name,e)}}render();notify(`Imported ${ok} audio files. Files cached locally.`)}
 async function restoreAssets(){const ids=new Set(project.tracks.flatMap(t=>[...t.clips.map(c=>c.asset),t.sampler?.asset,...(t.drumRack?.pads||[]).map(p=>p.asset)].filter(Boolean)));for(const id of ids){if(buffers.has(id))continue;const f=await dbGet(id);if(f){try{const b=await(await engine.init()).decodeAudioData(await f.arrayBuffer());buffers.set(id,b);assets.set(id,{id,name:f.name||'Sample',duration:b.duration,path:f.name})}catch{}}}}
-function normalizeProject(){project.bpm=Math.max(40,Math.min(240,Number(project.bpm)||120));project.patternBeats=64;for(const track of project.tracks){track.clips ||= [];track.pattern ||= {notes:[]};track.pattern.notes ||= [];if(!track.drumRack)continue;track.drumRack.steps=[16,32,64].includes(track.drumRack.steps)?track.drumRack.steps:16;track.drumRack.pads=(track.drumRack.pads||[]).slice(0,16);while(track.drumRack.pads.length<16){const index=track.drumRack.pads.length;track.drumRack.pads.push({name:`Pad ${index+1}`,note:36+index,asset:null,volume:1,pitch:0,pan:0,mute:false})}for(const [index,pad] of track.drumRack.pads.entries()){pad.name ||= `Pad ${index+1}`;pad.note=Number.isInteger(pad.note)?pad.note:36+index;pad.volume=Number.isFinite(pad.volume)?pad.volume:1;pad.pitch=Number.isFinite(pad.pitch)?pad.pitch:0;pad.pan=Number.isFinite(pad.pan)?pad.pan:0;pad.mute=Boolean(pad.mute)}}}
+function normalizeProject(){project.id ||= uid();project.schemaVersion=1;project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.bpm=Math.max(40,Math.min(240,Number(project.bpm)||120));project.patternBeats=64;project.exportSettings=normalizeExportSettings(project.exportSettings);for(const track of project.tracks){track.clips ||= [];track.pattern ||= {notes:[]};track.pattern.notes ||= [];if(!track.drumRack)continue;track.drumRack.steps=[16,32,64].includes(track.drumRack.steps)?track.drumRack.steps:16;track.drumRack.pads=(track.drumRack.pads||[]).slice(0,16);while(track.drumRack.pads.length<16){const index=track.drumRack.pads.length;track.drumRack.pads.push({name:`Pad ${index+1}`,note:36+index,asset:null,volume:1,pitch:0,pan:0,mute:false})}for(const [index,pad] of track.drumRack.pads.entries()){pad.name ||= `Pad ${index+1}`;pad.note=Number.isInteger(pad.note)?pad.note:36+index;pad.volume=Number.isFinite(pad.volume)?pad.volume:1;pad.pitch=Number.isFinite(pad.pitch)?pad.pitch:0;pad.pan=Number.isFinite(pad.pan)?pad.pan:0;pad.mute=Boolean(pad.mute)}}}
 function checkpointArrangement(){arrangementHistory.checkpoint(project.tracks)}
 function commitArrangement(){save();render()}
 function splitSelectedClip(){if(!selectedClip)return notify('Select a clip to split.');const track=project.tracks.find(item=>item.clips.some(clip=>clip.id===selectedClip)),clip=track?.clips.find(item=>item.id===selectedClip);if(!clip)return;const start=clip.bar*barSeconds(),end=start+clipDurationSeconds(clip);if(playhead<=start||playhead>=end)return notify('Move the playhead inside the selected clip to split it.');checkpointArrangement();const right=splitClipAtTime(project.tracks,track.id,selectedClip,playhead,project.bpm,uid);if(!right)return notify('Could not split the selected clip.');selectedClip=right.id;commitArrangement()}
@@ -132,7 +220,7 @@ function createDrumRack(assetId=null){const pads=Array.from({length:16},(_,index
 function renderKeys(){const track=project.tracks[selectedTrack];if(!track?.sampler&&!track?.drumRack){$('#main').innerHTML='<section class="studio"><h2>Sampler / Piano Roll</h2><p>Select or create an instrument track from Arrangement.</p><button id="backArrange">Back to Arrangement</button></section>';$('#backArrange').onclick=()=>{view='arrange';render()};return}$('#main').innerHTML=renderSamplerHTML(track,assets,buffers,snapGrid);wireSamplerUI($('#main'),{track,tracks:project.tracks,buffers,engine,save,notify,grid:snapGrid,setGrid:value=>{snapGrid=value;renderKeys()},playhead:()=>engine.position(),secondsPerBeat:60/project.bpm,back:()=>{view='arrange';render()}})}
 function renderRack(){const track=project.tracks[selectedTrack];if(!track?.drumRack){view='arrange';render();return}$('#main').innerHTML=renderDrumRackHTML(track,assets);wireDrumRackUI($('#main'),{track,assets,buffers,engine,tracks:project.tracks,save,notify,back:()=>{view='arrange';render()},openPiano:()=>{view='keys';render()},refresh:renderRack})}
 function renderSamplerBlocks(){project.tracks.forEach((track,index)=>{if(!track.sampler&&!track.drumRack)return;const lane=$(`.lane[data-lane="${index}"]`);if(!lane)return;const block=document.createElement('button');block.className=`sampler-block ${track.drumRack?'rack-block':''}`;block.style.left='0';const rackBeats=Math.min(64,Math.max(4,Math.ceil(Math.max(0,...(track.pattern?.notes||[]).map(note=>(note.beat||0)+(note.durationBeats||0)))/4)*4));block.style.width=`${beatsWidth()*(track.drumRack?rackBeats/4:16)}px`;block.textContent=`${track.drumRack?'Drum Rack':'Sampler pattern'} · ${track.pattern?.notes?.length||0} notes`;block.title='Open this instrument pattern';block.onclick=event=>{event.stopPropagation();selectedTrack=index;view=track.drumRack?'rack':'keys';render()};lane.append(block)})}
-function render(){ $$('[data-view]').forEach(b=>b.classList.toggle('selected',b.dataset.view===view));if(view==='arrange'){renderArrange();$$('.lane').forEach(lane=>lane.style.backgroundSize=`${beatsWidth()*(snapGrid||.0625)/4}px 100%`);renderSamplerBlocks();addArrangementControls()}if(view==='sample')renderSampleBatch003();if(view==='master')renderMaster();if(view==='keys')renderKeys();if(view==='rack')renderRack()}
+function render(){ $$('[data-view]').forEach(b=>b.classList.toggle('selected',b.dataset.view===view));if(view==='arrange'){renderArrange();$$('.lane').forEach(lane=>lane.style.backgroundSize=`${beatsWidth()*(snapGrid||.0625)/4}px 100%`);renderSamplerBlocks();addArrangementControls()}if(view==='sample')renderSampleBatch003();if(view==='master')renderMaster();if(view==='export')renderExport();if(view==='keys')renderKeys();if(view==='rack')renderRack()}
 function eqResponsePath(bands,sampleRate=48000,lowCut=20,highCut=20000){
  const width=420,height=120,minDb=-24,maxDb=24,points=[];
  const filterResponse=(type,frequency,cutoff)=>{
@@ -476,6 +564,189 @@ function masterMultibandHtml(settings){
  const labels=[`Low · 20–${Math.round(low)} Hz`,`Mid · ${Math.round(low)}–${Math.round(high)} Hz`,`High · ${Math.round(high)}–20 kHz`];
  return`<section class="master-module master-multiband"><header><label><input id="masterMultibandEnabled" type="checkbox" ${settings.multiband.enabled?'checked':''}> 3-band compressor · Linkwitz–Riley 4th-order crossovers</label><span>GR: <output id="masterMultibandGR">0.0 / 0.0 / 0.0 dB</output></span></header><div class="multiband-display" role="img" aria-label="Low, mid, and high frequency bands separated by adjustable crossover frequencies"><span style="width:${lowPosition}%">Low</span><span style="width:${highPosition-lowPosition}%">Mid</span><span style="width:${100-highPosition}%">High</span></div><div class="master-filter-controls"><label>Low / mid crossover <input type="range" min="40" max="2000" step="1" value="${low}" data-master-param="multiband.crossovers.0"><output>${Math.round(low)} Hz</output></label><label>Mid / high crossover <input type="range" min="200" max="16000" step="1" value="${high}" data-master-param="multiband.crossovers.1"><output>${Math.round(high)} Hz</output></label></div><div class="multiband-band-grid">${settings.multiband.bands.map((band,index)=>`<fieldset class="multiband-band"><legend>${labels[index]}</legend><label><input type="checkbox" data-multiband-enabled="${index}" ${band.enabled?'checked':''}> Dynamics on</label><label><input type="checkbox" data-multiband-solo="${index}" ${band.solo?'checked':''}> Solo band</label>${[['threshold','Threshold','-60','0','.1',' dB'],['ratio','Ratio','1','20','.1',':1'],['attack','Attack','1','1000','1',' ms'],['release','Release','10','2000','1',' ms'],['knee','Knee','0','24','.1',' dB'],['makeup','Makeup','-24','24','.1',' dB'],['outputGain','Output gain','-24','24','.1',' dB']].map(([key,title,min,max,step,suffix])=>`<label>${title}<input type="range" min="${min}" max="${max}" step="${step}" value="${key==='attack'?band.attack*1000:key==='release'?band.release*1000:band[key]}" data-master-param="multiband.bands.${index}.${key}"><output>${key==='attack'?Math.round(band.attack*1000):key==='release'?Math.round(band.release*1000):key==='ratio'?band[key].toFixed(1):band[key].toFixed(1)}${suffix}</output></label>`).join('')}<progress max="24" value="0" data-multiband-meter="${index}" aria-label="${labels[index]} gain reduction"></progress><output data-multiband-readout="${index}">0.0 dB gain reduction</output></fieldset>`).join('')}</div><p class="hint">Per-band dynamics bypass leaves its frequency band intact; Solo auditions selected band(s). Crossovers use cascaded 2nd-order Butterworth sections (Linkwitz–Riley 4th-order) and reconstruct with summed bands.</p></section>`;
 }
+function formatExportDuration(seconds){
+ const total=Math.max(0,Math.round(seconds)),minutes=Math.floor(total/60),remaining=total%60;
+ return`${minutes}:${String(remaining).padStart(2,'0')}`;
+}
+function renderReleaseEditor(){
+ const metadata=normalizeReleaseMetadata(project.releaseMetadata,project),artwork=project.releaseArtwork||{},fields=[
+  ['title','Track title',200],['artist','Artist',200],['albumArtist','Album artist',200],['album','Album',200],['genre','Genre',80],
+  ['releaseDate','Release date',10],['trackNumber','Track number',16],['discNumber','Disc number',16],['composer','Composer',200],
+  ['producer','Producer',200],['copyright','Copyright',200],['comments','Comments',2000],['isrc','ISRC',12],['bpm','BPM',12],['musicalKey','Musical key',12]
+ ];
+ return`<details class="release-editor" open><summary>Release metadata & artwork</summary><div class="release-editor-grid"><section class="release-metadata"><h3>Track metadata</h3><div class="release-metadata-fields">${fields.map(([key,label,limit])=>`<label class="${key==='comments'?'release-comments':''}">${label}<input data-release-field="${key}" type="${key==='bpm'?'number':'text'}" value="${esc(metadata[key])}" maxlength="${limit}" ${key==='bpm'?'min="1" max="999" step="0.1"':''}></label>`).join('')}</div><p id="releaseValidation" class="hint" role="status">Metadata is stored with this project and embedded in supported audio formats.</p></section><section class="release-artwork"><h3>Album artwork</h3><div class="artwork-preview-wrap">${releaseArtworkUrl?`<img class="artwork-preview-image" src="${releaseArtworkUrl}" alt="Prepared square album cover" style="object-position:${Number(artwork.cropX??50)}% ${Number(artwork.cropY??50)}%;transform:scale(${Number(artwork.zoom??1)})">`:'<div class="artwork-placeholder">No artwork selected</div>'}</div><div class="artwork-controls"><button id="chooseArtwork" type="button">Import JPEG/PNG</button><label>Horizontal crop <input id="artCropX" type="range" min="0" max="100" value="${Number(artwork.cropX??50)}" ${releaseArtworkSourceBlob?'':'disabled'}></label><label>Vertical crop <input id="artCropY" type="range" min="0" max="100" value="${Number(artwork.cropY??50)}" ${releaseArtworkSourceBlob?'':'disabled'}></label><label>Zoom <input id="artZoom" type="range" min="1" max="3" step=".01" value="${Number(artwork.zoom??1)}" ${releaseArtworkSourceBlob?'':'disabled'}></label><label>Resolution <select id="artResolution"><option value="1000" ${Number(artwork.resolution||3000)===1000?'selected':''}>1000 px</option><option value="1500" ${Number(artwork.resolution||3000)===1500?'selected':''}>1500 px</option><option value="3000" ${Number(artwork.resolution||3000)===3000?'selected':''}>3000 px</option></select></label><label>Embedded format <select id="artFormat"><option value="image/jpeg" ${artwork.mime!=='image/png'?'selected':''}>JPEG</option><option value="image/png" ${artwork.mime==='image/png'?'selected':''}>PNG</option></select></label><span>${artwork.name?`${esc(artwork.name)} · ${artwork.width||'—'} × ${artwork.height||'—'} px source`:'Original image is retained for recropping.'}</span></div></section></div><p id="artworkStatus" class="hint" role="status"></p></details><section class="release-package-card"><div><h3>Release package ZIP</h3><p>Package mastered deliverables and matching metadata/artwork; this is separate from the editable .EHS project.</p></div><label><input type="checkbox" data-release-audio="wav" checked> WAV</label><label><input type="checkbox" data-release-audio="mp3" checked> MP3</label><button id="releaseZipStart" class="accent">Export Release Package</button><button id="releaseZipCancel" hidden>Cancel package</button></section>`;
+}
+function renderExport(){
+ const settings=normalizeExportSettings(project.exportSettings),duration=estimateProjectRender(project,buffers).durationSeconds;
+ const memory=estimateExportMemory(duration,settings),warning=exportMemoryWarning(memory),busy=Boolean(exportController||releaseZipController);
+ const rateOptions=EXPORT_SAMPLE_RATES[settings.format].map(rate=>`<option value="${rate}" ${rate===settings.sampleRate?'selected':''}>${(rate/1000).toFixed(rate%1000?1:0)} kHz</option>`).join('');
+ const metric=exportRun?.analysis,info=exportRun?.info;
+ const results=metric?`<div class="export-metrics"><article><span>Duration</span><strong>${formatExportDuration(exportRun.duration)}</strong></article><article><span>Sample rate</span><strong>${(info.sampleRate/1000).toFixed(1)} kHz</strong></article><article><span>${info.bitDepth?`Bit depth · ${info.format==='float'?'float':'PCM'}`:'MP3 bitrate'}</span><strong>${info.bitDepth?`${info.bitDepth}-bit`:info.bitrates.join(' / ')+' kbps'}</strong></article><article><span>Channels</span><strong>${info.channels===2?'Stereo':'Mono'}</strong></article><article><span>Integrated loudness</span><strong>${Number.isFinite(metric.integratedLufs)?`${metric.integratedLufs.toFixed(1)} LUFS`:'−∞ LUFS'}</strong></article><article><span>True peak · estimated</span><strong>${metric.truePeakDbtp.toFixed(1)} dBTP est.</strong></article><article><span>Sample peak</span><strong>${metric.samplePeakDbfs.toFixed(1)} dBFS</strong></article>${metric.clipping?'<p class="export-warning">Clipping detected in the decoded export. Lower the mix or adjust mastering before release.</p>':''}${exportRun.durationDifference>.12?'<p class="export-warning">Encoded duration differs from the rendered duration by more than 120 ms. Check player gapless-padding support and the export settings.</p>':''}</div>`:'<p class="hint">Final loudness and peak measurements will be calculated from the encoded file after export.</p>';
+ $('#main').innerHTML=`<section class="studio export-studio"><div class="section-title"><h2>Export Studio</h2><p>Render the arrangement once, then resample and encode that same master. Track effects, mixer routing, sidechains and the selected mastering chain are processed by the shared offline renderer.</p></div><div class="export-layout"><section class="export-card"><div class="export-settings-head"><h3>Audio file</h3><label>Mode <select id="exportMode"><option value="basic" ${settings.advanced?'':'selected'}>Basic</option><option value="advanced" ${settings.advanced?'selected':''}>Advanced</option></select></label></div><div class="export-controls"><label>Format<select id="exportFormat" ${busy?'disabled':''}><option value="wav" ${settings.format==='wav'?'selected':''}>WAV</option><option value="mp3" ${settings.format==='mp3'?'selected':''}>MP3</option></select></label>${settings.advanced?`<label>${settings.format==='wav'?'Bit depth':'Bitrate'}<select id="exportQuality" ${busy?'disabled':''} title="${settings.format==='wav'?'Bit depth controls the quantization noise floor; float WAV preserves over-range samples.':'Bitrate is the compressed audio data rate; higher rates generally retain more detail.'}">${settings.format==='wav'?[16,24,32].map(bits=>`<option value="${bits}" ${settings.bitDepth===bits?'selected':''}>${bits===32?'32-bit float':`${bits}-bit PCM`}</option>`).join(''):EXPORT_BITRATES.map(rate=>`<option value="${rate}" ${settings.bitrate===rate?'selected':''}>${rate} kbps</option>`).join('')}</select></label><label>Sample rate<select id="exportRate" ${busy?'disabled':''} title="Sample rate sets the number of audio samples per second. Higher rates create larger files and are not an audible quality guarantee.">${rateOptions}</select></label><label>Channels<select id="exportChannels" ${busy?'disabled':''}><option value="2" ${settings.channels===2?'selected':''}>Stereo</option><option value="1" ${settings.channels===1?'selected':''}>Mono downmix</option></select></label>${settings.format==='wav'&&settings.bitDepth!==32?`<label class="export-check"><input id="exportDither" type="checkbox" ${settings.dither?'checked':''} ${busy?'disabled':''} title="TPDF dither can reduce quantization distortion when reducing to integer PCM. Apply once, at final bit-depth conversion."> TPDF dither</label>`:''}`:''}<label class="export-check"><input id="exportMastering" type="checkbox" ${settings.mastering?'checked':''} ${busy?'disabled':''}> Apply Mastering Studio chain</label></div><div class="export-summary"><span>Expected duration</span><strong>${formatExportDuration(duration)} (including effect tails)</strong><span>Output</span><strong>${settings.channels===2?'Stereo':'Mono'} · ${(settings.sampleRate/1000).toFixed(1)} kHz · ${settings.format==='wav'?settings.bitDepth===32?'32-bit float':`${settings.bitDepth}-bit PCM`:settings.bitrate+' kbps MP3'}</strong></div>${warning?`<p class="${memory.allowed?'export-warning':'export-error'}">${esc(warning)}</p>`:''}<p class="hint">WAV supports 44.1/48/88.2/96 kHz with windowed-sinc resampling. MP3 supports 44.1/48 kHz. TPDF dither is only used for integer WAV and is not applied to float WAV or MP3.</p><div class="export-actions"><button id="exportStart" class="primary" ${busy||!memory.allowed?'disabled':''}>${busy?'Exporting…':'Render & Export'}</button><button id="exportCancel" ${busy?'':'hidden'}>Cancel</button><span id="exportStatus" role="status">${esc(exportRun?.message||'Ready to render and encode.')}</span></div><div class="export-progress"><progress id="exportProgress" max="1" value="0" hidden></progress></div><p class="hint export-license">MP3 is encoded locally with <a href="https://github.com/shijinyu/lamejs" target="_blank" rel="noreferrer">LAMEJS</a>, a separately loaded LGPL-3.0 component. No audio is uploaded.</p></section><section class="export-card"><h3>Encoded file analysis</h3>${results}</section></div></section>`;
+ $('.export-layout').insertAdjacentHTML('afterend',renderReleaseEditor());
+ const warningNode=$('.export-metrics .export-warning');
+ if(warningNode&&metric)warningNode.textContent=metric.sourceClippedSamples
+  ?`${metric.sourceClippedSamples} pre-encoding sample(s) reached or exceeded full scale. Integer or MP3 encoding can clip these samples.`
+  :metric.truePeakDbtp>0?`Estimated true peak is ${metric.truePeakDbtp.toFixed(1)} dBTP, above full scale. MP3 encoding may add further overs.`
+   :'Clipping detected in the decoded export. Lower the mix or adjust mastering before release.';
+ wireExportStudio();
+}
+function openExportStudio(settings={}){
+ project.exportSettings=normalizeExportSettings({...project.exportSettings,...settings});save();
+ view='export';render();
+}
+function setExportStatus(message,progress=null){
+ if(exportRun)exportRun.message=message;
+ const status=$('#exportStatus'),bar=$('#exportProgress');
+ if(status)status.textContent=message;
+ if(bar){bar.hidden=progress===null;if(progress!==null)bar.value=Math.max(0,Math.min(1,progress))}
+}
+function updateExportSettings(patch,{redraw=false}={}){
+ project.exportSettings=normalizeExportSettings({...project.exportSettings,...patch});save();
+ if(redraw&&view==='export')renderExport();
+}
+function wireExportStudio(){
+ $('#exportMode').onchange=event=>updateExportSettings(event.target.value==='advanced'?{advanced:true}:{advanced:false,bitDepth:24,bitrate:320,sampleRate:44100,channels:2,dither:true},{redraw:true});
+ $('#exportFormat').onchange=event=>updateExportSettings({format:event.target.value},{redraw:true});
+ $('#exportQuality')?.addEventListener('change',event=>updateExportSettings(project.exportSettings.format==='wav'?{bitDepth:Number(event.target.value)}:{bitrate:Number(event.target.value)},{redraw:true}));
+ $('#exportRate')?.addEventListener('change',event=>updateExportSettings({sampleRate:Number(event.target.value)},{redraw:true}));
+ $('#exportChannels')?.addEventListener('change',event=>updateExportSettings({channels:Number(event.target.value)},{redraw:true}));
+ $('#exportDither')?.addEventListener('change',event=>updateExportSettings({dither:event.target.checked}));
+ $('#exportMastering').onchange=event=>updateExportSettings({mastering:event.target.checked});
+ $('#exportStart').onclick=runExport;
+ $('#exportCancel').onclick=()=>exportController?.abort(new DOMException('Export cancelled by user.','AbortError'));
+ $$('[data-release-field]').forEach(input=>input.onchange=()=>{project.releaseMetadata=normalizeReleaseMetadata({...project.releaseMetadata,[input.dataset.releaseField]:input.value},project);save();const errors=validateReleaseMetadata(project.releaseMetadata);$('#releaseValidation').textContent=errors.join(' ')||'Metadata is valid and stored with this project.'});
+ $('#chooseArtwork').onclick=()=>$('#artworkFile').click();
+ $('#artworkFile').onchange=async event=>{const file=event.target.files?.[0];if(file)await processReleaseArtwork(file);event.target.value=''};
+ ['artCropX','artCropY','artZoom','artResolution','artFormat'].forEach(id=>$('#'+id)?.addEventListener('change',()=>processReleaseArtwork(null)));
+ $('#releaseZipStart').onclick=runReleasePackage;
+ $('#releaseZipCancel').onclick=()=>releaseZipController?.abort(new DOMException('Release package cancelled.','AbortError'));
+}
+async function processReleaseArtwork(file){
+ const status=$('#artworkStatus');if(status)status.textContent='Preparing artwork locally…';
+ try{
+  const keys=artworkKeys();
+  if(file){
+   if(!['image/jpeg','image/png'].includes(file.type))throw new Error('Choose a JPEG or PNG image.');
+   if(file.size>25*1024*1024)throw new Error('Artwork source images are limited to 25 MiB.');
+   releaseArtworkSourceBlob=file;await dbSet(keys.source,file);
+  }else if(!releaseArtworkSourceBlob)releaseArtworkSourceBlob=await dbGet(keys.source);
+  if(!releaseArtworkSourceBlob)throw new Error('Re-import the original artwork image to adjust its crop.');
+  const image=await createImageBitmap(releaseArtworkSourceBlob);
+  if(image.width*image.height>80000000){image.close();throw new Error('Artwork exceeds the 80-megapixel processing limit.')}
+  const cropX=Number($('#artCropX')?.value??project.releaseArtwork?.cropX??50)/100,cropY=Number($('#artCropY')?.value??project.releaseArtwork?.cropY??50)/100,zoom=Number($('#artZoom')?.value??project.releaseArtwork?.zoom??1),resolution=Number($('#artResolution')?.value??project.releaseArtwork?.resolution??3000),mime=$('#artFormat')?.value||project.releaseArtwork?.mime||'image/jpeg';
+  const side=Math.min(image.width,image.height)/Math.max(1,zoom),sx=(image.width-side)*cropX,sy=(image.height-side)*cropY,canvas=document.createElement('canvas');canvas.width=resolution;canvas.height=resolution;
+  const context=canvas.getContext('2d',{alpha:mime==='image/png'});if(!context)throw new Error('Could not create an artwork canvas.');
+  context.drawImage(image,sx,sy,side,side,0,0,resolution,resolution);
+  const width=image.width,height=image.height;image.close();
+  const optimized=await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Artwork encoding failed.')),mime,mime==='image/jpeg'?.92:undefined));
+  if(optimized.size>25*1024*1024)throw new RangeError('Prepared artwork exceeds the 25 MiB image limit; choose JPEG or a lower resolution.');
+  const prepared=typeof File==='function'?new File([optimized],`cover.${mime==='image/png'?'png':'jpg'}`,{type:mime}):optimized;
+  await dbSet(keys.current,prepared);releaseArtworkBlob=prepared;
+  if(releaseArtworkUrl)URL.revokeObjectURL(releaseArtworkUrl);releaseArtworkUrl=URL.createObjectURL(optimized);
+  project.releaseArtwork={key:keys.current,sourceKey:keys.source,name:releaseArtworkSourceBlob.name||'cover',mime,width,height,resolution,cropX:cropX*100,cropY:cropY*100,zoom};
+  save();const message=`Prepared square ${resolution} × ${resolution} ${mime==='image/png'?'PNG':'JPEG'} cover. Original image retained locally.`;
+  if(view==='export'){renderExport();$('#artworkStatus').textContent=message}else if(status)status.textContent=message;
+ }catch(error){if(status)status.textContent=`Artwork error: ${error.message}`;notify(`Artwork preparation failed: ${error.message}`)}
+}
+async function getReleaseArtwork(){
+ const blob=releaseArtworkBlob||await dbGet(artworkKeys().current);if(!blob)return null;
+ return{bytes:new Uint8Array(await blob.arrayBuffer()),type:blob.type||project.releaseArtwork?.mime||'image/jpeg',name:blob.name||project.releaseArtwork?.name||'cover'};
+}
+function releaseName(value,extension){
+ const base=String(value||project.name||'Untitled').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').trim().replace(/[. ]+$/,'').slice(0,120)||'Untitled';
+ return`${base}${extension}`;
+}
+async function runReleasePackage(){
+ if(exportController||releaseZipController)return;
+ const selected=[...$$('[data-release-audio]:checked')].map(input=>input.dataset.releaseAudio);
+ if(!selected.length)return notify('Select at least one audio format for the release package.');
+ const metadata=normalizeReleaseMetadata(project.releaseMetadata,project),errors=validateReleaseMetadata(metadata);
+ if(errors.length){$('#releaseValidation').textContent=errors.join(' ');return notify('Correct release metadata before building the package.')}
+ const controller=new AbortController();releaseZipController=controller;exportRun={message:'Preparing release package…'};
+ $('#releaseZipStart').disabled=true;$('#releaseZipCancel').hidden=false;
+ try{
+  const settings=normalizeExportSettings(project.exportSettings);
+  setExportStatus('Rendering the arrangement once for selected release formats…');
+  await engine.init();const buffer=await engine.render(project,buffers,{bypassMastering:!settings.mastering});
+  if(controller.signal.aborted)throw controller.signal.reason;
+  const entries={},audioEntries=[];
+  for(const format of selected){
+   if(controller.signal.aborted)throw controller.signal.reason;
+   const exportSettings=format==='wav'
+    ?{...settings,format:'wav'}
+    :{...settings,format:'mp3',sampleRate:[44100,48000].includes(settings.sampleRate)?settings.sampleRate:44100,bitDepth:24,bitrate:settings.bitrate||320};
+   setExportStatus(`Encoding release ${format.toUpperCase()}…`);
+   const encoded=await encodeExport(buffer,exportSettings,{signal:controller.signal,onProgress:(stage,progress)=>setExportStatus(`${format.toUpperCase()} ${stage} · ${Math.round(progress*100)}%`,progress)});
+   const artwork=await getReleaseArtwork(),blob=format==='mp3'?await addId3v23Metadata(encoded.blob,metadata,artwork):addWavInfoMetadata(new Uint8Array(await encoded.blob.arrayBuffer()),metadata);
+   const filename=releaseName(metadata.title,format==='mp3'?'.mp3':'.wav'),path=`audio/${filename}`,data=new Uint8Array(await blob.arrayBuffer());
+   entries[path]=data;audioEntries.push({path,format,sampleRate:encoded.info.sampleRate,channels:encoded.info.channels,bitDepth:encoded.info.bitDepth||null,bitrate:encoded.info.bitrates||null,size:data.byteLength});
+  }
+  const artwork=await getReleaseArtwork();if(artwork)entries[`artwork/cover${artwork.type==='image/png'?'.png':'.jpg'}`]=artwork.bytes;
+  const releaseMetadata={...metadata,createdAt:new Date().toISOString(),audio:audioEntries,artwork:artwork?`artwork/cover${artwork.type==='image/png'?'.png':'.jpg'}`:null};
+  entries['metadata.json']=new TextEncoder().encode(JSON.stringify(releaseMetadata,null,2));
+  entries['release-info.txt']=new TextEncoder().encode(`${metadata.title||project.name}\r\n${metadata.artist?`Artist: ${metadata.artist}\r\n`:''}${metadata.album?`Album: ${metadata.album}\r\n`:''}${metadata.releaseDate?`Release date: ${metadata.releaseDate}\r\n`:''}${metadata.isrc?`ISRC: ${metadata.isrc}\r\n`:''}\r\nGenerated locally by EggHeadStudio DAW.\r\n`);
+  setExportStatus('Creating release ZIP…');
+  const archive=await createReleaseZip(entries,{signal:controller.signal,onProgress:status=>setExportStatus(status.message)});
+  if(controller.signal.aborted)throw controller.signal.reason;
+  const filename=releaseName(metadata.album||metadata.title||project.name,'_release.zip');download(archive,filename);
+  setExportStatus(`Release package created · ${filename} · ${(archive.size/1024/1024).toFixed(1)} MiB.`);
+  notify('Release ZIP created with matching audio metadata and artwork.');
+ }catch(error){
+  if(error?.name==='AbortError')setExportStatus('Release package cancelled.');
+  else{setExportStatus(`Release package failed: ${error.message}`);notify(`Release package failed: ${error.message}`)}
+ }finally{
+  releaseZipController=null;$('#releaseZipStart')?.removeAttribute('disabled');$('#releaseZipCancel').hidden=true;
+ }
+}
+async function runExport(){
+ if(exportController||releaseZipController)return;
+ const settings=normalizeExportSettings(project.exportSettings),controller=new AbortController();
+ exportController=controller;exportRun={message:'Preparing export…'};
+ const initialMemory=estimateExportMemory(estimateProjectRender(project,buffers).durationSeconds,settings);
+ if(initialMemory.warning&&!window.confirm(`${exportMemoryWarning(initialMemory)}\n\nContinue?`)){exportController=null;exportRun.message='Export cancelled before rendering.';renderExport();return}
+ if(view==='export')renderExport();
+ try{
+  const releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project),metadataErrors=validateReleaseMetadata(releaseMetadata);
+  if(metadataErrors.length)throw new Error(`Invalid release metadata: ${metadataErrors.join(' ')}`);
+  await engine.init();
+  setExportStatus('Rendering arrangement offline… Rendering has no reliable browser percentage indicator.');
+  const buffer=await engine.render(project,buffers,{bypassMastering:!settings.mastering});
+  if(controller.signal.aborted)throw controller.signal.reason;
+  const memory=estimateExportMemory(buffer.duration,settings,buffer.sampleRate);
+  if(!memory.allowed)throw new RangeError(`This render needs an estimated ${Math.ceil(memory.estimatedPeakBytes/1024/1024)} MiB. Reduce output rate or project duration and export again.`);
+  setExportStatus(`Resampling and encoding ${settings.format.toUpperCase()}…`);
+  const encoded=await encodeExport(buffer,settings,{signal:controller.signal,onProgress:(stage,progress)=>{
+   setExportStatus(`${stage==='resample'?'Resampling':'Encoding'} · ${Math.round(progress*100)}%`,progress)
+  }});
+  if(controller.signal.aborted)throw controller.signal.reason;
+  const artwork=await getReleaseArtwork(),outputBlob=settings.format==='mp3'
+   ?await addId3v23Metadata(encoded.blob,releaseMetadata,artwork)
+   :addWavInfoMetadata(new Uint8Array(await encoded.blob.arrayBuffer()),releaseMetadata);
+  setExportStatus('Decoding the encoded file for verification…');
+  const decodeContext=new OfflineAudioContext(encoded.info.channels,Math.max(1,Math.ceil(buffer.duration*encoded.info.sampleRate)),encoded.info.sampleRate);
+  const decoded=await decodeContext.decodeAudioData(await outputBlob.arrayBuffer());
+  if(controller.signal.aborted)throw controller.signal.reason;
+  const analysis=await analyzeMasterBufferAsync(decoded,{signal:controller.signal,onProgress:progress=>setExportStatus(`Analyzing encoded output · ${Math.round(progress*100)}%`,progress)});
+  if(controller.signal.aborted)throw controller.signal.reason;
+  analysis.sourceClippedSamples=encoded.info.sourceClippedSamples||0;
+  analysis.clipping=analysis.clipping||analysis.sourceClippedSamples>0||analysis.truePeakDbtp>0;
+  const expectedDuration=buffer.duration,durationDifference=Math.abs(decoded.duration-expectedDuration);
+  const analysisSummary={integratedLufs:analysis.integratedLufs,truePeakDbtp:analysis.truePeakDbtp,samplePeakDbfs:analysis.samplePeakDbfs,clipping:analysis.clipping,sourceClippedSamples:analysis.sourceClippedSamples};
+  exportRun={message:'Export complete. File decoded and analyzed.',info:encoded.info,analysis:analysisSummary,duration:decoded.duration,durationDifference,expectedDuration};
+  const suffix=settings.format==='mp3'?'.mp3':'.wav',filename=`${project.name.replace(/[^\w-]/g,'_')||'Untitled_Project'}${settings.mastering?'_master':''}${suffix}`;
+  download(outputBlob,filename);
+  setExportStatus(`Export complete · ${filename} · ${analysis.integratedLufs.toFixed(1)} LUFS · ${analysis.truePeakDbtp.toFixed(1)} dBTP estimated.`);
+  notify(`${settings.format.toUpperCase()} export verified and downloaded.`);
+  if(view==='export')renderExport();
+ }catch(error){
+  if(error?.name==='AbortError')setExportStatus('Export cancelled. Temporary encoding work was stopped; offline rendering, if underway, was allowed to finish before discard.');
+  else{setExportStatus(`Export failed: ${error.message}`);notify(`Export failed: ${error.message}`)}
+ }finally{
+  exportController=null;
+  if(view==='export')renderExport();
+ }
+}
 function renderMaster(){
  const settings=normalizeMasteringSettings(project.mastering||engine.masteringSettings),customPresets=(()=>{try{return JSON.parse(localStorage.getItem('pulse-master-presets')||'{}')}catch(error){notify(`Could not read mastering presets: ${error.message}`);return{}}})();
  const presetOptions=[...Object.keys(MASTERING_PRESETS),...Object.keys(customPresets)].map(name=>`<option value="${esc(name)}" ${name===settings.preset?'selected':''}>${esc(name)}</option>`).join('');
@@ -503,7 +774,8 @@ function renderMaster(){
  $('#masterPlay').onclick=async()=>{if(masteringPlayback){masteringPausedOffset=masteringPosition();stopMasteringPlayback(false)}else{await playMasteringBuffer(masteringPausedOffset);masteringPausedOffset=0}};
  $('#masterStop').onclick=()=>stopMasteringPlayback();
  $('#masterCompare').onclick=async()=>{const wasPlaying=Boolean(masteringPlayback),offset=wasPlaying?masteringPosition():masteringPausedOffset;masteringAB=masteringAB==='A'?'B':'A';if(masteringPreview){drawMasterWaveform(selectedMasterBuffer());updateMasterAnalysis();if(!wasPlaying&&masteringPausedOffset&&masteringPreview){const cursor=$('#masterCursor');if(cursor)cursor.style.left=`${masteringPausedOffset/selectedMasterBuffer().duration*100}%`}}if(wasPlaying)await playMasteringBuffer(offset)};
- $('#masterExport').onclick=exportMasterWav;
+ $('#masterExport').textContent='Export Options';
+ $('#masterExport').onclick=()=>openExportStudio({format:'wav',mastering:true});
  for(const [id,path]of [['masterEqEnabled','eq.enabled'],['masterSatEnabled','saturation.enabled'],['masterImagerEnabled','imager.enabled'],['masterMultibandEnabled','multiband.enabled'],['masterLimiterEnabled','limiter.enabled'],['masterChainBypass','chainBypass']])$('#'+id).onchange=event=>setMasteringControl(current=>setMasterPath(current,path,event.target.checked),true);
  $$('[data-master-param]').forEach(input=>{const path=input.dataset.masterParam;input.oninput=()=>{const raw=+input.value,value=/^multiband\.bands\.\d+\.(attack|release)$/.test(path)?raw/1000:raw;setMasteringControl(current=>setMasterPath(current,path,value));syncMasterControl(path,raw)};input.onchange=()=>save()});
  $$('[data-multiband-enabled]').forEach(input=>input.onchange=()=>setMasteringControl(current=>current.multiband.bands[Number(input.dataset.multibandEnabled)].enabled=input.checked,true));
@@ -532,9 +804,4 @@ function saveMasterPreset(){
  const name=prompt('Name this mastering preset:');if(!name?.trim())return;
  try{const presets=JSON.parse(localStorage.getItem('pulse-master-presets')||'{}');project.mastering.preset=name.trim();presets[name.trim()]=normalizeMasteringSettings(project.mastering);localStorage.setItem('pulse-master-presets',JSON.stringify(presets));engine.setMastering(project.mastering);save();notify(`Saved mastering preset "${name.trim()}".`);renderMaster()}catch(error){notify(`Could not save mastering preset: ${error.message}`)}
 }
-async function exportMasterWav(){
- const status=$('#masterRenderStatus'),cancel=$('#masterCancelAnalysis'),controller=new AbortController();masteringAnalysisController=controller;
- try{notify('Rendering mastered WAV…');await engine.init();const buffer=masteringPreview&&masteringPreviewRevision===masteringRevision?masteringPreview.mastered:await engine.render(project,buffers);if(cancel)cancel.hidden=false;const analysis=masteringPreview&&masteringPreviewRevision===masteringRevision?masteringPreview.masteredAnalysis:await analyzeMasterBufferAsync(buffer,{signal:controller.signal,onProgress:progress=>{if(status)status.textContent=`Analyzing export · ${Math.round(progress*100)}%`}});if(controller.signal.aborted)throw controller.signal.reason;download(toWav(buffer),`${project.name.replace(/[^\w-]/g,'_')}_master.wav`);if(status)status.textContent=`Export analyzed · ${analysis.integratedLufs.toFixed(1)} LUFS`;notify(`Mastered WAV exported · ${analysis.integratedLufs.toFixed(1)} LUFS · ${analysis.truePeakDbtp.toFixed(1)} dBTP estimated.`)}catch(error){if(error?.name==='AbortError'){if(status)status.textContent='WAV export analysis cancelled.'}else notify(`Master WAV export failed: ${error.message}`)}finally{masteringAnalysisController=null;if(cancel)cancel.hidden=true}
-}
-async function exportMix(){try{notify('Rendering audio offline…');await engine.init();const b=await engine.render(project,buffers);download(toWav(b),`${project.name.replace(/[^\w-]/g,'_')}_master.wav`);notify('WAV exported successfully.')}catch(e){notify(`Export failed: ${e.message}`)}}
-async function startup(){try{const p=JSON.parse(localStorage.getItem('pulse-project'));if(p?.tracks&&p?.bpm)project=p}catch{}normalizeProject();project.mastering=normalizeMasteringSettings(project.mastering||DEFAULT_MASTERING_SETTINGS);engine.masterSettings={...engine.masterSettings,...project.masterSettings};engine.masteringSettings=normalizeMasteringSettings(project.mastering);shell();await restoreAssets();if(view==='arrange')render();notify('Ready. Import a folder or record your first sample.')}startup();
+async function startup(){try{const p=JSON.parse(localStorage.getItem('pulse-project'));if(p?.tracks&&p?.bpm)project=p}catch{}normalizeProject();project.mastering=normalizeMasteringSettings(project.mastering||DEFAULT_MASTERING_SETTINGS);engine.masterSettings={...engine.masterSettings,...project.masterSettings};engine.masteringSettings=normalizeMasteringSettings(project.mastering);shell();await restoreAssets();const keys=artworkKeys();releaseArtworkBlob=await dbGet(keys.current);releaseArtworkSourceBlob=await dbGet(keys.source);releaseArtworkUrl=releaseArtworkBlob?URL.createObjectURL(releaseArtworkBlob):null;if(view==='arrange')render();notify('Ready. Import a folder or record your first sample.')}startup();

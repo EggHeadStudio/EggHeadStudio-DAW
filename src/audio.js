@@ -196,6 +196,37 @@ export function toWav(buffer){return encodeWav(Array.from({length:buffer.numberO
 export function download(blob,name){const a=document.createElement('a');const url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
 export function processSample(ctx,buffer,{start=0,end=buffer.duration,gain=1,fadeIn=0,fadeOut=0,reverse=false}={}){const s=Math.max(0,Math.floor(start*buffer.sampleRate)),e=Math.min(buffer.length,Math.ceil(end*buffer.sampleRate)),length=Math.max(1,e-s),out=ctx.createBuffer(buffer.numberOfChannels,length,buffer.sampleRate);for(let ch=0;ch<out.numberOfChannels;ch++){const src=buffer.getChannelData(ch),dst=out.getChannelData(ch);for(let i=0;i<length;i++){const t=i/buffer.sampleRate;let g=gain;if(fadeIn>0)g*=Math.min(1,t/fadeIn);if(fadeOut>0)g*=Math.min(1,(length/buffer.sampleRate-t)/fadeOut);dst[i]=(src[reverse?e-1-i:s+i]||0)*g}}return out}
 export function drawWave(canvas,buffer,color='#79d5c1',start=0,end=buffer?.duration||0){if(!canvas||!buffer)return;const dpr=Math.min(devicePixelRatio||1,2),w=canvas.clientWidth||300,h=canvas.clientHeight||80;canvas.width=w*dpr;canvas.height=h*dpr;const x=canvas.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,w,h);x.strokeStyle=color;x.lineWidth=1;const data=buffer.getChannelData(0),s=Math.floor(start*buffer.sampleRate),e=Math.min(data.length,Math.ceil(end*buffer.sampleRate)),step=Math.max(1,Math.floor((e-s)/w));for(let i=0;i<w;i++){let lo=1,hi=-1;for(let j=s+i*step;j<Math.min(e,s+(i+1)*step);j++){const z=data[j]||0;if(z<lo)lo=z;if(z>hi)hi=z}x.beginPath();x.moveTo(i,(1-hi)*h/2);x.lineTo(i,(1-lo)*h/2);x.stroke()}}
+export function estimateProjectRender(project,buffers){
+ const beat=60/project.bpm,bar=beat*4,patternBeats=project.patternBeats||16;
+ let end=bar*4;
+ for(const track of project.tracks){
+  for(const clip of track.clips){if(buffers.get(clip.asset))end=Math.max(end,clip.bar*bar+clipDurationSeconds(clip))}
+  if((track.sampler?.asset||track.drumRack)&&track.pattern?.notes?.length)end=Math.max(end,bar*(track.drumRack?patternLengthBeats(track)/4:patternBeats/4));
+ }
+ let finalInstrumentAudioEnd=end;
+ for(const track of project.tracks){
+  if(!(track.sampler?.asset||track.drumRack)||!track.pattern?.notes?.length)continue;
+  const sampler=track.sampler,cycleBeats=track.drumRack?patternLengthBeats(track):patternBeats,cycleSeconds=cycleBeats*beat,cycles=Math.max(1,Math.ceil(end/cycleSeconds));
+  for(let cycle=0;cycle<cycles;cycle++)for(const note of track.pattern.notes){
+   const when=cycle*cycleSeconds+(note.beat||0)*beat;
+   if(when>=end)continue;
+   const pad=track.drumRack?.pads.find(item=>item.note===note.midi),asset=pad?.asset||(track.drumRack?null:sampler?.asset),buffer=buffers.get(asset);
+   if(!buffer||pad?.mute)continue;
+   const start=pad?0:Math.max(0,sampler.start||0),sourceEnd=pad?buffer.duration:Math.min(buffer.duration,sampler.end||buffer.duration),region=Math.max(.01,sourceEnd-start);
+   const rate=pad?2**((pad.pitch||0)/12):sampler.mode==='oneShot'?1:2**(((note.midi??sampler.rootNote??60)-(sampler.rootNote??60)+(sampler.transpose||0)+(sampler.fineTune||0)/100)/12);
+   const duration=pad||sampler.mode==='oneShot'?region/rate:Math.min(sampler.mode==='loop'?Math.max(.02,(note.durationBeats||.25)*beat):region/rate,Math.max(.02,(note.durationBeats||.25)*beat));
+   finalInstrumentAudioEnd=Math.max(finalInstrumentAudioEnd,when+duration);
+  }
+ }
+ const tails=project.tracks.map(track=>Math.max(0,
+  ...(track.fx?.effects||[]).filter(effect=>effect.enabled).map(effect=>effect.type==='reverb'
+   ?Math.max(.1,Number(effect.params?.decay)||1.5)*1.5
+   :effect.type==='delay'?Math.min(20,delayTimeSeconds(effect.params,project.bpm)/(1-Math.min(.85,Number(effect.params?.feedback)||0))):0),
+  track.fx?.delay>0?(track.fx.delayTime||.25)/(1-Math.min(.75,track.fx.feedback||0)):0
+ ));
+ const effectTail=Math.max(.3,...tails),tail=effectTail+Math.max(0,finalInstrumentAudioEnd-end);
+ return{programSeconds:end,tailSeconds:tail,durationSeconds:end+tail};
+}
 export class AudioEngine{
  constructor(){this.ctx=null;this.master=null;this.compressor=null;this.eq=null;this.masteringGraph=null;this.masteringSettings=normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS);this.trackNodes=new Map();this.sources=[];this.sourceNodes=new WeakMap();this.playing=false;this.startedAt=0;this.offset=0;this.timer=null;this.raf=null;this.onTick=()=>{};this.onMeter=()=>{};this.onEnd=()=>{};this.loop=false;this.bpm=120;this.masterSettings={eq:0,threshold:-12,makeup:0,volume:1};this.clipHoldUntil=new Map();this.sidechainReady=false;this.sidechainError=null;this.masteringLimiterReady=false;this.masteringLimiterError=null;}
  async init(){if(!this.ctx){this.ctx=new (window.AudioContext||window.webkitAudioContext)();if(this.ctx.audioWorklet&&typeof globalThis.AudioWorkletNode==='function'){try{await this.ctx.audioWorklet.addModule(new URL('./sidechain-processor.js',import.meta.url));this.sidechainReady=true}catch(error){this.sidechainError=error;console.error('External sidechain processor could not be loaded.',error)}try{await this.ctx.audioWorklet.addModule(new URL('./mastering-processor.js',import.meta.url));this.ctx.masteringLimiterReady=true}catch(error){this.masteringLimiterError=error;console.error('Mastering limiter processor could not be loaded.',error)}}else{this.sidechainError=new Error('AudioWorklet is unavailable in this browser.');this.masteringLimiterError=this.sidechainError}this.eq=this.ctx.createBiquadFilter();this.eq.type='highshelf';this.eq.frequency.value=4500;this.compressor=this.ctx.createDynamicsCompressor();this.master=this.ctx.createGain();this.eq.connect(this.compressor).connect(this.master);this.setMaster(this.masterSettings);this.setMastering(this.masteringSettings)}await this.ctx.resume();return this.ctx}
@@ -267,10 +298,9 @@ export class AudioEngine{
   const tick=()=>{if(this.playing){this.onTick(this.position());this.onMeter(this.readMeters());this.raf=requestAnimationFrame(tick)}};tick();
  }
  async render(project,buffers,{bypassMastering=false}={}){
-  const beat=60/project.bpm,bar=beat*4,patternBeats=project.patternBeats||16;let end=bar*4;
-  for(const track of project.tracks){for(const clip of track.clips){const b=buffers.get(clip.asset);if(b)end=Math.max(end,clip.bar*bar+clipDurationSeconds(clip))}if((track.sampler?.asset||track.drumRack)&&track.pattern?.notes?.length)end=Math.max(end,bar*(track.drumRack?patternLengthBeats(track)/4:patternBeats/4))}
+  const beat=60/project.bpm,bar=beat*4,patternBeats=project.patternBeats||16,{programSeconds:end,tailSeconds:tail}=estimateProjectRender(project,buffers);
   if(end>600)throw Error('Export is limited to 10 minutes in this prototype.');
-  const tail=Math.max(.3,...project.tracks.map(track=>Math.max(0,...(track.fx?.effects||[]).filter(effect=>effect.enabled).map(effect=>effect.type==='reverb'?Math.max(.1,Number(effect.params?.decay)||1.5)*1.5:effect.type==='delay'?Math.min(20,delayTimeSeconds(effect.params,project.bpm)/(1-Math.min(.85,Number(effect.params?.feedback)||0))):0),track.fx?.delay>0?(track.fx.delayTime||.25)/(1-Math.min(.75,track.fx.feedback||0)):0))),sr=44100,masteringSettings=normalizeMasteringSettings(project.mastering||this.masteringSettings);
+  const sr=44100,masteringSettings=normalizeMasteringSettings(project.mastering||this.masteringSettings);
   const hasMasteringLimiter=!bypassMastering&&typeof globalThis.AudioWorkletNode==='function',latencyFrames=hasMasteringLimiter?Math.round(masteringSettings.limiter.lookaheadMs/1000*sr)+8:0,ctx=new OfflineAudioContext(2,Math.ceil((end+tail)*sr)+latencyFrames,sr),eq=ctx.createBiquadFilter(),comp=ctx.createDynamicsCompressor(),master=ctx.createGain();
   const hasSidechain=project.tracks.some(track=>(track.fx?.effects||[]).some(effect=>effect.enabled&&effect.type==='compressor'&&effect.params?.sidechain?.enabled));
   if(hasSidechain){
