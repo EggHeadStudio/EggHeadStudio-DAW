@@ -1,16 +1,23 @@
+import {createTrackEffect,renderSampleEffectChain} from './audio.js';
+import {renderSampleProcessing} from './sample-dsp.js';
+import {clampFrame,frameToX,getWaveformPeaks,xToFrame} from './waveform.js';
+
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 const cloneRegions=regions=>regions.map(region=>({...region}));
+const cloneEffects=effects=>effects.map(effect=>({...effect,params:{...effect.params,bands:effect.params.bands?.map(band=>({...band}))}}));
 
 export class SampleEditor {
   constructor(buffer) {
     if(!buffer||!Number.isInteger(buffer.length)||!Number.isFinite(buffer.sampleRate))throw new TypeError('A decoded audio buffer is required.');
     this.buffer=buffer;
     this.regions=[{start:0,end:buffer.length,reverse:false}];
-    this.selection={start:0,end:Math.min(buffer.length,1)};
-    this.loop={start:0,end:Math.min(buffer.length,1)};
+    this.selection={start:0,end:buffer.length};
+    this.loop={start:0,end:buffer.length};
     this.gainDb=0;
     this.fadeInFrames=0;
     this.fadeOutFrames=0;
+    this.processing={speed:1,pitchSemitones:0,pitchCents:0,mode:'preserve',effects:[]};
+    this.view={zoom:1};
     this.undoStack=[];
     this.redoStack=[];
   }
@@ -19,10 +26,12 @@ export class SampleEditor {
   get duration(){return this.frameCount/this.buffer.sampleRate}
 
   checkpoint(){
-    this.undoStack.push({regions:cloneRegions(this.regions),selection:{...this.selection},loop:{...this.loop},gainDb:this.gainDb,fadeInFrames:this.fadeInFrames,fadeOutFrames:this.fadeOutFrames});
+    this.undoStack.push(this.snapshot());
     if(this.undoStack.length>100)this.undoStack.shift();
     this.redoStack=[];
   }
+
+  snapshot(){return {regions:cloneRegions(this.regions),selection:{...this.selection},loop:{...this.loop},gainDb:this.gainDb,fadeInFrames:this.fadeInFrames,fadeOutFrames:this.fadeOutFrames,processing:{...this.processing,effects:cloneEffects(this.processing.effects)}}}
 
   restore(state){
     this.regions=cloneRegions(state.regions);
@@ -32,6 +41,7 @@ export class SampleEditor {
     this.gainDb=state.gainDb;
     this.fadeInFrames=state.fadeInFrames;
     this.fadeOutFrames=state.fadeOutFrames;
+    this.processing={...state.processing,effects:cloneEffects(state.processing.effects)};
     this.clampRanges();
   }
 
@@ -205,16 +215,33 @@ export class SampleEditor {
     return output;
   }
 
+  renderSelection(context){
+    const from=this.selection.start,to=this.selection.end;
+    if(to<=from)throw new RangeError('Select a non-empty sample region before rendering.');
+    const length=to-from,output=context.createBuffer(this.buffer.numberOfChannels,length,this.buffer.sampleRate),gain=10**(this.gainDb/20);
+    for(let channel=0;channel<output.numberOfChannels;channel++){
+      const source=this.buffer.getChannelData(channel),target=output.getChannelData(channel);
+      for(let frame=0;frame<length;frame++){
+        const editorFrame=from+frame;
+        let envelope=1;
+        if(this.fadeInFrames>0)envelope=Math.min(envelope,frame/this.fadeInFrames);
+        if(this.fadeOutFrames>0)envelope=Math.min(envelope,(length-1-frame)/this.fadeOutFrames);
+        target[frame]=(source[this.sourceFrameAt(editorFrame)]||0)*gain*Math.max(0,envelope);
+      }
+    }
+    return output;
+  }
+
   undo(){
     if(!this.undoStack.length)return false;
-    this.redoStack.push({regions:cloneRegions(this.regions),selection:{...this.selection},loop:{...this.loop},gainDb:this.gainDb,fadeInFrames:this.fadeInFrames,fadeOutFrames:this.fadeOutFrames});
+    this.redoStack.push(this.snapshot());
     this.restore(this.undoStack.pop());
     return true;
   }
 
   redo(){
     if(!this.redoStack.length)return false;
-    this.undoStack.push({regions:cloneRegions(this.regions),selection:{...this.selection},loop:{...this.loop},gainDb:this.gainDb,fadeInFrames:this.fadeInFrames,fadeOutFrames:this.fadeOutFrames});
+    this.undoStack.push(this.snapshot());
     this.restore(this.redoStack.pop());
     return true;
   }
@@ -222,22 +249,31 @@ export class SampleEditor {
 
 export function renderSampleStudioHTML(editor,filename='My_Sample.wav',saved=false){
   const duration=editor?editor.duration:0,length=editor?.frameCount||0,selection=editor?.selection||{start:0,end:0};
-  return `<section class="studio sample-studio"><div class="section-title"><h2>Sample Studio</h2><p>Record or load audio, select precisely, edit non-destructively, preview, then save a new sample.</p></div>
-    <div class="record-controls"><button id="record" class="accent">● Record Own</button><button id="finishRecord" disabled>■ Stop Recording</button><button id="loadSample">＋ Edit Existing Sample</button><span id="recordState">Microphone idle</span></div>
+  const safeName=String(filename).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const effects=editor?.processing.effects||[];
+  const effectControls={eq:[['lowCut','High-pass (Hz)',20,20000,1],['highCut','Low-pass (Hz)',20,20000,1],['gain','EQ gain (dB)',-18,18,.5]],compressor:[['threshold','Threshold (dB)',-60,0,1],['ratio','Ratio',1,20,.5],['attack','Attack (s)',.001,1,.001],['release','Release (s)',.01,2,.01],['makeup','Makeup (dB)',-24,24,.5]],delay:[['time','Delay (ms)',10,2000,10,'ms'],['feedback','Feedback',0,.85,.01],['mix','Wet',0,1,.01]],reverb:[['decay','Decay (s)',.1,5,.1],['predelay','Pre-delay (ms)',0,250,1,'ms'],['mix','Wet',0,1,.01]],saturation:[['drive','Drive',1,20,.1],['mix','Wet',0,1,.01]],limiter:[['threshold','Ceiling (dB)',-12,0,.1]],utility:[['gain','Gain (dB)',-60,24,.5],['pan','Pan',-1,1,.01],['width','Stereo width',0,2,.01]]};
+  const controlMarkup=(effect,index,key,label,min,max,step,scale)=>`<label>${label}<input type="range" min="${min}" max="${max}" step="${step}" value="${Number(effect.params[key]??0)*(scale==='ms'?1000:1)}" data-sample-fx-param="${index}" data-param="${key}" data-scale="${scale==='ms'?1000:1}"><output>${Number(effect.params[key]??0)*(scale==='ms'?1000:1)}</output></label>`;
+  const effectMarkup=effects.map((effect,index)=>`<article class="sample-effect"><header><label><input type="checkbox" data-sample-fx-enabled="${index}" ${effect.enabled?'checked':''}> ${effect.type}</label><button data-sample-fx-up="${index}" ${index?'':'disabled'} aria-label="Move effect up">↑</button><button data-sample-fx-down="${index}" ${index===effects.length-1?'disabled':''} aria-label="Move effect down">↓</button><button data-sample-fx-remove="${index}" aria-label="Remove effect">×</button></header>${effect.type==='eq'?`${controlMarkup(effect,index,'lowCut','High-pass (Hz)',20,20000,1)}${controlMarkup(effect,index,'highCut','Low-pass (Hz)',20,20000,1)}${(effect.params.bands||[]).map((band,bandIndex)=>`<fieldset class="eq-band"><legend>Band ${bandIndex+1}</legend>${[['frequency','Hz',20,20000,1],['gain','dB',-24,24,.5],['q','Q',.1,18,.1]].map(([key,label,min,max,step])=>`<label>${label}<input type="range" min="${min}" max="${max}" step="${step}" value="${band[key]}" data-sample-fx-param="${index}" data-eq-band="${bandIndex}" data-param="${key}"><output>${Number(band[key]).toFixed(key==='frequency'?0:1)}</output></label>`).join('')}</fieldset>`).join('')}`:(effectControls[effect.type]||[]).map(([key,label,min,max,step,scale])=>controlMarkup(effect,index,key,label,min,max,step,scale)).join('')}</article>`).join('');
+  const ruler=Array.from({length:11},(_,index)=>`<span style="left:${index*10}%">${(duration*index/10).toFixed(3)}s</span>`).join('');
+  return `<section class="studio sample-studio"><div class="section-title"><h2>Sample Studio</h2><p>Record or load audio, select precisely, edit non-destructively, preview, then save a new processed sample.</p></div>
+    <div class="record-controls"><button id="record" class="accent">● Record Own</button><button id="finishRecord" disabled>■ Stop Recording</button><button id="loadSample">＋ Edit Existing Sample</button><span id="recordState">Microphone idle</span><span id="inputMeter">Input −∞ dBFS</span></div>
     <div class="wave-panel">
-      <div class="sample-wave-toolbar"><label>Zoom <input id="waveZoom" type="range" min="1" max="24" step=".1" value="1"></label><span id="sampleDuration">${duration.toFixed(3)} s · ${editor?.buffer.sampleRate||0} Hz</span><button id="snapZero" aria-pressed="true">Zero-crossing snap: on</button><button id="sampleUndo" ${editor?.undoStack.length?'':'disabled'}>Undo</button><button id="sampleRedo" ${editor?.redoStack.length?'':'disabled'}>Redo</button></div>
-      <div id="waveViewport" class="wave-viewport"><div class="wave-canvas-wrap"><canvas id="sampleWave" class="sample-wave" data-duration="${duration}" data-length="${length}" data-start="${selection.start}" data-end="${selection.end}" tabindex="0" aria-label="Audio waveform selection"></canvas><i id="sampleCursor" class="sample-cursor"></i></div></div>
+      <div class="sample-wave-toolbar"><button id="waveZoomOut" ${length?'':'disabled'} aria-label="Zoom out">−</button><label>Zoom <input id="waveZoom" type="range" min="1" max="24" step=".1" value="1" ${length?'':'disabled'}></label><button id="waveZoomIn" ${length?'':'disabled'} aria-label="Zoom in">＋</button><button id="waveFit" ${length?'':'disabled'}>Fit</button><button id="waveZoomSelection" ${length?'':'disabled'}>Zoom selection</button><span id="sampleDuration">${duration.toFixed(3)} s · ${editor?.buffer.sampleRate||0} Hz</span><button id="snapZero" aria-pressed="true" ${length?'':'disabled'}>Zero-crossing snap: on</button><button id="sampleUndo" ${editor?.undoStack.length?'':'disabled'}>Undo</button><button id="sampleRedo" ${editor?.redoStack.length?'':'disabled'}>Redo</button></div>
+      <div id="waveViewport" class="wave-viewport"><div class="wave-canvas-wrap"><canvas id="sampleWave" class="sample-wave" data-duration="${duration}" data-length="${length}" data-start="${selection.start}" data-end="${selection.end}" tabindex="0" aria-label="Audio waveform selection"></canvas><button id="startMarker" class="wave-marker wave-marker-start" aria-label="Start marker" title="Start: ${(selection.start/(editor?.buffer.sampleRate||1)).toFixed(4)} seconds"><span>S</span></button><button id="endMarker" class="wave-marker wave-marker-end" aria-label="End marker" title="End: ${(selection.end/(editor?.buffer.sampleRate||1)).toFixed(4)} seconds"><span>E</span></button><i id="sampleCursor" class="sample-cursor"></i></div></div><div class="wave-ruler"><div class="wave-ruler-content">${ruler}</div></div>
       <div class="edit-grid sample-edit-grid">
-        <label>Selection start (s)<input id="trimStart" type="number" min="0" max="${duration}" step=".0001" value="${selection.start/(editor?.buffer.sampleRate||1)}"></label>
-        <label>Selection end (s)<input id="trimEnd" type="number" min="0" max="${duration}" step=".0001" value="${selection.end/(editor?.buffer.sampleRate||1)}"></label>
+        <label>Start (s)<div class="marker-control"><button data-nudge="start" data-direction="-1" aria-label="Move start earlier">−</button><input id="trimStart" type="number" min="0" max="${duration}" step="${1/(editor?.buffer.sampleRate||1)}" value="${selection.start/(editor?.buffer.sampleRate||1)}"><button data-nudge="start" data-direction="1" aria-label="Move start later">＋</button></div><input id="startFine" type="range" min="0" max="${length}" step="1" value="${selection.start}" aria-label="Fine-adjust start marker"></label>
+        <label>End (s)<div class="marker-control"><button data-nudge="end" data-direction="-1" aria-label="Move end earlier">−</button><input id="trimEnd" type="number" min="0" max="${duration}" step="${1/(editor?.buffer.sampleRate||1)}" value="${selection.end/(editor?.buffer.sampleRate||1)}"><button data-nudge="end" data-direction="1" aria-label="Move end later">＋</button></div><input id="endFine" type="range" min="0" max="${length}" step="1" value="${selection.end}" aria-label="Fine-adjust end marker"></label>
+        <label class="frame-mode"><input id="framePrecision" type="checkbox"> Sample-frame precision</label>
         <label>Gain (dB)<input id="editGain" type="range" min="-60" max="120" step=".1" value="${editor?.gainDb||0}"><output id="gainDbValue">${(editor?.gainDb||0).toFixed(1)} dB</output></label>
         <label>Normalize peak (dBFS)<input id="normalizeTarget" type="number" min="-60" max="0" step=".1" value="-1"></label>
         <label>Fade In (s)<input id="fadeIn" type="number" min="0" max="${duration}" step=".001" value="${(editor?.fadeInFrames||0)/(editor?.buffer.sampleRate||1)}"></label>
         <label>Fade Out (s)<input id="fadeOut" type="number" min="0" max="${duration}" step=".001" value="${(editor?.fadeOutFrames||0)/(editor?.buffer.sampleRate||1)}"></label>
       </div>
-      <div class="record-controls sample-tools"><button id="trimSelection" ${length?'':'disabled'}>Crop to selection</button><button id="splitSelection" ${length?'':'disabled'}>Split at selection edges</button><button id="deleteSelection" ${length?'':'disabled'}>Delete selection</button><button id="reverseSample" ${length?'':'disabled'}>Reverse</button><button id="removeSilence" ${length?'':'disabled'}>Remove leading/trailing silence</button><button id="normalize" ${length?'':'disabled'}>Normalize</button><button id="loopPreview" ${length?'':'disabled'}>Preview loop</button><button id="previewEdit" ${length?'':'disabled'}>▶ Preview edited</button><button id="previewAB" ${length?'':'disabled'}>A/B original</button></div>
-      <div class="record-controls"><label>Sample name <input id="sampleName" value="${String(filename).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}" ${length?'':'disabled'}></label><button id="saveSample" class="primary" ${length?'':'disabled'}>Save Sample</button><button id="makeSampler" ${saved?'':'disabled'}>Create Sampler</button><button id="makeRack" ${saved?'':'disabled'}>Add to Drum Rack</button><span id="sampleSaveState">${saved?'Saved sample ready to use.':'Edits do not modify the original recording.'}</span></div>
-      <p class="hint">Drag across the waveform to select. Keyboard: Space preview, Ctrl/Cmd+Z undo, Ctrl/Cmd+Y redo, Delete remove selection, S split, R reverse. Loop preview repeats the current selection.</p>
+      <div class="sample-processing"><label>Preview/render speed <input id="sampleSpeed" type="range" min=".25" max="4" step=".01" value="${editor?.processing.speed??1}"><output>${(editor?.processing.speed??1).toFixed(2)}×</output></label><label>Pitch (semitones) <input id="samplePitch" type="range" min="-24" max="24" step="1" value="${editor?.processing.pitchSemitones??0}"><output>${editor?.processing.pitchSemitones??0} st</output></label><label>Fine tune (cents) <input id="sampleCents" type="range" min="-100" max="100" step="1" value="${editor?.processing.pitchCents??0}"><output>${editor?.processing.pitchCents??0} cents</output></label><label>Pitch mode <select id="samplePitchMode"><option value="preserve" ${editor?.processing.mode!=='repitch'?'selected':''}>Pitch-preserving stretch</option><option value="repitch" ${editor?.processing.mode==='repitch'?'selected':''}>Repitch (speed changes pitch)</option></select></label><p class="hint">Pitch-preserving processing uses a lightweight overlap-add algorithm; transient quality may vary.</p></div>
+      <section class="sample-fx"><div class="sample-fx-title"><h3>Sample effects (bounced into WAV)</h3><select id="addSampleEffect"><option value="">Add effect…</option><option value="eq">EQ</option><option value="compressor">Compressor</option><option value="delay">Delay</option><option value="reverb">Reverb</option><option value="saturation">Saturation</option><option value="limiter">Limiter</option><option value="utility">Utility</option></select></div>${effectMarkup||'<p class="hint">No sample effects. Add an effect to process the saved WAV.</p>'}</section>
+      <div class="record-controls sample-tools"><button id="trimSelection" ${length?'':'disabled'}>Crop to selection</button><button id="splitSelection" ${length?'':'disabled'}>Split at selection edges</button><button id="deleteSelection" ${length?'':'disabled'}>Delete selection</button><button id="reverseSample" ${length?'':'disabled'}>Reverse</button><button id="removeSilence" ${length?'':'disabled'}>Remove leading/trailing silence</button><button id="normalize" ${length?'':'disabled'}>Normalize</button><button id="previewEntire" ${length?'':'disabled'}>Preview entire sample</button><button id="previewSelection" ${length?'':'disabled'}>Preview selection</button><button id="stopPreview" ${length?'':'disabled'}>Stop preview</button><button id="loopPreview" ${length?'':'disabled'}>Loop selection</button><button id="previewEdit" ${length?'':'disabled'}>▶ Preview processed selection</button><button id="previewAB" ${length?'':'disabled'}>A/B original</button></div>
+      <div class="record-controls"><label>Sample name <input id="sampleName" value="${safeName}" ${length?'':'disabled'}></label><button id="saveSample" class="primary" ${length?'':'disabled'}>Save Processed Sample</button><button id="makeSampler" ${saved?'':'disabled'}>Create Sampler</button><button id="makeRack" ${saved?'':'disabled'}>Add to Drum Rack</button><span id="sampleSaveState">${saved?'Saved sample ready to use.':'Edits do not modify the original recording.'}</span></div>
+      <p class="hint">Drag the S/E handles or waveform to set exact sample-frame boundaries. Pinch or use Zoom to navigate. Ctrl/Cmd+Z undo, Ctrl/Cmd+Y redo, Space previews the selection.</p>
     </div></section>`;
 }
 
@@ -247,62 +283,144 @@ export function drawSampleStudioWave(canvas,editor,cursorFrame=0){
   canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);
   const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
   ctx.fillStyle='#121923';ctx.fillRect(0,0,width,height);
-  const mid=height/2,data=editor.buffer.getChannelData(0),frames=editor.frameCount;
-  ctx.strokeStyle='#79d5c1';ctx.lineWidth=1;
-  const stride=Math.max(1,Math.ceil(frames/width/2048));
-  for(let x=0;x<width;x++){
-    const from=Math.floor(x*frames/width),to=Math.min(frames,Math.max(from+1,Math.floor((x+1)*frames/width)));
-    let lo=1,hi=-1;
-    for(let frame=from;frame<to;frame+=stride){let sample=(data[editor.sourceFrameAt(frame)]||0)*10**(editor.gainDb/20);if(editor.fadeInFrames)sample*=Math.min(1,frame/editor.fadeInFrames);if(editor.fadeOutFrames)sample*=Math.min(1,(frames-1-frame)/editor.fadeOutFrames);if(sample<lo)lo=sample;if(sample>hi)hi=sample}
-    ctx.beginPath();ctx.moveTo(x,(1-hi)*mid);ctx.lineTo(x,(1-lo)*mid);ctx.stroke();
+  const frames=editor.frameCount,selection=editor.selection;
+  if(selection.end>selection.start){ctx.fillStyle='#e9be6226';ctx.fillRect(frameToX(selection.start,frames,width),0,frameToX(selection.end,frames,width)-frameToX(selection.start,frames,width),height)}
+  const peaks=getWaveformPeaks(editor.buffer),gain=10**(editor.gainDb/20);
+  for(let channel=0;channel<editor.buffer.numberOfChannels;channel++){
+    const data=editor.buffer.getChannelData(channel),channelHeight=height/editor.buffer.numberOfChannels,mid=channel*channelHeight+channelHeight/2;
+    ctx.strokeStyle=channel===0?'#79d5c1':'#6aaac3';ctx.lineWidth=1;
+    for(let x=0;x<width;x++){
+      const from=Math.floor(x*frames/width),to=Math.min(frames,Math.max(from+1,Math.ceil((x+1)*frames/width)));
+      if(from>=frames)break;
+      const sourceStart=editor.sourceFrameAt(from),sourceEnd=editor.sourceFrameAt(to-1),contiguous=Math.abs(sourceEnd-sourceStart)===to-from-1,source=editor.buffer.getChannelData(channel);
+      let low=1,high=-1;
+      const add=sample=>{if(sample<low)low=sample;if(sample>high)high=sample};
+      if(contiguous){
+        const first=Math.min(sourceStart,sourceEnd),last=Math.max(sourceStart,sourceEnd),cache=peaks.channels[channel],bucketSize=peaks.bucketSize;
+        let frame=first;
+        while(frame<=last&&frame%bucketSize){add(source[frame]||0);frame++}
+        const fullBucketEnd=Math.floor((last+1)/bucketSize);
+        while(frame/bucketSize<fullBucketEnd){const bucket=frame/bucketSize;add(cache.minimum[bucket]);add(cache.maximum[bucket]);frame+=bucketSize}
+        while(frame<=last){add(source[frame]||0);frame++}
+      }else for(let frame=from;frame<to;frame++){const sample=source[editor.sourceFrameAt(frame)]||0;add(sample)}
+      const fade=Math.min(editor.fadeInFrames?Math.min(1,from/editor.fadeInFrames):1,editor.fadeOutFrames?Math.min(1,(frames-to)/editor.fadeOutFrames):1);
+      const a=low*gain*fade,b=high*gain*fade;
+      ctx.beginPath();ctx.moveTo(x,mid-Math.max(-1,Math.min(1,b))*channelHeight*.48);ctx.lineTo(x,mid-Math.max(-1,Math.min(1,a))*channelHeight*.48);ctx.stroke();
+    }
+    if(channel<editor.buffer.numberOfChannels-1){ctx.strokeStyle='#344456';ctx.beginPath();ctx.moveTo(0,(channel+1)*channelHeight);ctx.lineTo(width,(channel+1)*channelHeight);ctx.stroke()}
   }
-  if(frames&&editor.selection.end>editor.selection.start){ctx.fillStyle='#e9be6233';ctx.fillRect(editor.selection.start/frames*width,0,(editor.selection.end-editor.selection.start)/frames*width,height)}
-  ctx.strokeStyle='#e9be62';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(editor.selection.start/Math.max(1,frames)*width,0);ctx.lineTo(editor.selection.start/Math.max(1,frames)*width,height);ctx.moveTo(editor.selection.end/Math.max(1,frames)*width,0);ctx.lineTo(editor.selection.end/Math.max(1,frames)*width,height);ctx.stroke();
+  const cursorX=frameToX(cursorFrame,Math.max(1,frames),width);
+  const cursorElement=canvas.parentElement?.querySelector('#sampleCursor');
+  if(cursorElement&&cursorElement.style.display!=='none')cursorElement.style.left=`${cursorX}px`;
 }
 
-export function wireSampleStudio(root,{editor,engine,notify,onRecord,onLoad,onSave,onEdit,onCreateSampler,onCreateRack}){
-  let dragging=false,zeroSnap=true,looping=false,cursorStart=0,cursorRaf=0,abOriginal=false,gainDragging=false,previewSource=null;
-  const canvas=root.querySelector('#sampleWave'),viewport=root.querySelector('#waveViewport');
-  const cursor=root.querySelector('#sampleCursor');
-  root.querySelector('#record').onclick=onRecord;
-  root.querySelector('#loadSample').onclick=onLoad;
-  root.tabIndex=0;
-  if(!editor){root.querySelector('#waveZoom').disabled=true;root.querySelector('#snapZero').disabled=true;root.querySelector('#sampleUndo').disabled=true;root.querySelector('#sampleRedo').disabled=true;root.querySelector('.sample-edit-grid').hidden=true;root.querySelector('.sample-tools').hidden=true;root.querySelector('#waveViewport').hidden=true;root.tabIndex=0;return}
-  const invalidate=()=>{onEdit();root.querySelector('#makeSampler').disabled=true;root.querySelector('#makeRack').disabled=true;root.querySelector('#sampleSaveState').textContent='Unsaved edits';drawSampleStudioWave(canvas,editor);updateHistory()};
+export function wireSampleStudio(root,{editor,engine,notify,onRecord,onStopRecord,onLoad,onSave,onEdit,onStructureChange=()=>{},onCreateSampler,onCreateRack,recording=false,recordingElapsed=0}){
+  let dragging=false,selectionAnchor=0,zeroSnap=true,looping=false,cursorRaf=0,abOriginal=false,previewSource=null;
+  const canvas=root.querySelector('#sampleWave'),viewport=root.querySelector('#waveViewport'),cursor=root.querySelector('#sampleCursor');
+  root.querySelector('#record').onclick=onRecord;root.querySelector('#finishRecord').onclick=onStopRecord;root.querySelector('#loadSample').onclick=onLoad;
+  if(recording){root.querySelector('#record').disabled=true;root.querySelector('#finishRecord').disabled=false;root.querySelector('#recordState').textContent=`● Recording · ${recordingElapsed.toFixed(1)} s`}
+  if(!editor){root.querySelector('.sample-edit-grid').hidden=true;root.querySelector('.sample-processing').hidden=true;root.querySelector('.sample-fx').hidden=true;root.querySelector('.sample-tools').hidden=true;root.querySelector('.wave-ruler').hidden=true;canvas.style.width=`${Math.max(280,viewport.clientWidth)}px`;return}
+  canvas.style.width=`${Math.max(280,viewport.clientWidth)*editor.view.zoom}px`;
   const updateHistory=()=>{root.querySelector('#sampleUndo').disabled=!editor.undoStack.length;root.querySelector('#sampleRedo').disabled=!editor.redoStack.length};
-  const refreshSelection=()=>{const duration=editor.duration;canvas.dataset.start=editor.selection.start;canvas.dataset.end=editor.selection.end;canvas.dataset.duration=duration;canvas.dataset.length=editor.frameCount;root.querySelector('#sampleDuration').textContent=`${duration.toFixed(3)} s · ${editor.buffer.sampleRate} Hz`;for(const id of ['trimStart','trimEnd','fadeIn','fadeOut'])root.querySelector(`#${id}`).max=duration;root.querySelector('#trimStart').value=(editor.selection.start/editor.buffer.sampleRate).toFixed(4);root.querySelector('#trimEnd').value=(editor.selection.end/editor.buffer.sampleRate).toFixed(4);root.querySelector('#fadeIn').value=(editor.fadeInFrames/editor.buffer.sampleRate).toFixed(3);root.querySelector('#fadeOut').value=(editor.fadeOutFrames/editor.buffer.sampleRate).toFixed(3);root.querySelector('#editGain').value=editor.gainDb;root.querySelector('#gainDbValue').textContent=`${editor.gainDb.toFixed(1)} dB`;drawSampleStudioWave(canvas,editor)};
-  const frameFromPointer=event=>{const rect=canvas.getBoundingClientRect(),fraction=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width));let frame=Math.round(fraction*editor.frameCount);if(zeroSnap)frame=editor.nearestZeroCrossing(frame);return frame};
-  const selectAt=(event,initial=false)=>{const frame=frameFromPointer(event);if(initial)cursorStart=frame;editor.setSelection(cursorStart,frame);refreshSelection()};
-  const setCursor=frame=>{cursor.style.left=`${frame/Math.max(1,editor.frameCount)*canvas.clientWidth}px`};
-  const stopPreview=()=>{cancelAnimationFrame(cursorRaf);try{previewSource?.stop()}catch{}previewSource=null;cursor.style.display='none'};
-  const playBuffer=(buffer,start=0,end=buffer.duration,loop=false)=>{stopPreview();const source=engine.ctx.createBufferSource();source.buffer=buffer;source.loop=loop;if(loop){source.loopStart=start;source.loopEnd=end}source.connect(engine.ctx.destination);if(loop)source.start(0,start);else source.start(0,start,Math.max(.001,end-start));previewSource=source;cursor.style.display='block';const startTime=engine.ctx.currentTime;const update=()=>{if(previewSource!==source)return;const elapsed=engine.ctx.currentTime-startTime;const position=loop?start+(elapsed%(end-start)):start+elapsed;setCursor(Math.round(position*editor.buffer.sampleRate));if(!loop&&position>=end){previewSource=null;cursor.style.display='none';return}cursorRaf=requestAnimationFrame(update)};update();source.onended=()=>{if(previewSource===source){previewSource=null;cancelAnimationFrame(cursorRaf);cursor.style.display='none'}}};
-  const renderEdited=()=>editor.render(engine.ctx);
+  const markDirty=()=>{onEdit();root.querySelector('#makeSampler').disabled=true;root.querySelector('#makeRack').disabled=true;root.querySelector('#sampleSaveState').textContent='Unsaved edits';updateHistory()};
+  const refreshSelection=()=>{
+    const duration=editor.duration,length=editor.frameCount,rate=editor.buffer.sampleRate;
+    canvas.dataset.start=editor.selection.start;canvas.dataset.end=editor.selection.end;canvas.dataset.duration=duration;canvas.dataset.length=length;
+    root.querySelector('#sampleDuration').textContent=`${duration.toFixed(3)} s · ${rate} Hz · ${editor.buffer.numberOfChannels} ch`;
+    for(const id of ['trimStart','trimEnd','fadeIn','fadeOut'])root.querySelector(`#${id}`).max=duration;
+    root.querySelector('#trimStart').value=(editor.selection.start/rate).toFixed(6);root.querySelector('#trimEnd').value=(editor.selection.end/rate).toFixed(6);
+    root.querySelector('#startFine').value=editor.selection.start;root.querySelector('#endFine').value=editor.selection.end;
+    root.querySelector('#startFine').max=length;root.querySelector('#endFine').max=length;
+    root.querySelector('#fadeIn').value=(editor.fadeInFrames/rate).toFixed(3);root.querySelector('#fadeOut').value=(editor.fadeOutFrames/rate).toFixed(3);
+    root.querySelector('#editGain').value=editor.gainDb;root.querySelector('#gainDbValue').textContent=`${editor.gainDb.toFixed(1)} dB`;
+    root.querySelector('#startMarker').style.left=`${frameToX(editor.selection.start,length,canvas.clientWidth)}px`;
+    root.querySelector('#endMarker').style.left=`${frameToX(editor.selection.end,length,canvas.clientWidth)}px`;
+    root.querySelector('#startMarker').title=`Start: ${(editor.selection.start/rate).toFixed(6)} seconds · frame ${editor.selection.start}`;
+    root.querySelector('#endMarker').title=`End: ${(editor.selection.end/rate).toFixed(6)} seconds · frame ${editor.selection.end}`;
+    const rulerContent=root.querySelector('.wave-ruler-content');
+    rulerContent.style.width=`${canvas.clientWidth}px`;
+    rulerContent.innerHTML=Array.from({length:11},(_,index)=>`<span style="left:${index*10}%">${(duration*index/10).toFixed(3)}s</span>`).join('');
+    rulerContent.style.transform=`translateX(${-viewport.scrollLeft}px)`;
+    drawSampleStudioWave(canvas,editor);
+  };
+  const setMarkerPosition=(which,frame)=>{
+    const length=editor.frameCount,marker=root.querySelector(which==='start'?'#startMarker':'#endMarker');
+    let next=clampFrame(frame,length);if(zeroSnap)next=editor.nearestZeroCrossing(next);
+    next=which==='start'?Math.min(next,editor.selection.end-1):Math.max(next,editor.selection.start+1);
+    editor.setSelection(which==='start'?next:editor.selection.start,which==='end'?next:editor.selection.end);
+    marker.dataset.frame=String(next);markDirty();refreshSelection();
+  };
+  const frameFromPointer=event=>xToFrame(event.clientX-canvas.getBoundingClientRect().left,editor.frameCount,canvas.clientWidth);
+  const setZoom=(value,anchorX=viewport.clientWidth/2)=>{
+    const oldWidth=Math.max(1,canvas.clientWidth),anchorFrame=xToFrame(viewport.scrollLeft+anchorX,editor.frameCount,oldWidth);
+    editor.view.zoom=clamp(Number(value),1,24);const width=Math.max(280,viewport.clientWidth)*editor.view.zoom;
+    canvas.style.width=`${width}px`;viewport.scrollLeft=frameToX(anchorFrame,editor.frameCount,width)-anchorX;
+    root.querySelector('#waveZoom').value=editor.view.zoom;refreshSelection();
+  };
+  const stopPreview=()=>{cancelAnimationFrame(cursorRaf);try{previewSource?.stop()}catch{}previewSource=null;cursor.style.display='none';looping=false;root.querySelector('#loopPreview').textContent='Loop selection'};
+  const playBuffer=(buffer,{start=0,end=buffer.duration,loop=false,rate=1,displayStart=0,displayLength=editor.frameCount}={})=>{
+    stopPreview();const source=engine.ctx.createBufferSource();source.buffer=buffer;source.playbackRate.value=rate;source.loop=loop;
+    if(loop){source.loopStart=start;source.loopEnd=end}
+    source.connect(engine.ctx.destination);if(loop)source.start(0,start);else source.start(0,start,Math.max(.001,end-start));
+    previewSource=source;cursor.style.display='block';const started=engine.ctx.currentTime;
+    const update=()=>{if(previewSource!==source)return;const elapsed=(engine.ctx.currentTime-started)*rate,played=loop?elapsed%(end-start):Math.min(end-start,elapsed),mapped=displayStart+played/Math.max(.001,end-start)*displayLength;cursor.style.left=`${frameToX(mapped,editor.frameCount,canvas.clientWidth)}px`;if(!loop&&elapsed>=end-start){stopPreview();return}cursorRaf=requestAnimationFrame(update)};
+    update();source.onended=()=>{if(previewSource===source)stopPreview()};
+  };
+  const renderProcessed=async(selectionOnly=true)=>{
+    let output=selectionOnly?editor.renderSelection(engine.ctx):editor.render(engine.ctx);
+    output=renderSampleProcessing(engine.ctx,output,editor.processing);
+    return renderSampleEffectChain(output,editor.processing.effects,engine.bpm||120);
+  };
   const selectionSeconds=()=>({start:editor.selection.start/editor.buffer.sampleRate,end:editor.selection.end/editor.buffer.sampleRate});
-  root.querySelector('#sampleUndo').onclick=()=>{if(editor.undo()){invalidate();refreshSelection()}};
-  root.querySelector('#sampleRedo').onclick=()=>{if(editor.redo()){invalidate();refreshSelection()}};
+  const checkpointOnInput=element=>{element.addEventListener('pointerdown',()=>editor.checkpoint());element.addEventListener('keydown',()=>editor.checkpoint(),{once:true})};
+  root.querySelector('#sampleUndo').onclick=()=>{stopPreview();if(editor.undo()){markDirty();refreshSelection();onStructureChange()}};
+  root.querySelector('#sampleRedo').onclick=()=>{stopPreview();if(editor.redo()){markDirty();refreshSelection();onStructureChange()}};
   root.querySelector('#snapZero').onclick=event=>{zeroSnap=!zeroSnap;event.currentTarget.textContent=`Zero-crossing snap: ${zeroSnap?'on':'off'}`;event.currentTarget.setAttribute('aria-pressed',String(zeroSnap))};
-  canvas.addEventListener('pointerdown',event=>{dragging=true;canvas.setPointerCapture(event.pointerId);selectAt(event,true)});
-  canvas.addEventListener('pointermove',event=>{if(dragging)selectAt(event)});
-  canvas.addEventListener('pointerup',event=>{if(dragging){selectAt(event);dragging=false}});
+  for(const [which,marker]of [['start',root.querySelector('#startMarker')],['end',root.querySelector('#endMarker')]]){
+    marker.addEventListener('pointerdown',event=>{event.preventDefault();event.stopPropagation();marker.setPointerCapture(event.pointerId)});
+    marker.addEventListener('pointermove',event=>{if(marker.hasPointerCapture(event.pointerId))setMarkerPosition(which,frameFromPointer(event))});
+    marker.addEventListener('pointerup',event=>{if(marker.hasPointerCapture(event.pointerId))marker.releasePointerCapture(event.pointerId)});
+  }
+  canvas.addEventListener('pointerdown',event=>{dragging=true;canvas.focus({preventScroll:true});canvas.setPointerCapture(event.pointerId);selectionAnchor=frameFromPointer(event);if(zeroSnap)selectionAnchor=editor.nearestZeroCrossing(selectionAnchor);editor.setSelection(selectionAnchor,selectionAnchor);markDirty();refreshSelection()});
+  canvas.addEventListener('pointermove',event=>{if(!dragging||!canvas.hasPointerCapture(event.pointerId))return;let frame=frameFromPointer(event);if(zeroSnap)frame=editor.nearestZeroCrossing(frame);editor.setSelection(selectionAnchor,frame);markDirty();refreshSelection()});
+  canvas.addEventListener('pointerup',event=>{if(canvas.hasPointerCapture(event.pointerId)){dragging=false;canvas.releasePointerCapture(event.pointerId)}});
   canvas.addEventListener('pointercancel',()=>{dragging=false});
-  root.querySelector('#waveZoom').oninput=event=>{const old=viewport.scrollLeft+viewport.clientWidth/2,ratio=canvas.clientWidth?old/canvas.clientWidth:.5;canvas.style.width=`${Math.max(viewport.clientWidth,Math.min(50000,viewport.clientWidth*Number(event.target.value)))}px`;drawSampleStudioWave(canvas,editor);viewport.scrollLeft=ratio*canvas.clientWidth-viewport.clientWidth/2};
-  for(const [id,key] of [['trimStart','start'],['trimEnd','end']])root.querySelector(`#${id}`).onchange=event=>{const time=Math.max(0,Math.min(editor.duration,Number(event.target.value)||0))*editor.buffer.sampleRate;editor.setSelection(key==='start'?time:editor.selection.start,key==='end'?time:editor.selection.end);if(editor.selection.end<editor.selection.start)editor.setSelection(editor.selection.end,editor.selection.end);refreshSelection()};
-  root.querySelector('#trimSelection').onclick=()=>{if(editor.cropSelection()){invalidate();refreshSelection()}};
-  root.querySelector('#deleteSelection').onclick=()=>{if(editor.deleteSelection()){invalidate();refreshSelection()}};
-  root.querySelector('#splitSelection').onclick=()=>{if(editor.splitSelection()){invalidate();refreshSelection()}};
-  root.querySelector('#reverseSample').onclick=()=>{editor.reverse();invalidate();refreshSelection()};
-  root.querySelector('#removeSilence').onclick=()=>{if(editor.trimSilence(-60)){invalidate();refreshSelection()}else notify('No leading or trailing silence found above -60 dBFS.')};
-  root.querySelector('#editGain').onpointerdown=()=>{gainDragging=true;editor.checkpoint()};
-  root.querySelector('#editGain').onpointerup=()=>{gainDragging=false};
-  root.querySelector('#editGain').oninput=event=>{editor.setGainDb(Number(event.target.value),!gainDragging);root.querySelector('#gainDbValue').textContent=`${editor.gainDb.toFixed(1)} dB`;onEdit();root.querySelector('#makeSampler').disabled=true;root.querySelector('#makeRack').disabled=true;root.querySelector('#sampleSaveState').textContent='Unsaved edits';drawSampleStudioWave(canvas,editor);updateHistory()};
-  root.querySelector('#normalize').onclick=()=>{const selection=editor.selection.end>editor.selection.start?editor.selection:{start:0,end:editor.frameCount};if(!editor.normalize(Number(root.querySelector('#normalizeTarget').value),selection.start,selection.end))return notify('Cannot normalize silence.');root.querySelector('#editGain').value=editor.gainDb;root.querySelector('#gainDbValue').textContent=`${editor.gainDb.toFixed(1)} dB`;invalidate()};
-  for(const [id,key] of [['fadeIn','fadeInFrames'],['fadeOut','fadeOutFrames']])root.querySelector(`#${id}`).onchange=event=>{const currentIn=editor.fadeInFrames/editor.buffer.sampleRate,currentOut=editor.fadeOutFrames/editor.buffer.sampleRate;editor.setFades(key==='fadeIn'?Math.max(0,Number(event.target.value)||0):currentIn,key==='fadeOut'?Math.max(0,Number(event.target.value)||0):currentOut);invalidate()};
-  root.querySelector('#previewEdit').onclick=()=>playBuffer(renderEdited());
-  root.querySelector('#loopPreview').onclick=()=>{const start=editor.selection.start/editor.buffer.sampleRate,end=editor.selection.end/editor.buffer.sampleRate;if(end<=start)return notify('Select a loop region first.');looping=!looping;root.querySelector('#loopPreview').textContent=looping?'Stop loop preview':'Preview loop';if(looping)playBuffer(renderEdited(),start,end,true);else stopPreview()};
-  root.querySelector('#previewAB').onclick=()=>{abOriginal=!abOriginal;root.querySelector('#previewAB').textContent=abOriginal?'B: edited sample':'A/B original';const selection=selectionSeconds();playBuffer(abOriginal?editor.buffer:renderEdited(),abOriginal?0:selection.start,abOriginal?editor.buffer.duration:selection.end)};
-  root.querySelector('#saveSample').onclick=()=>onSave(renderEdited(),root.querySelector('#sampleName').value).catch(error=>notify(`Sample save failed: ${error.message}`));
-  root.querySelector('#makeSampler').onclick=onCreateSampler;
-  root.querySelector('#makeRack').onclick=onCreateRack;
-  root.addEventListener('keydown',event=>{if(event.target.matches('input,select,textarea,button'))return;if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();root.querySelector(event.shiftKey?'#sampleRedo':'#sampleUndo').click()}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='y'){event.preventDefault();root.querySelector('#sampleRedo').click()}else if(event.code==='Space'){event.preventDefault();root.querySelector('#previewEdit').click()}else if(event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('#splitSelection').click()}else if(event.key.toLowerCase()==='r'){event.preventDefault();root.querySelector('#reverseSample').click()}else if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();root.querySelector('#deleteSelection').click()}});
-  root.tabIndex=0;root.focus({preventScroll:true});drawSampleStudioWave(canvas,editor);updateHistory();
+  viewport.addEventListener('scroll',()=>{root.querySelector('.wave-ruler-content').style.transform=`translateX(${-viewport.scrollLeft}px)`},{passive:true});
+  for(const [id,which]of [['trimStart','start'],['trimEnd','end'],['startFine','start'],['endFine','end']]){
+    root.querySelector(`#${id}`).oninput=event=>setMarkerPosition(which,id.endsWith('Fine')?Number(event.target.value):Number(event.target.value)*editor.buffer.sampleRate);
+  }
+  root.querySelectorAll('[data-nudge]').forEach(button=>button.onclick=()=>{const which=button.dataset.nudge,step=root.querySelector('#framePrecision').checked?1:Math.max(1,Math.round(editor.buffer.sampleRate/1000));setMarkerPosition(which,editor.selection[which]+Number(button.dataset.direction)*step)});
+  root.querySelector('#framePrecision').onchange=()=>{const step=root.querySelector('#framePrecision').checked?1:Math.max(1,Math.round(editor.buffer.sampleRate/1000));root.querySelector('#trimStart').step=String(step/editor.buffer.sampleRate);root.querySelector('#trimEnd').step=String(step/editor.buffer.sampleRate)};
+  root.querySelector('#waveZoom').oninput=event=>setZoom(Number(event.target.value));
+  root.querySelector('#waveZoomIn').onclick=()=>setZoom(editor.view.zoom*1.25);
+  root.querySelector('#waveZoomOut').onclick=()=>setZoom(editor.view.zoom/1.25);
+  root.querySelector('#waveFit').onclick=()=>{setZoom(1,0);viewport.scrollLeft=0};
+  root.querySelector('#waveZoomSelection').onclick=()=>{const length=editor.selection.end-editor.selection.start;if(length<1)return;setZoom(clamp(editor.frameCount/length,1,24),frameToX((editor.selection.start+editor.selection.end)/2,editor.frameCount,canvas.clientWidth)-viewport.scrollLeft)};
+  viewport.addEventListener('wheel',event=>{if(!event.ctrlKey&&!event.metaKey)return;event.preventDefault();setZoom(editor.view.zoom*Math.exp(-event.deltaY*.002),event.clientX-viewport.getBoundingClientRect().left)},{passive:false});
+  let touches=new Map(),pinch=null;
+  viewport.addEventListener('pointerdown',event=>{if(event.pointerType!=='touch')return;touches.set(event.pointerId,{x:event.clientX,y:event.clientY});if(touches.size===2){event.preventDefault();event.stopPropagation();dragging=false;const points=[...touches.values()],distance=Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y);pinch={distance:Math.max(1,distance),zoom:editor.view.zoom};viewport.setPointerCapture(event.pointerId)}},{capture:true});
+  viewport.addEventListener('pointermove',event=>{if(!touches.has(event.pointerId))return;touches.set(event.pointerId,{x:event.clientX,y:event.clientY});if(!pinch||touches.size<2)return;event.preventDefault();const points=[...touches.values()],distance=Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y),center=(points[0].x+points[1].x)/2;setZoom(pinch.zoom*distance/pinch.distance,center-viewport.getBoundingClientRect().left)},{capture:true});
+  for(const type of ['pointerup','pointercancel'])viewport.addEventListener(type,event=>{touches.delete(event.pointerId);if(touches.size<2)pinch=null},{capture:true});
+  root.querySelector('#trimSelection').onclick=()=>{if(editor.cropSelection()){markDirty();refreshSelection()}};
+  root.querySelector('#deleteSelection').onclick=()=>{if(editor.deleteSelection()){markDirty();refreshSelection()}};
+  root.querySelector('#splitSelection').onclick=()=>{if(editor.splitSelection()){markDirty();refreshSelection()}};
+  root.querySelector('#reverseSample').onclick=()=>{editor.reverse();markDirty();refreshSelection()};
+  root.querySelector('#removeSilence').onclick=()=>{if(editor.trimSilence(-60)){markDirty();refreshSelection()}else notify('No leading or trailing silence found above -60 dBFS.')};
+  root.querySelector('#editGain').onpointerdown=()=>editor.checkpoint();
+  root.querySelector('#editGain').oninput=event=>{editor.setGainDb(Number(event.target.value),false);markDirty();refreshSelection()};
+  root.querySelector('#normalize').onclick=()=>{if(!editor.normalize(Number(root.querySelector('#normalizeTarget').value),editor.selection.start,editor.selection.end))return notify('Cannot normalize silence.');markDirty();refreshSelection()};
+  for(const id of ['fadeIn','fadeOut'])root.querySelector(`#${id}`).onchange=event=>{editor.checkpoint();const currentIn=editor.fadeInFrames/editor.buffer.sampleRate,currentOut=editor.fadeOutFrames/editor.buffer.sampleRate;editor.setFades(id==='fadeIn'?Math.max(0,Number(event.target.value)||0):currentIn,id==='fadeOut'?Math.max(0,Number(event.target.value)||0):currentOut);markDirty();refreshSelection()};
+  for(const [id,key]of [['sampleSpeed','speed'],['samplePitch','pitchSemitones'],['sampleCents','pitchCents']]){const control=root.querySelector(`#${id}`);checkpointOnInput(control);control.oninput=event=>{const value=Number(event.target.value);editor.processing[key]=value;event.target.nextElementSibling.value=key==='speed'?`${value.toFixed(2)}×`:key==='pitchSemitones'?`${value} st`:`${value} cents`;markDirty()}}
+  root.querySelector('#samplePitchMode').onchange=event=>{editor.checkpoint();editor.processing.mode=event.target.value;markDirty()};
+  root.querySelector('#addSampleEffect').onchange=event=>{if(!event.target.value)return;editor.checkpoint();editor.processing.effects.push(createTrackEffect(event.target.value,`sample-${Date.now()}`));markDirty();onStructureChange()};
+  root.querySelectorAll('[data-sample-fx-enabled]').forEach(control=>control.onchange=()=>{editor.checkpoint();editor.processing.effects[Number(control.dataset.sampleFxEnabled)].enabled=control.checked;markDirty()});
+  root.querySelectorAll('[data-sample-fx-param]').forEach(control=>{checkpointOnInput(control);control.oninput=()=>{const effect=editor.processing.effects[Number(control.dataset.sampleFxParam)],key=control.dataset.param,value=Number(control.value)/Number(control.dataset.scale||1);if(control.dataset.eqBand!==undefined)effect.params.bands[Number(control.dataset.eqBand)][key]=value;else effect.params[key]=value;control.nextElementSibling.value=Number(control.value).toFixed(control.step.includes('.')?2:0);markDirty()}});
+  root.querySelectorAll('[data-sample-fx-up],[data-sample-fx-down],[data-sample-fx-remove]').forEach(button=>button.onclick=()=>{editor.checkpoint();if(button.hasAttribute('data-sample-fx-remove'))editor.processing.effects.splice(Number(button.dataset.sampleFxRemove),1);else{const index=Number(button.dataset.sampleFxUp??button.dataset.sampleFxDown),next=index+(button.hasAttribute('data-sample-fx-up')?-1:1);[editor.processing.effects[index],editor.processing.effects[next]]=[editor.processing.effects[next],editor.processing.effects[index]]}markDirty();onStructureChange()});
+  const preview=async mode=>{try{await engine.init();const {start,end}=selectionSeconds();if(mode==='stop'){stopPreview();return}if(mode==='original'){const rate=editor.processing.mode==='repitch'?editor.processing.speed*2**((editor.processing.pitchSemitones+editor.processing.pitchCents/100)/12):1;playBuffer(editor.buffer,{start,end,rate,displayStart:editor.selection.start,displayLength:editor.selection.end-editor.selection.start});return}const output=await renderProcessed(mode!=='entire'),isLoop=mode==='loop';looping=isLoop;playBuffer(output,{loop:isLoop,displayStart:mode==='entire'?0:editor.selection.start,displayLength:mode==='entire'?editor.frameCount:editor.selection.end-editor.selection.start})}catch(error){notify(`Sample processing failed: ${error.message}`)}};
+  root.querySelector('#previewEntire').onclick=()=>preview('entire');root.querySelector('#previewSelection').onclick=()=>preview('selection');root.querySelector('#previewEdit').onclick=()=>preview('selection');root.querySelector('#stopPreview').onclick=()=>preview('stop');root.querySelector('#loopPreview').onclick=()=>looping?stopPreview():preview('loop');
+  root.querySelector('#previewAB').onclick=()=>{abOriginal=!abOriginal;root.querySelector('#previewAB').textContent=abOriginal?'B: processed':'A/B original';preview(abOriginal?'original':'selection')};
+  root.querySelector('#saveSample').onclick=async()=>{try{await engine.init();const output=await renderProcessed(true);await onSave(output,root.querySelector('#sampleName').value)}catch(error){notify(`Sample save failed: ${error.message}`)}};
+  root.querySelector('#makeSampler').onclick=onCreateSampler;root.querySelector('#makeRack').onclick=onCreateRack;
+  root.addEventListener('keydown',event=>{if(event.target.matches('input,select,textarea,button'))return;if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();root.querySelector(event.shiftKey?'#sampleRedo':'#sampleUndo').click()}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='y'){event.preventDefault();root.querySelector('#sampleRedo').click()}else if(event.code==='Space'){event.preventDefault();root.querySelector('#previewSelection').click()}else if(event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('#splitSelection').click()}else if(event.key.toLowerCase()==='r'){event.preventDefault();root.querySelector('#reverseSample').click()}else if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();root.querySelector('#deleteSelection').click()}});
+  root.tabIndex=0;refreshSelection();updateHistory();
 }

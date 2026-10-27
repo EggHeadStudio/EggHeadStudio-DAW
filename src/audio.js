@@ -123,6 +123,17 @@ export function createTrackGraph(ctx,track,output,inputGain=null,bpm=120){
  update(track);
  return{gain,pan,filter,legacyDelay,feedback,wet,dry,instances,update,readMeter(){leftMeter.getFloatTimeDomainData(leftSamples);rightMeter.getFloatTimeDomainData(rightSamples);let leftPeak=0,rightPeak=0,leftSquare=0,rightSquare=0;for(let i=0;i<leftSamples.length;i++){const left=leftSamples[i],right=rightSamples[i];leftPeak=Math.max(leftPeak,Math.abs(left));rightPeak=Math.max(rightPeak,Math.abs(right));leftSquare+=left*left;rightSquare+=right*right}const reductions={};for(const[id,instance]of instances)if(instance.type==='compressor'||instance.type==='limiter')reductions[id]=Math.max(0,-Number(instance.node.reduction||0));return{leftPeak,rightPeak,leftRms:Math.sqrt(leftSquare/leftSamples.length),rightRms:Math.sqrt(rightSquare/rightSamples.length),reductions}},signature:chain.filter(effect=>effect.enabled).map(effect=>`${effect.id}:${effect.type}`).join('|'),disconnect(){for(const node of new Set(nodes))try{node.disconnect()}catch{}}};
 }
+export async function renderSampleEffectChain(buffer,effects,bpm=120){
+ const enabled=(effects||[]).filter(effect=>effect.enabled);
+ if(!enabled.length)return buffer;
+ const tail=Math.max(0,...enabled.map(effect=>effect.type==='reverb'?Math.max(.1,Number(effect.params?.decay)||1.5)*1.5:effect.type==='delay'?Math.min(20,delayTimeSeconds(effect.params,bpm)/(1-Math.min(.85,Number(effect.params?.feedback)||0))):0));
+ const frames=Math.ceil((buffer.duration+tail)*buffer.sampleRate),Context=globalThis.OfflineAudioContext||globalThis.webkitOfflineAudioContext;
+ if(!Context)throw new Error('Offline audio processing is not supported in this browser.');
+ const context=new Context(2,frames,buffer.sampleRate),track={id:'sample-preview',volume:1,pan:0,mute:false,solo:false,fx:{effects:enabled}};
+ const graph=createTrackGraph(context,track,context.destination,null,bpm),source=context.createBufferSource();
+ source.buffer=buffer;source.connect(graph.gain);source.start(0);
+ return context.startRendering();
+}
 export function clipDurationSeconds(clip){const sourceDuration=Math.max(0,(clip.end-clip.start)/(clip.rate||1));return clip.loop?Math.max(0,Number(clip.duration)||sourceDuration):sourceDuration}
 function scheduleClipSource(ctx,source,gain,clip,when,skip=0,duration=clipDurationSeconds(clip)){
  const rate=clip.rate||1,total=clipDurationSeconds(clip),level=Number(clip.gain??1);
