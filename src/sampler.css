@@ -108,6 +108,16 @@
 .clip-controls input[type=checkbox]{width:24px;height:24px}
 @media(max-width:700px){.effect-presets{align-items:stretch}.effect-presets button{min-height:44px}.clip-controls input,.clip-controls select,.clip-controls button{min-height:44px}.clip-handle{width:18px}}
 .sample-wave{touch-action:none}
+.sample-playback{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0;padding:10px;background:#1a222e;border:1px solid #3b4658;border-radius:8px}
+.sample-playback button{min-height:44px}
+.sample-playback #samplePlaybackState{min-width:120px;color:#a9bacb;font-variant-numeric:tabular-nums}
+.sample-playback #samplePlaybackState[aria-label="Playing"]{color:#8ce5ce}
+.new-project-dialog{max-width:min(440px,calc(100vw - 32px));border:1px solid #526075;border-radius:12px;background:#1b222e;color:#e6e9f1;box-shadow:0 12px 48px #000b}
+.new-project-dialog::backdrop{background:#05080dcc}
+.new-project-dialog h2{margin-top:0}
+.new-project-dialog p{color:#acb8c8;line-height:1.5}
+.new-project-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:18px}
+.new-project-actions button{min-height:44px}
 .wave-marker{position:absolute;top:0;bottom:0;z-index:4;width:38px;min-height:44px;padding:0;transform:translateX(-50%);border:0;border-radius:0;background:transparent;color:#fff4;touch-action:none;cursor:ew-resize}
 .wave-marker::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:2px;background:#e9be62;box-shadow:0 0 5px #000}
 .wave-marker span{position:absolute;top:3px;left:50%;transform:translateX(-50%);padding:3px 6px;border-radius:4px;background:#e9be62;color:#15202a;font-size:11px;font-weight:800}

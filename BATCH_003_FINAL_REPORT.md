@@ -1,70 +1,92 @@
-# Batch 003 Release Candidate Report
+# Batch 003 Final Report
 
 ## Release status
 
-**BATCH 003 BLOCKED — CRITICAL ISSUES REMAIN**
+**BATCH 003 COMPLETE — READY FOR BATCH 004**
 
-The local unit suite passes, but the required end-to-end project workflow has not been completed and verified as one reproducible test. This is a release-acceptance blocker, not a confirmed failure of a specific workflow step. Physical-device checks are separately pending and are not the reason for this status.
+Batch 003's synthetic, browser-emulated end-to-end acceptance workflow passed. Automated Node tests passed locally. Physical-device checks, remote GitHub Actions, and validation of these unpushed changes on GitHub Pages remain pending; none is represented as having run.
 
-## Completed and stabilized in this continuation
+## Completed functionality
 
-- Unified live Drum Rack pattern-cycle calculation with the pattern length used by offline rendering. Added regression coverage for a multi-bar rack pattern.
-- Scheduled transport sources now unregister and disconnect their nodes when playback ends or stops.
-- Corrected Sample Studio fade-edit history handling and added a model-level single-step undo/redo test.
-- Made waveform canvas touch gestures available to pointer-based selection and added playhead recalculation after viewport resizing.
-- Added a GitHub Actions workflow for Node.js 22 on pushes to `main` and pull requests.
+- Sample Studio uses non-destructive, frame-based edits and saves processed audio as a new WAV. Playback controls are grouped immediately below the waveform, with selection/entire-sample preview, loop preview, stop, and a visible playback cursor/status.
+- Recording cancellation stops the active stream and discards temporary chunks. Unsaved-sample discard and New Recording use confirmation/reset handling; saved library samples are preserved.
+- New Project provides Save, Discard, and Cancel paths and resets the project to an empty 120 BPM state without clearing the sample library.
+- Track Mute, Solo, and Delete controls have confirmation/accessibility labels. Live and offline routing share mute/solo audibility behavior.
+- Audio, Sampler, and Drum Rack tracks store independent ordered effect chains. Per-track effects and mixer state persist in project metadata and are applied during offline export.
+- Timeline seeking now converts the visible ruler coordinate to beats once, then to time. The same timeline scale/origin drives ruler, playhead and arrangement interactions across viewport widths.
+- Arrangement clip move and editing operations, mixer controls, piano notes, drum patterns, and effect-chain state were included in browser workflow verification.
 
 ## Automated test results
 
-- Installed Node.js LTS 24.20.0 locally after verifying package availability.
-- `npm test`: **36 passed, 0 failed**.
-- The suite covers arrangement edits, audio/DSP utilities, effect graph order and routing, Drum Rack cycle length, scheduled-source cleanup, piano editing, sample editing/history, sample processing, and timeline/waveform helpers.
-- GitHub Actions configuration is present and was reviewed. A remote Actions run is **pending** because no push was requested or performed.
+- Runtime: Node.js 24.20.0.
+- Command: `node --test tests\*.test.js`.
+- Result: **45 passed, 0 failed**.
+- Syntax checks passed for `src\app.js`, `src\sample-editor.js`, and `src\timeline.js`.
+- `.github/workflows/test.yml` configures Node.js 22 tests on pushes to `main` and pull requests. The remote workflow has not run because no push was requested or performed.
 
 ## Browser and audio verification
 
-- Local static app loaded in Chromium with no observed page errors during the captured load.
-- Imported a generated 440 Hz WAV into Sample Studio. Adjusted its end boundary to 0.75 seconds, changed zoom, and verified that undo restored a fade edit.
-- Applied Utility gain and saved the processed result. The captured WAV decoded as stereo 48 kHz PCM, 0.75 seconds long, with nonzero signal and a measured peak of approximately 0.388 (no clipping). This confirms the sample save contains processed audio for this fixture; it is not a full offline/live parity test.
-- Browser-emulated viewport checks at 360, 390, 430, 768, and 1280 CSS pixels found no page-level horizontal overflow and confirmed the playhead aligned with the timeline origin after resizing.
-- The currently published GitHub Pages site loaded its application and static assets. That is a smoke check of the deployed revision only; the local changes in this report have not been deployed.
+Local Chromium testing used a generated 440 Hz WAV and a synthetic Web Audio/MediaRecorder microphone stream. The stream is an emulated recording input, not a physical microphone.
 
-## Mobile verification
+One reload initially reused a stale cached `timeline.js` response from the local test server (HTTP 304). Disabling the browser cache loaded the current file, after which the app and final browser checks succeeded without page errors. This was a local test-cache condition; cache behavior on the hosting CDN was not tested for these unpushed changes.
 
-Responsive layout and timeline alignment were checked with browser viewport emulation. Pointer interactions and CSS gesture settings were checked in Chromium, but actual touch selection, microphone permission/capture, and device-specific audio behavior were not verified on a physical iPhone or Android device. Those checks remain pending release validation.
+Verified workflow:
+
+1. Started with an empty project and retained the sample library through project reset.
+2. Imported a generated tone into Sample Studio; trimmed it, normalized it, applied fades, changed speed, and added Utility gain.
+3. Saved the processed result and decoded the saved WAV: stereo, 48 kHz, approximately 0.682 seconds, peak approximately 0.446 and RMS approximately 0.301.
+4. Created a Sampler from the saved sample, added a Piano Roll note, created a Drum Rack, assigned a sample and activated a pattern step.
+5. Arranged sampler, drum and audio material, and verified separate EQ/compressor, reverb/delay and Utility chains on the respective tracks.
+6. Compared offline export with EQ enabled and bypassed; the measured output changed. Mute and solo export behavior was compared, including multiple solo tracks. Live transport advanced and the Drum Rack meter showed signal.
+7. Exported and decoded the full mix: stereo 48 kHz WAV, 34.25 seconds, peak approximately 0.928 and RMS approximately 0.116. Output was non-silent and below full-scale sample peak; the export included the observed effect tail.
+8. Saved and reloaded the project. Three tracks returned with their clips, sample references, one sampler note, one Drum Rack pattern note, assigned pad samples and independent effect chains.
+9. Confirmed project-reset Cancel preserves the active project, project-reset Discard creates the empty project, sample discard Cancel preserves the working sample, accepted discard clears only the working sample, and recording cancellation stops its synthetic media stream without importing the recording.
+10. Deleted a temporary audio track and confirmed shared samples remained available.
+
+These are reproducible local browser checks, not a broad audio-quality certification. Browser automation does not verify physical microphone hardware, all browser engines, or every long-recording/performance condition.
+
+## Mobile viewport verification
+
+Chromium viewport emulation at **360, 390, 430, 768 and 1280 CSS pixels** found no page-level horizontal overflow. At each width, after 120 px of arrangement horizontal scroll, clicking the ruler position for a two-second seek set the playhead to 2.0 seconds and kept the playhead line 156 px from the ruler origin. At 100 BPM and 125% zoom, a four-beat seek measured 2.4 seconds. Sample Studio playback controls remained touch-sized and did not overlap in the earlier viewport check.
+
+These are browser-emulated checks only. Physical iPhone and Android touch, microphone permission, audio interruption and performance testing remain pending release validation.
 
 ## Known limitations and unverified requirements
 
-- The complete acceptance sequence—from processed sample through Sampler and Drum Rack/Piano Roll, arrangement, track effects/mixing, complete WAV export/decode, and project close/reopen—was not executed end to end. Do not treat it as passed.
-- Microphone recording and live waveform capture were not exercised in this release-candidate pass.
-- No quantitative tolerance suite compares real-time playback with offline export across all effects, instruments, mute/solo states, and effect tails.
-- The time-stretch algorithm remains experimental overlap-add processing; transient quality and long-recording behavior are not production-certified.
-- The limiter is sample-peak-oriented and is not a true-peak mastering limiter. True-peak/LUFS mastering and MP3 export remain Batch 004 work.
-- Project metadata is stored separately from sample bytes; portable project archives and cross-device asset relinking are not implemented.
-- Long-recording memory/CPU limits and physical-device mobile performance remain unmeasured.
+- Time stretching is experimental overlap-add processing; transient quality and long-recording behavior are not production-certified.
+- The limiter is sample-peak-oriented, not a true-peak mastering limiter. Excessive gain/EQ may clip when limiting is bypassed.
+- Quantitative live/offline parity tolerances across all effects and instruments have not been established.
+- Project JSON stores metadata; sample bytes remain in browser IndexedDB. Portable project archives and cross-device asset relinking are not implemented.
+- Persistent arrangement history, automation, sends/returns, editable track colors/names, and master-bus limiting are not implemented.
+- Physical microphone and mobile-device checks, long-recording performance/memory measurements, and remote Node.js 22 CI remain outstanding.
 
 ## GitHub Pages compatibility
 
-The app remains a static, browser-based application with relative asset paths and no mandatory backend. The currently deployed page was reachable and loaded its assets. Because these changes were not pushed, their behavior on GitHub Pages is not yet verified.
+The application remains a static, local-first browser app with relative application assets and no mandatory backend or cloud service. The currently published GitHub Pages revision was previously smoke-checked, but this unpushed worktree has not been deployed or verified at the hosted URL. No deploy or push was performed.
 
 ## Exact files modified
 
-- `.github/workflows/test.yml` — added Node.js CI workflow.
-- `BATCH_003_FINAL_REPORT.md` — added this report.
-- `IDEA.md` — updated batch status, verification evidence, limitations, and next steps.
-- `README.md` — updated automated-test and release-candidate status.
-- `src/app.js` — recalculate timeline playhead position after viewport resize.
-- `src/audio.js` — share Drum Rack cycle calculation and clean up scheduled source nodes.
-- `src/sample-editor.js` — address Sample Studio edit-history checkpoint handling.
-- `src/sampler.css` — allow touch pointer editing on the waveform canvas.
-- `tests/audio.test.js` — add pattern-cycle and source-cleanup regressions; correct effect-chain assertion.
-- `tests/sample-processing.test.js` — add responsive timeline-origin regression coverage.
-- `tests/sample-editor.test.js` — account for float32 sample precision in an assertion.
+- `src/app.js`
+- `src/audio.js`
+- `src/sample-editor.js`
+- `src/sampler.css`
+- `src/timeline.js`
+- `src/project-state.js` (new)
+- `src/sample-lifecycle.js` (new)
+- `tests/sample-processing.test.js`
+- `tests/project-state.test.js` (new)
+- `README.md`
+- `IDEA.md`
+- `BATCH_003_FINAL_REPORT.md`
 
-## Smallest remaining release gate
+## Next development priorities
 
-Run one automated browser acceptance workflow using a generated audio fixture: import/edit/save a processed sample; create and edit Sampler and Drum Rack patterns; arrange and mix multiple tracks; export and decode the WAV to confirm expected non-silent audio; save/reload the project and verify its notes, patterns, effects, arrangement, and sample references. Then inspect the Node.js 22 GitHub Actions result after a user-approved push. Until that evidence exists, Batch 003 should not be marked complete.
+Batch 004 — Professional Mastering Studio:
 
-## Recommended Batch 004 scope
+- Mastering EQ, multiband compression, stereo imaging and harmonic saturation.
+- Integrated/short-term LUFS, spectrum analysis and true-peak metering.
+- True-peak limiter, loudness targets, A/B comparison and mastering presets.
+- Professional WAV settings and legally compatible MP3 export with quality controls.
+- Deterministic reference fixtures, decoded-output tests, and desktop/mobile performance measurements.
 
-After Batch 003's release gate is satisfied, begin the planned Professional Mastering Studio: mastering EQ, multiband dynamics, stereo imaging, harmonic saturation, integrated/short-term LUFS and true-peak measurement, true-peak limiting, loudness targets, A/B comparison, spectrum analysis, validated mastering presets, and professional WAV/MP3 export settings. None of these are claimed complete here.
+Do not treat any Batch 004 feature as implemented until its DSP behavior and measurements are tested.

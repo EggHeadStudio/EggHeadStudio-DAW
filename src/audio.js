@@ -1,3 +1,5 @@
+import {isTrackAudible} from './project-state.js';
+
 export const uid=()=>crypto.randomUUID();
 export function patternLengthBeats(track){
  const notes=track.pattern?.notes||[];
@@ -115,9 +117,9 @@ export function createTrackGraph(ctx,track,output,inputGain=null,bpm=120){
   const device=makeTrackEffect(ctx,effect,bpm);previous.connect(device.input);previous=device.output;instances.set(effect.id,device.instance);nodes.push(device.input,device.output,...Object.values(device.instance).flatMap(value=>Array.isArray(value)?value:[value]).filter(value=>value&&typeof value.disconnect==='function'));
  }
  previous.connect(output);previous.connect(meterSplitter);meterSplitter.connect(leftMeter,0);meterSplitter.connect(rightMeter,1);
- const update=(current,hasSolo=false,currentBpm=bpm)=>{
+ const update=(current,hasSolo=false,currentBpm=bpm,audible=null)=>{
   const fx=current.fx||{};
-  gain.gain.value=current.mute||(hasSolo&&!current.solo)?0:Number(current.volume??1);
+  gain.gain.value=(audible??(!current.mute&&(!hasSolo||current.solo)))?Number(current.volume??1):0;
   pan.pan.value=Number(current.pan)||0;
   filter.type=fx.filterType||'lowpass';filter.frequency.value=Math.min((ctx.sampleRate||40000)/2,Math.max(20,Number(fx.cutoff)||20000));filter.Q.value=Number(fx.resonance)||.7;
   legacyDelay.delayTime.value=Number(fx.delayTime)||.25;feedback.gain.value=Math.max(0,Math.min(.75,Number(fx.feedback)||0));wet.gain.value=Math.max(0,Math.min(1,Number(fx.delay)||0));dry.gain.value=1;
@@ -173,7 +175,7 @@ export class AudioEngine{
    const signature=(track.fx?.effects||[]).filter(effect=>effect.enabled).map(effect=>`${effect.id}:${effect.type}`).join('|');
    let graph=this.trackNodes.get(track.id);
    if(!graph||graph.signature!==signature){const inputGain=graph?.gain;graph?.disconnect();graph=createTrackGraph(this.ctx,track,this.eq,inputGain,this.bpm);this.trackNodes.set(track.id,graph)}
-   graph.update(track,solo,this.bpm);
+   graph.update(track,solo,this.bpm,isTrackAudible(track,tracks));
   }
  }
  registerSource(source,nodes=[]){
@@ -231,9 +233,8 @@ export class AudioEngine{
   if(end>600)throw Error('Export is limited to 10 minutes in this prototype.');
   const tail=Math.max(.3,...project.tracks.map(track=>Math.max(0,...(track.fx?.effects||[]).filter(effect=>effect.enabled).map(effect=>effect.type==='reverb'?Math.max(.1,Number(effect.params?.decay)||1.5)*1.5:effect.type==='delay'?Math.min(20,delayTimeSeconds(effect.params,project.bpm)/(1-Math.min(.85,Number(effect.params?.feedback)||0))):0),track.fx?.delay>0?(track.fx.delayTime||.25)/(1-Math.min(.75,track.fx.feedback||0)):0))),sr=44100,ctx=new OfflineAudioContext(2,Math.ceil((end+tail)*sr),sr),eq=ctx.createBiquadFilter(),comp=ctx.createDynamicsCompressor(),master=ctx.createGain();
   eq.type='highshelf';eq.frequency.value=4500;eq.gain.value=this.masterSettings.eq;comp.threshold.value=this.masterSettings.threshold;comp.ratio.value=3;master.gain.value=Math.max(0,Number(this.masterSettings.volume??1))*Math.pow(10,this.masterSettings.makeup/20);eq.connect(comp).connect(master).connect(ctx.destination);
-  const solo=project.tracks.some(t=>t.solo);
   for(const track of project.tracks){
-   if(track.mute||(solo&&!track.solo))continue;
+   if(!isTrackAudible(track,project.tracks))continue;
    const graph=createTrackGraph(ctx,track,eq,null,project.bpm);
    for(const clip of track.clips){const buffer=buffers.get(clip.asset);if(!buffer)continue;const source=ctx.createBufferSource(),clipGain=ctx.createGain(),when=clip.bar*bar,duration=clipDurationSeconds(clip);source.buffer=buffer;source.playbackRate.value=clip.rate||1;source.connect(clipGain).connect(graph.gain);scheduleClipSource(ctx,source,clipGain,clip,when,0,duration)}
    const sampler=track.sampler,drumRack=track.drumRack;

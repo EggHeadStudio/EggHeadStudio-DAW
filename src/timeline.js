@@ -17,6 +17,10 @@ export function timelinePixelsAtClientX(clientX,ruler,scrollContainer){
   return clientX-ruler.getBoundingClientRect().left;
 }
 
+export function timelineBeatsAtClientX(clientX,ruler,scrollContainer,scale){
+  return scale.pixelsToBeats(timelinePixelsAtClientX(clientX,ruler,scrollContainer));
+}
+
 export function timelineContentOrigin(ruler,scrollContainer){
   if(!ruler||!scrollContainer)return 0;
   return ruler.getBoundingClientRect().left-scrollContainer.getBoundingClientRect().left+scrollContainer.scrollLeft;

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pitchShiftBuffer,renderSampleProcessing,resampleBuffer,timeStretchBuffer} from '../src/sample-dsp.js';
-import {TimelineScale,timelineContentOrigin,timelinePixelsAtClientX} from '../src/timeline.js';
+import {TimelineScale,timelineBeatsAtClientX,timelineContentOrigin,timelinePixelsAtClientX} from '../src/timeline.js';
 import {clampFrame,frameToX,getWaveformPeaks,xToFrame} from '../src/waveform.js';
 
 function fixture(data,sampleRate=22050){
@@ -63,6 +63,18 @@ test('timeline coordinates are relative to the visible ruler and recover content
   const container={scrollLeft:240,getBoundingClientRect:()=>({left:20})};
   assert.equal(timelinePixelsAtClientX(300,ruler,container),155);
   assert.equal(timelineContentOrigin(ruler,container),365);
+});
+
+test('timeline seeking converts visible ruler coordinates to beats and seconds once',()=>{
+  for(const [bpm,pixelsPerBeat,headerWidth,scrollLeft] of [[120,39,115,0],[100,48.75,165,120]]){
+    const container={scrollLeft,getBoundingClientRect:()=>({left:0})};
+    const ruler={getBoundingClientRect:()=>({left:headerWidth-scrollLeft})};
+    const scale=new TimelineScale(bpm,pixelsPerBeat);
+    const clientX=ruler.getBoundingClientRect().left+pixelsPerBeat*4;
+    const beats=timelineBeatsAtClientX(clientX,ruler,container,scale);
+    assert.ok(Math.abs(beats-4)<1e-10);
+    assert.ok(Math.abs(beats*60/bpm-240/bpm)<1e-10);
+  }
 });
 
 test('timeline origin follows mobile and desktop track headers through horizontal scrolling',()=>{
