@@ -39,8 +39,12 @@ async function savePortableProject(){
  try{
   for(const id of ids){const blob=await dbGet(id);if(blob)assetFiles.set(id,blob)}
   const keys=artworkKeys(),artworkFile=await dbGet(keys.current),artworkSourceFile=await dbGet(keys.source);
-  const customPresets={};
-  if(project.mastering?.preset){try{const presets=JSON.parse(localStorage.getItem('pulse-master-presets')||'{}');if(presets[project.mastering.preset])customPresets[project.mastering.preset]=presets[project.mastering.preset]}catch(error){throw new Error(`Could not read the active mastering preset: ${error.message}`)}}
+  let customPresets={};
+  try{
+   const presets=JSON.parse(localStorage.getItem('pulse-master-presets')||'{}');
+   if(!presets||typeof presets!=='object'||Array.isArray(presets))throw new Error('Stored presets are not an object.');
+   customPresets=presets;
+  }catch(error){throw new Error(`Could not read custom mastering presets: ${error.message}`)}
   const estimatedBytes=[...assetFiles.values()].reduce((sum,file)=>sum+(file.size||0),0)+(artworkFile?.size||0)+(artworkSourceFile?.size||0);
   if(estimatedBytes>192*1024*1024&&!window.confirm(`The portable archive will include about ${Math.ceil(estimatedBytes/1024/1024)} MiB of source audio/artwork in memory. Continue?`))return;
   archiveStatus('Packaging portable project…');

@@ -21,7 +21,7 @@ assets/artwork/original-<sha256>.<extension>
 presets/<safe-name>.json
 ```
 
-`project.json` preserves the existing project model and references audio by asset ID. The `manifest.json` binds those IDs to embedded audio records and describes the project schema, artwork, presets, compatibility, and every payload file. Payload records contain byte length and lowercase SHA-256. Audio is deduplicated by content hash, stored without ZIP compression to avoid pathological ratios for silence and already-compressed media, and embedded losslessly. When an original source file is unavailable but a decoded buffer is available, the archive stores a 32-bit float WAV without downsampling.
+`project.json` preserves the existing project model and references audio by asset ID. The `manifest.json` binds those IDs to embedded audio records and describes the project schema, artwork, presets, compatibility, and every payload file. Payload records contain byte length and lowercase SHA-256. Audio is deduplicated by content hash, stored without ZIP compression to avoid pathological ratios for silence and already-compressed media, and embedded losslessly. When an original source file is unavailable but a decoded buffer is available, the archive stores a 32-bit float WAV without downsampling. Saving from the application includes every custom mastering preset currently stored in that browser's local preset library.
 
 Version 1 manifest fields include:
 

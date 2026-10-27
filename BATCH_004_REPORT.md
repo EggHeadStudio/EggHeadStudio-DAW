@@ -2,9 +2,9 @@
 
 ## Status
 
-**BATCH 004 IN PROGRESS — PHASES 1–5 FUNCTIONALLY COMPLETE**
+**BATCH 004 FUNCTIONALLY COMPLETE — PHASES 1–6 ACCEPTED LOCALLY**
 
-Phases 1–5 of Batch 004C have implementation and automated/browser evidence in this worktree. Phase 6 full acceptance remains. Independent Phase 2 certification/device checks and deployment of this unpushed worktree remain release validation.
+Phases 1–6 have implementation and local automated/Chromium acceptance evidence. The current Node suite passes 110/110. Independent Phase 2 certification/device checks, physical touch/audio, medium/large project performance and deployment of this unpushed worktree remain release-validation or Batch 005 tasks, not blockers to functional closure.
 
 ## Implemented
 
@@ -79,7 +79,7 @@ Phase 3 functionally completed multiband dynamics, monitoring, A/B, module order
 
 ### Phase 4 automated and browser verification
 
-- Portable Node.js 22.23.4 ran the current complete test suite: **109 passed, 0 failed**. Phase 4's historical boundary was 97/97. Changed JavaScript files pass `node --check`; final whitespace validation is recorded after documentation edits.
+- Portable Node.js 22.23.4 ran the current complete test suite: **110 passed, 0 failed**. Phase 4's historical boundary was 97/97 and Phase 5's was 109/109. Phase 6 added `tests/production-acceptance.test.js`; changed JavaScript files pass `node --check`.
 - Deterministic export tests cover PCM/float WAV headers and sample conversion, optional dither, all four supported WAV sample rates, resampling response/DC preservation, MP3 frame rate/bitrate/channel inspection, settings and memory policy, render duration including sampler note tails, and Worker cancellation. Full regression suite retained earlier DAW, DSP and project-persistence tests.
 - Chromium UI exports succeeded for **16-bit/44.1 kHz WAV**, **dithered 24-bit/48 kHz WAV**, **32-bit float/96 kHz WAV**, and **320 kbps/48 kHz MP3**. Export settings survived reload. A Worker cancellation initiated from the encoding progress callback rejected with `AbortError`.
 - After the Basic-mode defaults were finalized, Chromium also completed a **320 kbps/44.1 kHz stereo MP3** export from the saved 34-second project. The encoded-file analysis reported **-17.7 LUFS**, **-8.8 dBFS sample peak**, and **-8.8 dBTP estimated**. Advanced bitrate/rate settings persisted through reload, and switching to Basic restored 320 kbps/44.1 kHz defaults.
@@ -134,10 +134,11 @@ These are emulated layout checks, not physical iOS/Android audio or touch tests.
 
 ## Known gaps / next development priorities
 
-- Phase 6: end-to-end project-to-release acceptance, project close/reopen and missing-sample scenarios, broader browser compatibility, GitHub Pages subpath verification, and release sign-off.
+- Phase 6 local functional acceptance is complete; see `BATCH_004_FINAL_ACCEPTANCE.md`.
 - Independent published EBU/ITU loudness/LRA/true-peak reference audio, formal true-peak certification, physical live-output/device testing, and long-duration mobile memory/performance remain release-validation tasks. The 4× true-peak measurement is an estimate, not certification.
 - Live sidechain signal level and real-time acoustic loopback were not measured in this browser automation route. The offline ghost-trigger fixture verifies signal routing but does not replace physical-device testing.
 - MP3 output is CBR and has about 43–45 ms frame delay/padding in Chromium decode; gapless metadata is not implemented. Offline render cannot be interrupted mid-render, and long-project mobile memory/time remain unmeasured.
+- GitHub Actions was inspected but not run remotely; the worktree remains unpushed and the changed revision was not deployed to GitHub Pages.
 
 ## GitHub Pages and project compatibility
 
@@ -152,6 +153,42 @@ The application remains static and backend-free, and all application/vendor asse
 - `src/project-state.js`
 - `src/sampler.css`
 - `tests/mastering.test.js` (new)
+- `tests/production-acceptance.test.js` (new)
+- `BATCH_004_FINAL_ACCEPTANCE.md` (new)
+
+## Phase 6 — Full production acceptance
+
+The deterministic Node fixture in `tests/production-acceptance.test.js` builds an eight-track project with six generated audio assets, including WAV, MP3, simulated microphone audio and processed audio; two Samplers; a Drum Rack; multiple note/step patterns; track effects; kick-to-bass sidechain; mastering modules; export settings; release metadata; artwork; and a custom preset. The archive round-trip test verifies each referenced asset, content hash, track/instrument/pattern state, sidechain source, artwork and preset.
+
+Chromium used a locally generated eight-track archive and later a nine-track edited version. In the clean-import scenario, the application project localStorage entry and IndexedDB asset store were cleared before reloading and importing; seven unique assets were restored without local sample-library files and the arrangement played without missing-sample markers. A second edited `.EHS` reopened with the BPM change and unchanged SHA-256 values for all seven audio assets. Importing a damaged ZIP left the active project unchanged; dismissing the replacement warning and cancelling New Project also preserved the active project. Creating a new empty project retained the seven sample-library items. Local autosave recovered the project after reload. The microphone take was deterministic simulated audio; no microphone hardware was exercised.
+
+Sample Studio loaded a generated one-second, mono 440 Hz sine WAV (decoded by the browser's 48 kHz audio context), selected 0.1–0.9 seconds, applied 20 ms fades, normalized and reversed it, previewed the selection and saved a new sample. The saved sample created another Sampler; a C4 Piano Roll note was added. The imported Drum Rack exposed 16 pads, had two assigned samples, triggered a pad and accepted a new step. Arrangement playback advanced transport and displayed active kick/bass/lead meters; the sidechain reference remained set from bass to kick. No browser page errors were observed in the playback and export scenarios.
+
+The 34.585714-second stereo/44.1 kHz mastered render exported successfully as 16-bit PCM WAV (6,101,110 bytes), 24-bit PCM WAV (9,151,570 bytes), 32-bit float WAV (12,202,030 bytes), and 320 kbps MP3 (1,384,805 bytes). All had 1,525,230 WAV frames or 1,325 MP3 frames, were stereo at 44.1 kHz, and the decoded-file analyzer reported -21.1 LUFS, -7.5 dBFS sample peak and -7.5 dBTP estimated for the same stable project. WAV exports contained LIST/INFO; MP3 contained APIC artwork metadata. MP3 frame duration was 34.612245 seconds, about 26.5 ms longer than the WAV frame duration in this fixture.
+
+The browser Release ZIP was 6,616,772 bytes and contained mastered WAV and MP3, `metadata.json`, `release-info.txt` and cover artwork. The audio entries were stereo/44.1 kHz; WAV was 32-bit float/34.585714 seconds and MP3 was CBR 320 kbps/34.612245 seconds. The matching metadata listed both output properties and the MP3 carried an APIC cover frame. The release builder renders once and encodes both formats from that render; the editable `.EHS` remained a separate archive. Local custom mastering presets were verified in the saved archive; acceptance exposed and fixed omission of inactive custom presets.
+
+Export took 7.4–7.7 seconds for the approximately 34.6-second, eight-track fixture on the described desktop Chromium host. `.EHS` import measured 229 ms; archive save measured 252 ms. Browser `performance.memory` sampling reported 70.2 MiB peak JavaScript heap during export; this excludes Web Audio/native allocations and is not process RSS or a device memory guarantee. On the host, `navigator.hardwareConcurrency` reported 24 and `navigator.deviceMemory` 32; user agent was Electron 43.7.7 / Chromium 150.0.7871.250 on Windows 10/11 x64. These are one fixture/runtime, not a broad performance baseline.
+
+At 360, 390, 430, 768 and 1280 CSS px, Arrangement, Sample Studio, Mastering and Export Studio had no horizontal page overflow. The browser context disabled `hasTouch`; `touchscreen.tap` confirmed that limitation, and the sandbox prevented creating a new touch-enabled context. These layout checks are emulation only, not physical-device or touch-gesture acceptance. The 12-track/3-minute and 24-track/5-minute performance workloads were not run; the current memory estimator reports 230.5 MiB and 341.6 MiB respectively for stereo 24-bit/44.1 kHz output and warns above its 192 MiB threshold. Initial load time, native audio memory, other browsers, GitHub Pages subpath deployment and remote Actions remain unmeasured.
+
+### Phase 6 acceptance matrix
+
+| Area | Result | Evidence / limitation |
+|---|---|---|
+| Eight-track production project and referenced media | **Functionally verified** | Deterministic Node archive test and Chromium project include WAV/MP3, simulated recording, processed sample, two Samplers, Drum Rack, patterns, effects, sidechain, mastering, metadata, artwork and preset. |
+| Sample edit, sampler, piano roll and drum sequence | **Functionally verified** | Chromium editing/save/reuse, note insertion, pad trigger and step editing; microphone input was simulated, not hardware-recorded. |
+| Mix, sidechain, mastering and playback | **Functionally verified for generated fixture** | Transport and track meters active; project preserved kick-to-bass sidechain; mastered export completed and decoded. No live acoustic loopback or universal live/offline null comparison. |
+| 16/24/float WAV and 320 kbps MP3 | **Functionally verified** | Four browser exports decoded and reported matching loudness/peak; standard in-app inspectors plus Chromium decoding, not an external parser certification. |
+| Clean `.EHS` restore, edit and second archive | **Functionally verified** | Main app project and media stores cleared; seven assets restored, edited project reopened, all audio hashes unchanged. |
+| Corrupt import, cancel, New Project and autosave | **Functionally verified** | Corrupt ZIP rejected without replacing the active project; replacement cancellation preserved it; empty project retained sample library; reload restored project state. |
+| Release ZIP | **Functionally verified** | WAV/MP3, metadata, release notes and cover present; format properties matched metadata. Not cross-player interoperability certification. |
+| GitHub Actions | **Configuration inspected** | Workflow runs Node 22 `npm test` on push/PR; remote job not run because no push/PR was made. |
+| GitHub Pages | **Not release validated** | Local static server returned HTTP 200 for entry point, CSS, JS, workers, AudioWorklets, LAMEJS and fflate. This is not a deployed Pages/subpath test. |
+| Mobile layout | **Functionally verified by emulation** | Four primary views × five widths had no horizontal page overflow. |
+| Physical touch, microphone and device output | **Not tested** | Browser context did not enable touch; no physical mobile device or microphone loopback was available. |
+| Independent EBU/ITU validation | **Not tested** | No published reference audio files were present in the repository; current true-peak is explicitly an estimate. |
+| Medium/large performance and compatibility matrix | **Not tested** | 12-track/3-minute, 24-track/5-minute and other browsers remain Batch 005/release work. |
 - `tests/sidechain.test.js` (new)
 - `tests/project-state.test.js`
 - `src/export-dsp.js` (new)

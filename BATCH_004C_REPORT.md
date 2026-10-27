@@ -1,10 +1,10 @@
-# Batch 004C — Phases 1–5 Sidechain, Mastering, Export and Release Report
+# Batch 004C — Phases 1–6 Sidechain, Mastering, Export and Release Report
 
 ## Current status
 
-**PHASE 5 FUNCTIONALLY COMPLETE — READY FOR PHASE 6**
+**PHASE 6 FUNCTIONALLY COMPLETE — READY FOR BATCH 005**
 
-Phase 1 sidechain stabilization passed 59/59 tests at that boundary. Phase 2 implemented loudness analysis, oversampled peak estimation and a shared lookahead limiter; independent true-peak/LRA reference validation and physical live-output checks remain release-validation tasks. Phase 3 adds multiband dynamics, spectrum and stereo monitoring, loudness-matched A/B, mastering-chain management and Worker-based analysis. Phase 4 adds shared offline rendering, WAV/MP3 encoding, resampling, analysis, progress and cancellation. Phase 5 adds versioned `.EHS` project archives, release metadata/artwork, and Release ZIPs. The current full Node suite passes **109/109**. Phase 6 end-to-end acceptance remains.
+Phase 1 sidechain stabilization passed 59/59 tests at that boundary. Phase 2 implemented loudness analysis, oversampled peak estimation and a shared lookahead limiter; independent true-peak/LRA reference validation and physical live-output checks remain release-validation tasks. Phase 3 adds multiband dynamics, spectrum and stereo monitoring, loudness-matched A/B, mastering-chain management and Worker-based analysis. Phase 4 adds shared offline rendering, WAV/MP3 encoding, resampling, analysis, progress and cancellation. Phase 5 adds versioned `.EHS` project archives, release metadata/artwork, and Release ZIPs. Phase 6 locally accepted the deterministic project-to-release workflow; the current full Node suite passes **110/110**. See `BATCH_004_FINAL_ACCEPTANCE.md` for test evidence and remaining gates.
 
 ## Phase 2 acceptance matrix
 
@@ -20,7 +20,7 @@ Phase 1 sidechain stabilization passed 59/59 tests at that boundary. Phase 2 imp
 | Limiter included in offline WAV | Yes | Rendered arrangement at -2 dBTP, encoded with `toWav`, decoded in Chromium, measured -2.099 dBTP estimated; duration preserved at 8.30 s | **PASS — Chromium fixture** | Stereo 16-bit/44.1 kHz remains the only WAV export format. |
 | Project settings persistence | Yes | JSON round-trip covers enabled state, ceiling, lookahead and release | **PASS** | No separate UI-driven close/reopen scenario in this phase. |
 | Basic/Advanced mastering UI, warnings, before/after | Yes | Chromium Mastering view and 5 responsive viewport widths; progress/cancel exercised with the analysis Worker | **PASS — browser workflow** | Gain-reduction display is live AudioWorklet telemetry, not a rendered offline history. |
-| Full Node.js suite at Phase 2 boundary | Yes | Portable Node.js 22.23.4, `node --test` over every `tests/*.test.js` | **PASS — 69/69 at Phase 2 boundary** | Phase 3 boundary passed 81/81; Phase 4 passed 97/97; current Phase 5 suite passes 109/109. Remote Actions remains pending. |
+| Full Node.js suite at Phase 2 boundary | Yes | Portable Node.js 22.23.4, `node --test` over every `tests/*.test.js` | **PASS — 69/69 at Phase 2 boundary** | Phase 3 boundary passed 81/81; Phase 4 passed 97/97; Phase 5 passed 109/109; current Phase 6 suite passes 110/110. Remote Actions remains pending. |
 | Browser/device verification | Browser checks only | HTTP-served Chromium worklet, OfflineAudioContext limiter and WAV decode; 360/390/430/768/1280 CSS px | **PARTIAL PASS** | Emulation is not physical iOS/Android or real-time audio loopback testing. Long-project performance is not measured. |
 
 ### Phase 2 algorithm and tolerance details
@@ -150,7 +150,7 @@ The shared 8.333-second stereo render measured **-24.44 LUFS** as WAV and **-24.
 
 Archive version 1 and import limits are documented in `EHS_FORMAT_SPEC.md`. It specifies a 256 MiB compressed archive cap, 512 MiB expanded cap, 4,096 entries, 200:1 per-entry compression-ratio cap, 16 MiB project JSON and 2 MiB manifest/preset JSON. Audio payload entries are stored to avoid extreme ratios for silence and compressed source files; worker compression is buffered, not streamed. MP3 metadata is ID3v2.3; WAV metadata is RIFF LIST/INFO only.
 
-## Files changed across Phases 1–5
+## Files changed across Phases 1–6
 
 - `BATCH_004C_REPORT.md`
 - `BATCH_004_REPORT.md`
@@ -172,6 +172,7 @@ Archive version 1 and import limits are documented in `EHS_FORMAT_SPEC.md`. It s
 - `tests/export.test.js` (new)
 - `tests/release-package.test.js` (new)
 - `tests/project-state.test.js`
+- `tests/production-acceptance.test.js` (new deterministic production archive test)
 - `package.json`
 - `package-lock.json`
 - `vendor/lamejs/` (encoder and LGPL-3.0 notices)
@@ -180,8 +181,8 @@ Archive version 1 and import limits are documented in `EHS_FORMAT_SPEC.md`. It s
 - `EHS_FORMAT_SPEC.md`
 - `src/style.css`
 
-## Next phase boundary
+## Phase 6 closeout and next phase boundary
 
-Phase 5 is functionally complete and ready for Phase 6. Phase 2's independent BS.1770/EBU R128 reference-vector validation, physical live-output checks, GitHub Pages deployment of this worktree, and long-duration mobile performance remain release-validation tasks. Batch 004 still needs Phase 6 end-to-end acceptance. Existing long-term roadmap scope for automation, further effects, sampler improvements, plugin architecture and optional VST bridging remains intact.
+The eight-track acceptance fixture was imported into a clean browser project/media store, played, edited, saved as a second `.EHS`, reopened, and exported in four audio formats. All seven restored audio assets retained their SHA-256 values across the edited archive. Corrupt import, replacement cancellation, New Project, autosave recovery, mastering output, and Release ZIP contents were also exercised. The verified limits and full matrix are recorded in `BATCH_004_FINAL_ACCEPTANCE.md`; Phase 6 is functionally complete for the tested fixture.
 
-No GitHub Pages deployment was performed. Static relative-path compatibility is preserved by the changes, but the updated worktree itself has not been deployment-tested.
+This changed worktree was not pushed or deployed. Local static requests passed but are not a GitHub Pages deployment test. Independent BS.1770/EBU R128 reference-vector validation, physical live-output/device and touch checks, and 12-track/3-minute plus 24-track/5-minute performance baselines remain explicit release/Batch 005 tasks. The existing roadmap for automation, further effects, sampler improvements, plugin architecture and optional VST bridging remains intact.
