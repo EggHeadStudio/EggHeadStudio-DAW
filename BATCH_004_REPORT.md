@@ -30,15 +30,15 @@ This pass prioritized real signal processing and a verifiable master-to-export p
 - Metering reports RMS dBFS and sample peak only. No value is labelled LUFS or true peak; no BS.1770/EBU R128 gating or loudness range is implemented.
 - A/B compares the signal with the new mastering graph bypassed against the mastered signal while retaining existing legacy master-bus processing. It is not level-matched. Playback pause/resume and A/B switching retain the rendered position.
 
-## Automated tests from the prior Batch 004 pass
+## Automated tests
 
-- Runtime: Node.js 24.20.0 (prior pass).
-- JavaScript syntax checks: `src\app.js`, `src\audio.js`, `src\mastering.js` passed in the prior pass.
-- Command: `node --test tests\*.test.js`.
-- Result before the current sidechain changes: **51 passed, 0 failed**.
+- Runtime: official portable Node.js **22.23.4**, SHA-256 verified against the Node.js distribution checksums.
+- JavaScript syntax checks: `src\app.js`, `src\audio.js`, and `src\sidechain-processor.js` passed.
+- Command: `node --test <all tests/*.test.js paths>` (Node test runner; `npm` is not present in the environment).
+- Result for the current worktree: **59 passed, 0 failed**.
 - New deterministic tests cover settings bounds and defaults, six-band EQ response/cuts, graph module wiring/parameters, preset parameter changes, project JSON persistence, and correct RMS/sample-peak analysis.
 - Existing project, timeline, arrangement, sample, and audio tests remained passing.
-- Added deterministic sidechain DSP, routing, sidechain project persistence and source-deletion tests. These new tests have **not** been run in the current environment because neither `node` nor `npm` is available on PATH. The prior 51/51 result predates this sidechain change and is not a test result for the current worktree. The configured GitHub Actions run is pending.
+- Added deterministic sidechain DSP, attack/release, routing, worklet-readiness, sidechain project persistence and source-deletion tests. The full suite was executed successfully using the verified temporary Node runtime. The configured GitHub Actions run is pending.
 
 ## Browser and audio verification
 
@@ -59,9 +59,10 @@ The export is verified for this project/fixture only; these results do not prove
 - Chromium loaded the new AudioWorklet processor and rendered a deterministic two-track kick/bass fixture through `AudioEngine.render`.
 - In the 110 Hz bass / pulsed 60 Hz kick fixture, rendered RMS around the kick transient measured **0.1193 without sidechain** and **0.0479 with sidechain**. During the following release interval, RMS measured **0.1300 without sidechain** and **0.0872 with sidechain**. This confirms measurable ducking and release on the offline graph; it is a focused synthetic test, not a full live/offline equivalence tolerance.
 - With the source track muted, the non-ghost result remained neutral (**0.1193 RMS**); enabling Ghost trigger ducked the same bass to **0.0479 RMS**, confirming the trigger path is independent of the source's audible output.
+- An HTTP-served Chromium `AudioEngine.init()` loaded the AudioWorklet module and reported `sidechainReady: true` with no error. The offline render path also loaded and processed that module.
 - Browser-emulated real-time analysis could not verify live amplitude: the browser's real-time AnalyserNode returned zero for a separate, directly connected ConstantSourceNode control as well as for the engine fixture. Thus live signal-level reduction remains unverified in this environment, although live scheduling uses the same AudioWorklet processor and the same detector-routing helper.
 - The sidechain panel and saved source selection were exercised through the UI. Responsive Chromium emulation at **360, 390, 430, 768 and 1280 CSS pixels** found no page-level horizontal overflow. The original browser project was restored after this UI check. Physical-device behavior was not tested.
-- Node tests, remote Actions, live signal-level verification, physical-device behavior and deployment remain pending.
+- Remote Actions, live signal-level verification, physical-device behavior and deployment remain pending.
 
 ## Mobile viewport checks
 
@@ -71,7 +72,7 @@ These are emulated layout checks, not physical iOS/Android audio or touch tests.
 
 ## Known gaps / next development priorities
 
-- New sidechain tests are added but need execution in Node.js or the configured GitHub Actions workflow. Verify real-time detector gain reduction on an audio-capable browser/device; this browser automation environment returned zero from its live AnalyserNode control.
+- Live sidechain detector-level behavior still needs verification in an audio-capable browser/device; this browser automation environment returned zero from its live AnalyserNode control. The current 59-test Node suite passed locally.
 - Standards-based integrated, short-term, momentary LUFS, LRA, K-weighting, gating and true-peak oversampling/reference validation.
 - A real lookahead peak limiter with oversampled inter-sample ceiling verification and gain-reduction metering; current compressor stage does not guarantee its displayed ceiling.
 - Three-or-more-band dynamics with crossovers, per-band settings/solo and verified phase behavior.
@@ -93,7 +94,7 @@ The new files are static browser JavaScript and require no backend, cloud servic
 - `src/project-state.js`
 - `src/sampler.css`
 - `tests/mastering.test.js` (new)
-- `tests/sidechain.test.js` (new; not run in this environment)
+- `tests/sidechain.test.js` (new)
 - `tests/project-state.test.js`
 - `README.md`
 - `IDEA.md`

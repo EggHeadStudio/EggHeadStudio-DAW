@@ -213,7 +213,7 @@ function wireTrackEffects(){
  $('#addTrackEffect').onchange=event=>{if(!event.target.value)return;track.fx.effects.push(createTrackEffect(event.target.value));refresh();render()};
  $$('[data-effect-enabled]').forEach(input=>input.onchange=()=>{track.fx.effects[+input.dataset.effectEnabled].enabled=input.checked;refresh()});
  $$('[data-sidechain-toggle]').forEach(input=>input.onchange=()=>{
-  if(input.checked&&typeof globalThis.AudioWorkletNode!=='function'){input.checked=false;notify('External sidechain compression is unavailable: this browser does not support AudioWorklet.');return}
+  if(input.checked&&(typeof globalThis.AudioWorkletNode!=='function'||(engine.ctx&&!engine.sidechainReady))){input.checked=false;notify(engine.sidechainError?.message||'External sidechain compression is unavailable until its AudioWorklet processor initializes.');return}
   track.fx.effects[+input.dataset.sidechainToggle].params.sidechain.enabled=input.checked;refresh();
  });
  $$('[data-sidechain-source]').forEach(select=>select.onchange=()=>{track.fx.effects[+select.dataset.sidechainSource].params.sidechain.sourceTrackId=select.value;refresh()});

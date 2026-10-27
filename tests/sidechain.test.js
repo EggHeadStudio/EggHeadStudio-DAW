@@ -17,6 +17,12 @@ test('compressor instances receive independent sidechain defaults',()=>{
  assert.equal(second.params.sidechain.sourceTrackId,'');
 });
 
+test('engine reports a missing AudioWorklet processor instead of constructing an invalid sidechain graph',()=>{
+ const engine=new AudioEngine(),effect=createTrackEffect('compressor','duck');
+ engine.ctx={};effect.params.sidechain.enabled=true;
+ assert.throws(()=>engine.syncTracks([{id:'bass',fx:{effects:[effect]}}]),/AudioWorklet processor has not been initialized/);
+});
+
 test('external compressor ducks program audio from an independent detector input',()=>{
  const processor=makeProcessor(),program=Float32Array.from({length:500},()=>.5),detector=Float32Array.from({length:500},()=>1),output=new Float32Array(500);
  processor.settings={threshold:-20,ratio:4,knee:0,attack:.001,release:.1,detectorGain:0,lowCut:0};
@@ -32,12 +38,48 @@ test('external compressor remains neutral when the detector signal is silent',()
  assert.deepEqual(output,program);
 });
 
+test('compressor attack ramps down and release recovers after the detector stops',()=>{
+ const processor=makeProcessor(),program=new Float32Array(200).fill(.5),detector=Float32Array.from({length:200},(_,index)=>index<100?1:0),output=new Float32Array(200);
+ processor.settings={threshold:-20,ratio:4,knee:0,attack:.01,release:.1,detectorGain:0,lowCut:0};
+ processor.process([[program],[detector]],[[output]]);
+ assert.ok(output[50]<output[5],'gain reduction should build over the configured attack');
+ assert.ok(output[199]>output[110],'gain should recover after the detector signal ends');
+ assert.ok(output[199]<program[199],'recovery should respect the release time');
+});
+
 test('sidechain processor applies attack/release smoothing and detector filtering settings',()=>{
  const processor=makeProcessor(),program=new Float32Array(64).fill(.5),detector=new Float32Array(64).fill(1),output=new Float32Array(64);
  processor.port.onmessage({data:{type:'settings',settings:{threshold:-18,ratio:6,knee:0,attack:.01,release:.2,detectorGain:6,lowCut:90}}});
  processor.process([[program],[detector]],[[output]]);
  assert.ok(output[63]<.5&&output[63]>0);
  assert.ok(processor.settings.lowCut===90&&processor.settings.detectorGain===6);
+});
+
+test('pre/post taps and mute/solo audibility determine whether the detector is connected',()=>{
+ const param=()=>({value:0});
+ const makeNode=()=>({connections:[],gain:param(),pan:param(),frequency:param(),Q:param(),threshold:param(),ratio:param(),knee:param(),attack:param(),release:param(),delayTime:param(),connect(target,output=0,input=0){this.connections.push({target,output,input});return target},disconnect(target){this.connections=target?this.connections.filter(item=>item.target!==target):[]},getFloatTimeDomainData(data){data.fill(0)}});
+ const context={sampleRate:48000,createGain:makeNode,createStereoPanner:makeNode,createBiquadFilter:()=>Object.assign(makeNode(),{type:'lowpass'}),createDelay:makeNode,createChannelSplitter:makeNode,createAnalyser:()=>Object.assign(makeNode(),{fftSize:32,smoothingTimeConstant:0}),createDynamicsCompressor:makeNode,createWaveShaper:()=>Object.assign(makeNode(),{curve:null}),createConvolver:()=>Object.assign(makeNode(),{buffer:null}),createBuffer(){},destination:makeNode()};
+ const OriginalWorklet=globalThis.AudioWorkletNode;
+ globalThis.AudioWorkletNode=class{constructor(){Object.assign(this,makeNode());this.port={onmessage:null,postMessage(){}}}};
+ try{
+  const effect=createTrackEffect('compressor','duck'),kick={id:'kick',volume:1,mute:true,solo:false,fx:{effects:[]}},bass={id:'bass',volume:1,mute:false,solo:false,fx:{effects:[effect]}};
+  const engine=new AudioEngine();engine.ctx=context;engine.sidechainReady=true;engine.eq=context.createBiquadFilter();
+  effect.params.sidechain={enabled:true,sourceTrackId:'kick',position:'pre',ghost:false};
+  engine.syncTracks([kick,bass]);
+  let graph=engine.trackNodes.get('bass');const device=graph.instances.get('duck');
+  assert.equal(graph.sidechainConnections[0].send.gain.value,0,'muted source should not trigger from pre-fader tap by default');
+  effect.params.sidechain.ghost=true;engine.syncTracks([kick,bass]);graph=engine.trackNodes.get('bass');
+  assert.equal(graph.sidechainConnections[0].send.gain.value,1,'ghost pre-fader should still trigger while source is muted');
+  effect.params.sidechain.ghost=false;effect.params.sidechain.position='post';engine.syncTracks([kick,bass]);graph=engine.trackNodes.get('bass');
+  assert.equal(graph.sidechainConnections[0].source,engine.trackNodes.get('kick').sidechainPost,'post-fader selection should route from the post-fader tap');
+  assert.equal(graph.sidechainConnections[0].send.gain.value,1,'post-fader signal uses source mute/solo gain rather than an extra mute');
+  kick.mute=false;kick.solo=true;engine.syncTracks([kick,bass]);graph=engine.trackNodes.get('bass');
+  assert.equal(engine.trackNodes.get('bass').gain.gain.value,0,'a non-solo destination is inaudible');
+  assert.equal(graph.sidechainConnections[0].send.gain.value,1,'post-fader detector can still route, but source solo gain is zero');
+  assert.ok(device.externalSidechain);
+ }finally{
+  if(OriginalWorklet===undefined)delete globalThis.AudioWorkletNode;else globalThis.AudioWorkletNode=OriginalWorklet;
+ }
 });
 
 test('live track graph routes the selected pre-fader source only to compressor detector input',()=>{
@@ -51,7 +93,7 @@ test('live track graph routes the selected pre-fader source only to compressor d
  try{
   const effect=createTrackEffect('compressor','duck');effect.params.sidechain={enabled:true,sourceTrackId:'kick',position:'pre',ghost:false,detectorGain:0,lowCut:0};
   const kick={id:'kick',volume:1,mute:false,solo:false,fx:{effects:[]}},bass={id:'bass',volume:1,mute:false,solo:false,fx:{effects:[effect]}};
-  const engine=new AudioEngine();engine.ctx=context;engine.eq=context.createBiquadFilter();engine.syncTracks([kick,bass]);
+  const engine=new AudioEngine();engine.ctx=context;engine.sidechainReady=true;engine.eq=context.createBiquadFilter();engine.syncTracks([kick,bass]);
   const detector=engine.trackNodes.get('bass').instances.get('duck').node;
   assert.equal(detector.name,'feed-forward-compressor');
   assert.ok(engine.trackNodes.get('kick').sidechainPre.connections.some(item=>item.target.connections.some(route=>route.target===detector&&route.input===1)));
