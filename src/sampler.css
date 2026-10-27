@@ -108,7 +108,7 @@
 .clip-controls select{max-width:160px;background:#191e29;color:#e8ebf1;border:1px solid #343c4c;border-radius:5px;padding:7px}
 .clip{display:flex;align-items:center;justify-content:space-between;gap:5px}
 .clip span{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.clip-handle{position:absolute;top:0;bottom:0;width:10px;background:#ffffff33;touch-action:none;cursor:ew-resize}
+.clip-handle{position:absolute;top:0;bottom:0;width:10px;background:#ffffff0f;touch-action:none;cursor:ew-resize}
 .clip-handle-start{left:0;border-radius:4px 0 0 4px}
 .clip-handle-end{right:0;border-radius:0 4px 4px 0}
 .clip-handle::after{content:"";position:absolute;top:35%;bottom:35%;left:4px;width:2px;background:#fff9}
@@ -126,6 +126,7 @@
 .new-project-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:18px}
 .new-project-actions button{min-height:44px}
 .wave-marker{position:absolute;top:0;bottom:0;z-index:4;width:38px;min-height:44px;padding:0;transform:translateX(-50%);border:0;border-radius:0;background:transparent;color:#fff4;touch-action:none;cursor:ew-resize}
+.wave-marker:hover,.wave-marker:active,.wave-marker:focus-visible{background:#ffffff0f}
 .wave-marker::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:2px;background:#e9be62;box-shadow:0 0 5px #000}
 .wave-marker span{position:absolute;top:3px;left:50%;transform:translateX(-50%);padding:3px 6px;border-radius:4px;background:#e9be62;color:#15202a;font-size:11px;font-weight:800}
 .wave-marker-end::before,.wave-marker-end span{background:#e28678}
