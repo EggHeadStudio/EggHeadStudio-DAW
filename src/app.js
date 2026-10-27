@@ -174,6 +174,36 @@ function wireTrackEffects(){
  if(!track)return;
  track.fx ||= {filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25};
  track.fx.effects ||= [];
+ const compressorEffects=track.fx.effects.map((effect,index)=>({effect,index})).filter(item=>item.effect.type==='compressor');
+ for(const {effect,index} of compressorEffects){
+  effect.params.sidechain ||= {enabled:false,sourceTrackId:'',position:'pre',ghost:false,detectorGain:0,lowCut:0};
+  const article=$('#main').querySelector(`[data-effect-enabled="${index}"]`)?.closest('.effect-device');
+  if(!article)continue;
+  const sidechain=effect.params.sidechain,section=document.createElement('fieldset');
+  section.className='sidechain-controls';
+  const legend=document.createElement('legend');legend.textContent='External sidechain';section.append(legend);
+  const enabledLabel=document.createElement('label'),enabled=document.createElement('input');enabledLabel.className='sidechain-checkbox';
+  enabled.type='checkbox';enabled.checked=Boolean(sidechain.enabled);enabled.dataset.sidechainToggle=String(index);enabledLabel.append(enabled,document.createTextNode(' Enable external detector'));section.append(enabledLabel);
+  const sourceLabel=document.createElement('label');sourceLabel.textContent='Source track';
+  const sourceSelect=document.createElement('select');sourceSelect.dataset.sidechainSource=String(index);sourceSelect.setAttribute('aria-label','Sidechain source track');
+  sourceSelect.add(new Option('No source — compressor is not ducked',''));
+  for(const candidate of project.tracks)if(candidate.id!==track.id)sourceSelect.add(new Option(candidate.name,candidate.id));
+  sourceSelect.value=sidechain.sourceTrackId||'';sourceLabel.append(sourceSelect);section.append(sourceLabel);
+  const positionLabel=document.createElement('label');positionLabel.textContent='Detector tap';
+  const positionSelect=document.createElement('select');positionSelect.dataset.sidechainPosition=String(index);
+  positionSelect.add(new Option('Pre-fader','pre'));positionSelect.add(new Option('Post-fader','post'));positionSelect.value=sidechain.position==='post'?'post':'pre';positionLabel.append(positionSelect);section.append(positionLabel);
+  const ghostLabel=document.createElement('label'),ghost=document.createElement('input');ghostLabel.className='sidechain-checkbox';
+  ghost.type='checkbox';ghost.checked=Boolean(sidechain.ghost);ghost.dataset.sidechainGhost=String(index);ghostLabel.append(ghost,document.createTextNode(' Ghost trigger (use source even when muted/unsoloed)'));section.append(ghostLabel);
+  for(const [key,title,min,max,step] of [['detectorGain','Detector gain (dB)',-24,24,.5],['lowCut','Detector high-pass (Hz)',0,1000,10]]){
+   const label=document.createElement('label');label.textContent=title;const input=document.createElement('input');
+   input.type='range';input.min=String(min);input.max=String(max);input.step=String(step);input.value=String(Number(sidechain[key])||0);input.dataset.sidechainParam=String(index);input.dataset.param=key;
+   const output=document.createElement('output');output.value=input.value;label.append(input,output);section.append(label);
+  }
+  if(sidechain.enabled&&sidechain.sourceTrackId&&!project.tracks.some(candidate=>candidate.id===sidechain.sourceTrackId)){
+   const warning=document.createElement('p');warning.className='sidechain-warning';warning.textContent='The saved source track is missing. This compressor currently receives no external detector signal.';section.append(warning);
+  }
+  article.append(section);
+ }
  const refresh=()=>{engine.syncTracks(project.tracks,project.bpm);save()};
  const readPresets=()=>{const value=JSON.parse(localStorage.getItem('egghead-effect-presets')||'[]');if(!Array.isArray(value))throw new Error('Stored effect presets are invalid.');return value};
  const populatePresets=()=>{const select=$('#effectPresetSelect'),presets=readPresets();select.replaceChildren(new Option('Choose preset…',''));presets.forEach((preset,index)=>select.add(new Option(preset.name,String(index))))};
@@ -182,6 +212,17 @@ function wireTrackEffects(){
  $('#loadEffectPreset').onclick=()=>{const index=Number($('#effectPresetSelect').value);if(!Number.isInteger(index)||index<0)return notify('Choose an effect preset to load.');try{const preset=readPresets()[index];if(!preset||!Array.isArray(preset.effects)||preset.effects.some(effect=>!['eq','compressor','delay','reverb','saturation','limiter','utility'].includes(effect.type)||!effect.params||typeof effect.params!=='object'))throw new Error('Preset data is invalid.');track.fx.effects=JSON.parse(JSON.stringify(preset.effects));refresh();render()}catch(error){notify(`Could not load effect preset: ${error.message}`)}};
  $('#addTrackEffect').onchange=event=>{if(!event.target.value)return;track.fx.effects.push(createTrackEffect(event.target.value));refresh();render()};
  $$('[data-effect-enabled]').forEach(input=>input.onchange=()=>{track.fx.effects[+input.dataset.effectEnabled].enabled=input.checked;refresh()});
+ $$('[data-sidechain-toggle]').forEach(input=>input.onchange=()=>{
+  if(input.checked&&typeof globalThis.AudioWorkletNode!=='function'){input.checked=false;notify('External sidechain compression is unavailable: this browser does not support AudioWorklet.');return}
+  track.fx.effects[+input.dataset.sidechainToggle].params.sidechain.enabled=input.checked;refresh();
+ });
+ $$('[data-sidechain-source]').forEach(select=>select.onchange=()=>{track.fx.effects[+select.dataset.sidechainSource].params.sidechain.sourceTrackId=select.value;refresh()});
+ $$('[data-sidechain-position]').forEach(select=>select.onchange=()=>{track.fx.effects[+select.dataset.sidechainPosition].params.sidechain.position=select.value;refresh()});
+ $$('[data-sidechain-ghost]').forEach(input=>input.onchange=()=>{track.fx.effects[+input.dataset.sidechainGhost].params.sidechain.ghost=input.checked;refresh()});
+ $$('[data-sidechain-param]').forEach(input=>input.oninput=()=>{
+  const sidechain=track.fx.effects[+input.dataset.sidechainParam].params.sidechain;sidechain[input.dataset.param]=Number(input.value);
+  input.nextElementSibling.value=input.value;refresh();
+ });
  $$('[data-effect-remove]').forEach(button=>button.onclick=()=>{track.fx.effects.splice(+button.dataset.effectRemove,1);refresh();render()});
  $$('[data-effect-up],[data-effect-down]').forEach(button=>button.onclick=()=>{const from=Number(button.dataset.effectUp??button.dataset.effectDown),to=from+(button.hasAttribute('data-effect-up')?-1:1);[track.fx.effects[from],track.fx.effects[to]]=[track.fx.effects[to],track.fx.effects[from]];refresh();render()});
  $$('[data-effect-toggle]').forEach(input=>input.onchange=()=>{track.fx.effects[+input.dataset.effectToggle].params[input.dataset.param]=input.checked;refresh()});

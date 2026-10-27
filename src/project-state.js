@@ -40,6 +40,10 @@ export function isTrackAudible(track,tracks){
 
 export function deleteProjectTrack(project,index){
   if(!Number.isInteger(index)||index<0||index>=project.tracks.length)return false;
-  project.tracks.splice(index,1);
+  const [removed]=project.tracks.splice(index,1);
+  for(const track of project.tracks)for(const effect of track.fx?.effects||[]){
+    const sidechain=effect.params?.sidechain;
+    if(sidechain?.sourceTrackId===removed.id)sidechain.sourceTrackId='';
+  }
   return true;
 }

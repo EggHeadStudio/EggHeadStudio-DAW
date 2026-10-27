@@ -26,8 +26,8 @@ test('saving before project reset serializes the previous project and creates an
   assert.equal(plan.project.tracks.length,0);
 });
 
-test('project serialization preserves effects, mixer and arrangement data',()=>{
-  const project={name:'Song',bpm:128,tracks:[{id:'a',volume:.7,pan:-.2,mute:true,solo:false,clips:[{id:'clip',asset:'sample',bar:2}],fx:{effects:[{id:'eq-a',type:'eq',enabled:true,params:{bands:[{frequency:120,gain:2,q:1}]}}]},pattern:{notes:[{midi:60,beat:0}]}}]};
+test('project serialization preserves effects, sidechain routing, mixer and arrangement data',()=>{
+  const project={name:'Song',bpm:128,tracks:[{id:'a',volume:.7,pan:-.2,mute:true,solo:false,clips:[{id:'clip',asset:'sample',bar:2}],fx:{effects:[{id:'eq-a',type:'eq',enabled:true,params:{bands:[{frequency:120,gain:2,q:1}]}},{id:'duck-a',type:'compressor',enabled:true,params:{threshold:-18,sidechain:{enabled:true,sourceTrackId:'kick',position:'pre',ghost:true,detectorGain:3,lowCut:90}}}]},pattern:{notes:[{midi:60,beat:0}]}},{id:'kick',clips:[]}]};
   assert.deepEqual(parseProject(serializeProject(project)),project);
   assert.throws(()=>parseProject('{"tracks":[]}'),/Invalid project/);
 });
@@ -40,10 +40,10 @@ test('mute and solo routing supports multiple solos and excludes muted tracks',(
   assert.deepEqual(tracks.map(track=>isTrackAudible(track,tracks)),[true,false,true,true]);
 });
 
-test('track deletion removes only the chosen project track',()=>{
-  const project={tracks:[{id:'a',clips:[{asset:'shared'}]},{id:'b',sampler:{asset:'shared'}}]};
+test('track deletion removes the track and clears dependent sidechain references without deleting samples',()=>{
+  const project={tracks:[{id:'a',clips:[{asset:'shared'}]},{id:'b',sampler:{asset:'shared'},fx:{effects:[{type:'compressor',params:{sidechain:{sourceTrackId:'a'}}}]}}]};
   assert.equal(deleteProjectTrack(project,0),true);
-  assert.deepEqual(project.tracks,[{id:'b',sampler:{asset:'shared'}}]);
+  assert.deepEqual(project.tracks,[{id:'b',sampler:{asset:'shared'},fx:{effects:[{type:'compressor',params:{sidechain:{sourceTrackId:''}}}]}}]);
   assert.equal(deleteProjectTrack(project,4),false);
 });
 

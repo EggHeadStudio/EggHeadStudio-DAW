@@ -18,6 +18,8 @@ This pass prioritized real signal processing and a verifiable master-to-export p
 - Added input and output gain in Basic and Advanced modes over the same settings, six built-in parameter presets, locally saved custom presets, and reset.
 - Added complete arrangement offline render, A/B buffers, preview playback with cursor, RMS dBFS and sample-peak readouts, clipping warning, and stereo 16-bit WAV export.
 - Stored mastering controls in the existing project JSON so old project files load with default mastering parameters and new settings survive project reload.
+- Added an external track-to-track feed-forward compressor to the existing track-effect chain. A compressor can select a different track as its detector source, choose a pre- or post-fader tap, use a muted/unsoloed source as a ghost trigger, adjust detector gain/high-pass, and retain settings in project JSON and effect presets. The detector input is separate from the destination program input; kick audio is not mixed into the destination track.
+- Implemented the sidechain detector/compressor in an AudioWorklet shared by live and offline track graphs. Missing/deleted sources are not connected; deleting a source clears dependent project references. Self-sidechains are ignored, and detector sends do not feed back into the source track.
 
 ## DSP and measurement accuracy
 
@@ -28,14 +30,15 @@ This pass prioritized real signal processing and a verifiable master-to-export p
 - Metering reports RMS dBFS and sample peak only. No value is labelled LUFS or true peak; no BS.1770/EBU R128 gating or loudness range is implemented.
 - A/B compares the signal with the new mastering graph bypassed against the mastered signal while retaining existing legacy master-bus processing. It is not level-matched. Playback pause/resume and A/B switching retain the rendered position.
 
-## Automated tests
+## Automated tests from the prior Batch 004 pass
 
-- Runtime: Node.js 24.20.0.
-- JavaScript syntax checks: `src\app.js`, `src\audio.js`, `src\mastering.js` passed.
+- Runtime: Node.js 24.20.0 (prior pass).
+- JavaScript syntax checks: `src\app.js`, `src\audio.js`, `src\mastering.js` passed in the prior pass.
 - Command: `node --test tests\*.test.js`.
-- Result: **51 passed, 0 failed**.
+- Result before the current sidechain changes: **51 passed, 0 failed**.
 - New deterministic tests cover settings bounds and defaults, six-band EQ response/cuts, graph module wiring/parameters, preset parameter changes, project JSON persistence, and correct RMS/sample-peak analysis.
 - Existing project, timeline, arrangement, sample, and audio tests remained passing.
+- Added deterministic sidechain DSP, routing, sidechain project persistence and source-deletion tests. These new tests have **not** been run in the current environment because neither `node` nor `npm` is available on PATH. The prior 51/51 result predates this sidechain change and is not a test result for the current worktree. The configured GitHub Actions run is pending.
 
 ## Browser and audio verification
 
@@ -51,6 +54,15 @@ Local Chromium testing used the existing generated-audio multi-track acceptance 
 
 The export is verified for this project/fixture only; these results do not prove a universal ceiling or standards-compliant mastering.
 
+### Batch 004B sidechain verification
+
+- Chromium loaded the new AudioWorklet processor and rendered a deterministic two-track kick/bass fixture through `AudioEngine.render`.
+- In the 110 Hz bass / pulsed 60 Hz kick fixture, rendered RMS around the kick transient measured **0.1193 without sidechain** and **0.0479 with sidechain**. During the following release interval, RMS measured **0.1300 without sidechain** and **0.0872 with sidechain**. This confirms measurable ducking and release on the offline graph; it is a focused synthetic test, not a full live/offline equivalence tolerance.
+- With the source track muted, the non-ghost result remained neutral (**0.1193 RMS**); enabling Ghost trigger ducked the same bass to **0.0479 RMS**, confirming the trigger path is independent of the source's audible output.
+- Browser-emulated real-time analysis could not verify live amplitude: the browser's real-time AnalyserNode returned zero for a separate, directly connected ConstantSourceNode control as well as for the engine fixture. Thus live signal-level reduction remains unverified in this environment, although live scheduling uses the same AudioWorklet processor and the same detector-routing helper.
+- The sidechain panel and saved source selection were exercised through the UI. Responsive Chromium emulation at **360, 390, 430, 768 and 1280 CSS pixels** found no page-level horizontal overflow. The original browser project was restored after this UI check. Physical-device behavior was not tested.
+- Node tests, remote Actions, live signal-level verification, physical-device behavior and deployment remain pending.
+
 ## Mobile viewport checks
 
 Advanced controls were checked in Chromium emulation at **360, 390, 430, 768 and 1280 CSS pixels**. No page-level horizontal overflow occurred. The response graph remained visible, and playback/compare/export buttons measured 46–52 px tall on the three narrow viewports and 42 px at tablet/desktop widths.
@@ -59,6 +71,7 @@ These are emulated layout checks, not physical iOS/Android audio or touch tests.
 
 ## Known gaps / next development priorities
 
+- New sidechain tests are added but need execution in Node.js or the configured GitHub Actions workflow. Verify real-time detector gain reduction on an audio-capable browser/device; this browser automation environment returned zero from its live AnalyserNode control.
 - Standards-based integrated, short-term, momentary LUFS, LRA, K-weighting, gating and true-peak oversampling/reference validation.
 - A real lookahead peak limiter with oversampled inter-sample ceiling verification and gain-reduction metering; current compressor stage does not guarantee its displayed ceiling.
 - Three-or-more-band dynamics with crossovers, per-band settings/solo and verified phase behavior.
@@ -73,11 +86,15 @@ The new files are static browser JavaScript and require no backend, cloud servic
 
 ## Files changed
 
+- `src/sidechain-processor.js` (new)
 - `src/mastering.js` (new)
 - `src/audio.js`
 - `src/app.js`
+- `src/project-state.js`
 - `src/sampler.css`
 - `tests/mastering.test.js` (new)
+- `tests/sidechain.test.js` (new; not run in this environment)
+- `tests/project-state.test.js`
 - `README.md`
 - `IDEA.md`
 - `BATCH_004_REPORT.md` (new)
