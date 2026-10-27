@@ -54,7 +54,7 @@
 .sample-wave-toolbar label{display:flex;align-items:center;gap:8px;color:#b2bfd0}
 .sample-wave-toolbar input[type=range]{width:min(220px,45vw)}
 .wave-viewport{overflow:auto;max-width:100%;min-height:190px;background:#121923;border-radius:8px;overscroll-behavior-x:contain;touch-action:pan-x}
-.wave-canvas-wrap{position:relative;width:max-content;min-width:100%}
+.wave-canvas-wrap{position:relative;width:max-content;min-width:100%;overflow:hidden}
 .sample-wave{display:block;width:max(100%,900px);height:180px;background:#121923;border-radius:8px;touch-action:none;user-select:none}
 .sample-cursor{display:none;position:absolute;top:0;bottom:0;left:0;width:2px;background:#fa7485;pointer-events:none;z-index:2}
 .sample-edit-grid{align-items:end}
@@ -127,6 +127,12 @@
 .new-project-actions button{min-height:44px}
 .wave-marker{position:absolute;top:0;bottom:0;z-index:4;width:38px;min-height:44px;padding:0;transform:translateX(-50%);border:0;border-radius:0;background:transparent;color:#fff4;touch-action:none;cursor:ew-resize}
 .wave-marker:hover,.wave-marker:active,.wave-marker:focus-visible{background:#ffffff0f}
+.wave-marker.at-start{transform:none}
+.wave-marker.at-end{transform:translateX(-100%)}
+.wave-marker.at-start::before{left:0}
+.wave-marker.at-end::before{left:auto;right:0}
+.wave-marker.at-start span{left:0;transform:none}
+.wave-marker.at-end span{left:auto;right:0;transform:none}
 .wave-marker::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:2px;background:#e9be62;box-shadow:0 0 5px #000}
 .wave-marker span{position:absolute;top:3px;left:50%;transform:translateX(-50%);padding:3px 6px;border-radius:4px;background:#e9be62;color:#15202a;font-size:11px;font-weight:800}
 .wave-marker-end::before,.wave-marker-end span{background:#e28678}

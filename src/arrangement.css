@@ -1,0 +1,63 @@
+.workspace [hidden]{display:none!important}
+.workspace .editor-tools{flex-wrap:wrap;max-height:150px;overflow:auto;flex-shrink:0}
+.editor-tools button[aria-pressed=true]{background:#3b5e5a;border-color:#76d8c3}
+.workspace .track-row{height:124px}
+.workspace .track-label{width:125px;min-width:125px}
+.workspace .clip{top:1px;bottom:1px;height:auto;padding:5px 12px;border-radius:1px;box-shadow:none;touch-action:pan-x pan-y;user-select:none;min-width:0}
+.clip>span{position:relative;align-self:flex-start;z-index:1;pointer-events:none}
+.clip-waveform{position:absolute;top:23px;bottom:2px;left:0;height:calc(100% - 25px);pointer-events:none}
+.workspace .clip-handle{z-index:2;border-radius:0}
+.workspace .sampler-block{top:1px;bottom:1px;height:auto;border-radius:1px}
+.workspace .ruler-row{height:72px;z-index:8}
+.workspace .ruler{touch-action:none;flex-shrink:0;cursor:crosshair}
+.workspace .ruler>span{top:42px;height:30px;padding:4px 3px;border-left:1px solid #72818f;pointer-events:none;white-space:nowrap;font-size:10px}
+.workspace .ruler>.beat-tick{border-left-color:#485266}
+.workspace .playhead{top:72px;z-index:5}
+.arrangement-loop{position:absolute;top:3px;height:32px;min-width:2px;display:flex;align-items:center;justify-content:space-between;background:#a5b0bf25;border:1px solid #718197;touch-action:none;cursor:grab;color:#aab8c8}
+.arrangement-loop.loop-enabled{background:#75d7c34d;border-color:#76d8c3;color:#b8ffed}
+.arrangement-loop>span{overflow:hidden;font-size:10px;pointer-events:none;white-space:nowrap}
+.arrangement-loop button{padding:0;flex:none;width:24px;min-height:32px;border:0;border-radius:0;background:#ffffff0f;touch-action:none;cursor:ew-resize}
+.insertion-marker{position:absolute;top:35px;bottom:0;width:2px;background:#ffdd85;pointer-events:none}
+.time-range{position:absolute;top:0;bottom:0;background:#82dccb33;border:1px solid #9de9da;z-index:4;pointer-events:none;min-width:1px}
+.range-edge{position:absolute;top:0;bottom:0;width:12px;pointer-events:auto;touch-action:none;cursor:ew-resize;background:#afffe51a}
+.range-edge-start{left:0}.range-edge-end{right:0}
+.range-mode .lane,.range-mode .clip,.clip-edit-mode .clip{touch-action:none}
+.range-mode .clip{cursor:crosshair}
+.range-toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:6px 10px;background:#1b2330;flex-shrink:0}
+.range-toolbar label{font-size:11px;display:flex;gap:6px;align-items:center}
+.range-toolbar input{width:90px}
+.range-toolbar output{font-size:11px;color:#a4e5d7}
+.right-mixer{position:sticky;right:0;z-index:7;flex:none;width:210px;min-width:210px;margin:0;border-radius:0;border:0;border-left:1px solid #526075;border-bottom:1px solid #353d4b;background:#242c3a;padding:5px 9px;display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;align-content:center}
+.right-mixer .strip-title{grid-column:1/-1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.right-mixer label{font-size:10px}
+.right-mixer label input{display:block;min-height:22px}
+.right-mixer>span{display:none}
+.right-mixer .stereo-meter{grid-column:2;grid-row:4}
+.right-mixer .track-actions{grid-column:1;grid-row:4;margin:0;gap:2px}
+.right-mixer .track-actions button{padding:3px 4px;min-height:27px;font-size:10px}
+.right-mixer [data-remove]{display:none}
+.right-mixer.track-selected{box-shadow:inset 3px 0 #76d8c3}
+.workspace .bottom-panel{height:260px;min-height:120px;max-height:55%;resize:vertical;flex-shrink:0;padding:10px}
+.workspace .bottom-panel>.mixer{float:right;margin:0 0 8px 8px}
+.workspace .master-strip{min-width:130px;padding:6px}
+.workspace .device-panel{clear:both;align-items:flex-start}
+.workspace .effect-chain{flex:1;min-width:260px}
+.workspace .clip-device{flex:1;min-width:220px}
+.workspace .browser{min-width:150px;max-width:320px;resize:horizontal;overflow:auto}
+@media(max-width:850px){
+  .workspace .editor{min-height:650px;height:calc(100dvh - 230px)}
+  .workspace .browser{max-width:100%;resize:none}
+  .workspace .editor-tools{max-height:132px}
+  .workspace .editor-tools button{min-height:40px}
+  .workspace .track-label{width:95px;min-width:95px;padding:7px 4px}
+  .workspace .track-actions{flex-wrap:wrap}
+  .right-mixer{width:164px;min-width:164px;padding:5px}
+  .right-mixer .track-actions button{min-height:32px}
+  .range-toolbar{gap:5px;padding:4px}
+  .range-toolbar output{flex-basis:100%}
+  .range-toolbar input{width:70px}
+  .workspace .bottom-panel{height:220px;max-height:45%}
+  .workspace .arrangement{min-height:230px}
+  .workspace .clip-handle{width:20px}
+  .range-edge{width:20px}
+}

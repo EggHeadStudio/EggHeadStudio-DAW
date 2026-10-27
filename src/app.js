@@ -3,9 +3,9 @@ import {detectPitch,snapBeats} from './music.js';
 import {renderSamplerHTML,wireSamplerUI} from './sampler-ui.js';
 import {renderDrumRackHTML,wireDrumRackUI} from './drum-rack-ui.js';
 import {SampleEditor,renderSampleStudioHTML,wireSampleStudio,drawSampleStudioWave,stopSampleStudioPreview} from './sample-editor.js';
-import {ArrangementHistory,duplicateClip,moveClipTo,resizeClipBoundary,splitClipAtTime} from './arrangement.js';
+import {ArrangementHistory,duplicateClip,moveClipTo,splitClipAtTime} from './arrangement.js';
 import {TimelineScale,timelineBeatsAtClientX as timelineBeatsAtScale,timelineContentOrigin,timelinePixelsAtClientX} from './timeline.js';
-import {createEmptyProject,deleteProjectTrack,DEFAULT_MASTER_SETTINGS,parseProject,planProjectReset,serializeProject} from './project-state.js';
+import {createEmptyProject,deleteProjectTrack,DEFAULT_MASTER_SETTINGS,normalizeArrangementLoop,parseProject,planProjectReset,serializeProject} from './project-state.js';
 import {createEmptySampleSession,resolveRecordingChunks,shouldConfirmSampleDiscard} from './sample-lifecycle.js';
 import {DEFAULT_MASTERING_SETTINGS,MASTERING_PRESETS,analyzeMasterBufferAsync,masteringEqResponse,normalizeMasteringSettings} from './mastering.js';
 import {loudnessMatchGainDb,stereoMonitorMatrix} from './mastering-dsp.js';
@@ -13,7 +13,12 @@ import {encodeExport,exportMemoryWarning,estimateExportMemory,normalizeExportSet
 import {EXPORT_BITRATES,EXPORT_SAMPLE_RATES} from './export-dsp.js';
 import {createPortableProjectArchive,getProjectAssetIds,openPortableProjectArchive,createReleaseZip} from './portable-project.js';
 import {addId3v23Metadata,addWavInfoMetadata,normalizeReleaseMetadata,validateReleaseMetadata} from './release-metadata.js';
+import {mountArrangementWorkspace} from './arrangement-workspace.js';
+const arrangementWorkspaceState={selection:null,insertionBeat:0,selectMode:false,follow:false,browserOpen:true,mixerOpen:true,devicesOpen:true};
+let arrangementWorkspace=null;
 const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={id:uid(),schemaVersion:1,name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,releaseMetadata:{},exportSettings:normalizeExportSettings(),tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null,exportController=null,exportRun=null,releaseZipController=null,releaseArtworkBlob=null,releaseArtworkSourceBlob=null,releaseArtworkUrl=null;
+let portableImportController=null;
+const portableBufferDigests=new WeakMap();
 const dbp=new Promise((resolve,reject)=>{const r=indexedDB.open('pulse-studio-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('assets');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
 async function dbSet(k,v){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets','readwrite');t.objectStore('assets').put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}async function dbGet(k){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets');const r=t.objectStore('assets').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 async function dbSetMany(entries){const db=await dbp;return new Promise((resolve,reject)=>{const tx=db.transaction('assets','readwrite'),store=tx.objectStore('assets');for(const[key,value]of entries)value===null?store.delete(key):store.put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Asset cache transaction was aborted.'))})}
@@ -25,7 +30,7 @@ function beatsWidth(){return 156*zoom}
 function timelineScale(){return new TimelineScale(project.bpm,beatsWidth()/4)}
 function timelineBeatsAtClientX(clientX){return timelineBeatsAtScale(clientX,$('#ruler'),$('.arrangement'),timelineScale())}
 function timelineTimeAtClientX(clientX,grid=0){return Math.max(0,snapBeats(timelineBeatsAtClientX(clientX),grid)*60/project.bpm)}
-function clipWidth(c){return Math.max(22,timelineScale().timeToPixels(clipDurationSeconds(c)))}
+function clipWidth(c){return Math.max(1,timelineScale().timeToPixels(clipDurationSeconds(c)))}
 function setArrangementZoom(value,anchorClientX){const arrangement=$('.arrangement'),ruler=$('#ruler');if(!arrangement||!ruler){zoom=value;render();return}const anchor=anchorClientX??arrangement.getBoundingClientRect().left+arrangement.clientWidth/2,anchorTime=Math.max(0,timelineScale().pixelsToTime(timelinePixelsAtClientX(anchor,ruler,arrangement)));zoom=Math.max(.4,Math.min(4,value));render();const nextArrangement=$('.arrangement'),nextRuler=$('#ruler');if(nextArrangement&&nextRuler){const timelineScreenX=anchor-nextRuler.getBoundingClientRect().left;nextArrangement.scrollLeft=Math.max(0,timelineScale().timeToPixels(anchorTime)-timelineScreenX)}}
 function shell(){app.innerHTML=`<header><div class="brand"><span class="logo">◉</span><b>EggHeadStudio</b><span>DAW</span></div><input id="projectName" value="${esc(project.name)}" aria-label="Project name"><div class="transport"><button id="toStart" title="Back to start" aria-label="Back to start">⏮</button><button id="play" class="primary" title="Play Arrangement" aria-label="Play Arrangement">▶</button><button id="stop" title="Stop Playback" aria-label="Stop Playback">■</button><span class="clock" id="clock">1.1.1</span><label>BPM <input id="bpm" type="number" min="40" max="240" value="${project.bpm}" aria-label="Project tempo in BPM"></label><button id="loop" class="${project.loop?'active':''}" aria-label="Toggle arrangement loop">↻ Loop</button></div><div class="actions"><button id="newProject" title="Create an Empty Project" aria-label="New Project">New Project</button><button id="saveProject" title="Save project metadata locally">Save Locally</button><button id="saveEhs" title="Download the complete portable .ehs project">Save .EHS</button><button id="openProject" title="Open a legacy JSON project">Open JSON</button><button id="openEhs" title="Open a portable .ehs project">Open .EHS</button><button id="exportMix" title="Open Export Studio">Export Audio</button><span id="projectSaveState" role="status">${projectDirty?'Unsaved changes':'Saved locally'}</span></div></header><nav><button data-view="arrange" class="selected">▥ Arrangement</button><button data-view="sample">◉ Sample Studio</button><button data-view="master">▤ Mastering</button><button data-view="export">⇩ Export Studio</button><span class="grow"></span><span id="status">Local-first · Browser audio</span></nav><main id="main"></main><footer><span>EggHeadStudio DAW • Prototype v0.1</span><span id="footerInfo">Ready</span></footer><div id="toast" role="status"></div><input id="importProject" type="file" accept="application/json,.json" hidden><input id="importEhs" type="file" accept=".ehs,application/vnd.eggheadstudio.project+zip,application/zip" hidden><input id="artworkFile" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" hidden><input id="importFiles" type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a" multiple hidden><input id="importFolder" type="file" webkitdirectory directory multiple hidden><dialog id="newProjectDialog" class="new-project-dialog" aria-labelledby="newProjectTitle"><h2 id="newProjectTitle">Start a New Project?</h2><p id="newProjectMessage">Your project has unsaved changes. Save a JSON copy before creating an empty project, discard changes, or cancel.</p><div class="new-project-actions"><button id="saveAndNew">Save Current Project</button><button id="discardAndNew" class="accent">Discard Changes</button><button id="cancelNewProject">Cancel</button></div></dialog>`;wireShell();render()}
 document.addEventListener('change',event=>{if(event.target?.id==='snapGrid'){snapGrid=+event.target.value;$$('.lane').forEach(lane=>lane.style.backgroundSize=`${beatsWidth()*(snapGrid||.0625)/4}px 100%`)}});
@@ -56,22 +61,37 @@ async function savePortableProject(){
  }catch(error){archiveStatus('Ready');notify(`Portable project export failed: ${error.message}`)}
 }
 async function importPortableProject(file){
+ if(portableImportController){notify('A portable project is already being opened. Cancel it or wait for it to finish.');return}
  if(projectDirty&&!window.confirm('The current project has unsaved changes. Opening this portable project replaces the active arrangement. Continue?'))return;
+ const controller=new AbortController();portableImportController=controller;
+ const cancel=document.createElement('button');cancel.textContent='Cancel project import';cancel.onclick=()=>controller.abort();
+ document.querySelector('footer').append(cancel);
+ const replacementButtons=['#newProject','#openProject','#openEhs','#saveEhs'].map(selector=>$(selector));
+ replacementButtons.forEach(button=>button.disabled=true);
  archiveStatus('Validating portable project…');
  try{
-  const archive=await openPortableProjectArchive(file,{onProgress:status=>archiveStatus(status.message)}),stagedBuffers=new Map(),stagedAssets=new Map(),writes=[],idRemap=new Map(),ctx=await engine.init();
+  const archive=await openPortableProjectArchive(file,{signal:controller.signal,onProgress:status=>archiveStatus(status.message)}),stagedBuffers=new Map(),stagedAssets=new Map(),writes=[],idRemap=new Map(),decodedByHash=new Map(),ctx=await engine.init();
   for(const[id,blob]of archive.assetFiles){
-   const bytes=await blob.arrayBuffer();let finalId=id,existing=await dbGet(id);
+   controller.signal.throwIfAborted();
+   archiveStatus(`Restoring audio ${stagedAssets.size+1}/${archive.assetFiles.size}…`);
+   const bytes=await blob.arrayBuffer();let finalId=id,existing=await dbGet(id),reusableBuffer=null;
    if(existing){
     const newBytes=new Uint8Array(bytes),record=archive.assetMetadata.get(id);
     const oldBytes=existing.size===newBytes.byteLength?new Uint8Array(await existing.arrayBuffer()):null;
     const oldDigest=oldBytes?new Uint8Array(await crypto.subtle.digest('SHA-256',oldBytes)):null;
     const oldHex=oldDigest?[...oldDigest].map(value=>value.toString(16).padStart(2,'0')).join(''):'';
     const same=oldHex===record?.sha256;
+    // Edited PCM can differ from its saved WAV; reuse only known decodes.
     if(!same)finalId=uid();
+    else if(portableBufferDigests.get(buffers.get(id))===record.sha256)reusableBuffer=buffers.get(id);
    }
    idRemap.set(id,finalId);
-   const buffer=await ctx.decodeAudioData(bytes.slice(0));
+   const digest=archive.assetMetadata.get(id).sha256;
+   let buffer=decodedByHash.get(digest)||reusableBuffer;
+   if(!buffer)buffer=await ctx.decodeAudioData(bytes);
+   controller.signal.throwIfAborted();
+   portableBufferDigests.set(buffer,digest);
+   decodedByHash.set(digest,buffer);
    stagedBuffers.set(finalId,buffer);
    const record=archive.assetMetadata.get(id),assetBlob=audioBlobName(blob,record?.name||`${id}.audio`);
    stagedAssets.set(finalId,{id:finalId,name:record?.name||assetBlob.name||'Sample',path:record?.name||assetBlob.name||'Sample',size:blob.size,duration:buffer.duration});
@@ -103,17 +123,19 @@ async function importPortableProject(file){
     if(restored.mastering?.preset===name)restored.mastering.preset=target;
    }
   }
+  controller.signal.throwIfAborted();cancel.disabled=true;archiveStatus('Saving verified project assets…');
   await dbSetMany(writes);
   if(archive.presetFiles.size)try{localStorage.setItem('pulse-master-presets',JSON.stringify(portablePresets))}catch(error){notify(`Project opened, but custom presets could not be saved locally: ${error.message}`)}
   engine.stop(true);engine.setMaster({...DEFAULT_MASTER_SETTINGS,...restored.masterSettings});engine.setMastering(restored.mastering||DEFAULT_MASTERING_SETTINGS);
-  project=restored;normalizeProject();for(const[id,buffer]of stagedBuffers)buffers.set(id,buffer);for(const[id,asset]of stagedAssets)assets.set(id,asset);
+  resetArrangementEditing();project=restored;normalizeProject();for(const[id,buffer]of stagedBuffers)buffers.set(id,buffer);for(const[id,asset]of stagedAssets)assets.set(id,asset);
   releaseArtworkBlob=archive.artworkFile;releaseArtworkSourceBlob=archive.artworkSourceFile;
   if(releaseArtworkUrl)URL.revokeObjectURL(releaseArtworkUrl);releaseArtworkUrl=releaseArtworkBlob?URL.createObjectURL(releaseArtworkBlob):null;
   projectDirty=false;selectedTrack=0;selectedClip=null;playhead=0;masteringPreview=null;view='arrange';save(false);shell();
   notify(`Portable project opened · ${archive.assetFiles.size} audio assets verified and restored.`);
- }catch(error){notify(`Could not open portable project: ${error.message}`)}
- finally{archiveStatus('Ready')}
+ }catch(error){notify(error.name==='AbortError'?'Portable project import cancelled. The active project was not replaced.':`Could not open portable project: ${error.message}`)}
+ finally{cancel.remove();replacementButtons.forEach(button=>button.disabled=false);portableImportController=null;archiveStatus('Ready')}
 }
+function resetArrangementEditing(){arrangementHistory.clear();arrangementWorkspaceState.selection=null;arrangementWorkspaceState.clipboard=null;arrangementWorkspaceState.insertionBeat=0;arrangementClipboard=null}
 function resetTemporarySample(){recordingToken++;stopSampleStudioPreview();if(recorder?.state==='recording')cancelSampleRecording(true,false);sampleEditor=null;recordBuffer=null;recordBlob=null;savedSampleId=null;sampleFilename=createEmptySampleSession().filename}
 function applyNewProject(choice){
  const plan=planProjectReset(project,choice);
@@ -121,7 +143,7 @@ function applyNewProject(choice){
  if(plan.serialized)saveProjectFile(plan.serialized,project.name);
  engine.stop(true);engine.syncTracks([]);engine.setMaster({...DEFAULT_MASTER_SETTINGS});engine.setMastering(DEFAULT_MASTERING_SETTINGS);
  project=plan.project;projectDirty=false;selectedTrack=0;selectedClip=null;playhead=0;zoom=1;snapGrid=.25;arrangementClipboard=null;
- arrangementHistory.undoStack=[];arrangementHistory.redoStack=[];
+ resetArrangementEditing();
  resetTemporarySample();save(false);view='arrange';shell();notify('Empty project created. Your sample library and folder access are preserved.');return true;
 }
 function openNewProjectDialog(){
@@ -140,18 +162,18 @@ function openNewProjectDialog(){
 }
 function wireShell(){
  $('#projectName').onchange=e=>{project.name=e.target.value;save()};
- $('#bpm').onchange=e=>{project.bpm=Math.max(40,Math.min(240,+e.target.value||120));engine.syncTracks(project.tracks,project.bpm);save();render()};
- $('#loop').onclick=()=>{project.loop=!project.loop;save();$('#loop').classList.toggle('active',project.loop)};
+ $('#bpm').onchange=async e=>{const playing=engine.playing,beat=(playing?engine.position():playhead)*project.bpm/60;project.bpm=Math.max(40,Math.min(240,+e.target.value||120));playhead=beat*60/project.bpm;engine.offset=playhead;if(playing)engine.stop();engine.syncTracks(project.tracks,project.bpm);save();render();if(playing)try{await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}};
+ $('#loop').onclick=()=>{checkpointArrangement();project.loop=!project.loop;save();$('#loop').classList.toggle('active',project.loop);if(view==='arrange')render()};
  $('#newProject').onclick=openNewProjectDialog;
  $('#play').onclick=async()=>{if(engine.playing){playhead=engine.position();engine.stop();$('#play').textContent='▶'}else{try{await engine.play(project,buffers,playhead);$('#play').textContent='Ⅱ'}catch(e){notify(e.message)} }};
- $('#stop').onclick=()=>{engine.stop(true);playhead=0;$('#play').textContent='▶';tick(0)};
+ $('#stop').onclick=()=>{if(engine.playing)playhead=engine.position();engine.offset=playhead;engine.stop();$('#play').textContent='▶';tick(playhead)};
  $('#toStart').onclick=()=>{engine.stop(true);playhead=0;tick(0);$('#play').textContent='▶'};
  $('#saveProject').onclick=()=>saveProjectFile();
  $('#saveEhs').onclick=savePortableProject;
  $('#openEhs').onclick=()=>$('#importEhs').click();
  $('#importEhs').onchange=async event=>{const file=event.target.files?.[0];if(file)await importPortableProject(file);event.target.value=''};
  $('#openProject').onclick=()=>$('#importProject').click();
- $('#importProject').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;if(projectDirty&&!window.confirm('The current project has unsaved changes. Open this JSON project anyway?')){e.target.value='';return}try{const p=parseProject(await file.text());engine.stop();project=p;normalizeProject();engine.setMaster({...DEFAULT_MASTER_SETTINGS,...p.masterSettings});engine.setMastering(p.mastering||DEFAULT_MASTERING_SETTINGS);await restoreAssets();save(false);projectDirty=false;shell();notify('JSON project loaded; samples not present in the local library may need relinking.')}catch(err){notify(err.message)}finally{e.target.value=''}};
+ $('#importProject').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;if(projectDirty&&!window.confirm('The current project has unsaved changes. Open this JSON project anyway?')){e.target.value='';return}try{const p=parseProject(await file.text());engine.stop();resetArrangementEditing();project=p;normalizeProject();engine.setMaster({...DEFAULT_MASTER_SETTINGS,...p.masterSettings});engine.setMastering(p.mastering||DEFAULT_MASTERING_SETTINGS);await restoreAssets();save(false);projectDirty=false;shell();notify('JSON project loaded; samples not present in the local library may need relinking.')}catch(err){notify(err.message)}finally{e.target.value=''}};
  $('#exportMix').onclick=()=>openExportStudio();
  $$('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;render()});
  $('#importFiles').onchange=e=>importFiles([...e.target.files]);
@@ -164,17 +186,17 @@ const $$=s=>[...document.querySelectorAll(s)];
 async function addAsset(file){const id=uid(),ctx=await engine.init(),buffer=await ctx.decodeAudioData(await file.arrayBuffer());assets.set(id,{id,name:file.name,path:file.webkitRelativePath||file.name,size:file.size,duration:buffer.duration});buffers.set(id,buffer);await dbSet(id,file);return id}
 async function importFiles(files){let ok=0;for(const f of files){if(!/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(f.name)&&!f.type.startsWith('audio/'))continue;try{await addAsset(f);ok++}catch(e){console.warn(f.name,e)}}render();notify(`Imported ${ok} audio files. Files cached locally.`)}
 async function restoreAssets(){const ids=new Set(project.tracks.flatMap(t=>[...t.clips.map(c=>c.asset),t.sampler?.asset,...(t.drumRack?.pads||[]).map(p=>p.asset)].filter(Boolean)));for(const id of ids){if(buffers.has(id))continue;const f=await dbGet(id);if(f){try{const b=await(await engine.init()).decodeAudioData(await f.arrayBuffer());buffers.set(id,b);assets.set(id,{id,name:f.name||'Sample',duration:b.duration,path:f.name})}catch{}}}}
-function normalizeProject(){project.id ||= uid();project.schemaVersion=1;project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.bpm=Math.max(40,Math.min(240,Number(project.bpm)||120));project.patternBeats=64;project.exportSettings=normalizeExportSettings(project.exportSettings);for(const track of project.tracks){track.clips ||= [];track.pattern ||= {notes:[]};track.pattern.notes ||= [];if(!track.drumRack)continue;track.drumRack.steps=[16,32,64].includes(track.drumRack.steps)?track.drumRack.steps:16;track.drumRack.pads=(track.drumRack.pads||[]).slice(0,16);while(track.drumRack.pads.length<16){const index=track.drumRack.pads.length;track.drumRack.pads.push({name:`Pad ${index+1}`,note:36+index,asset:null,volume:1,pitch:0,pan:0,mute:false})}for(const [index,pad] of track.drumRack.pads.entries()){pad.name ||= `Pad ${index+1}`;pad.note=Number.isInteger(pad.note)?pad.note:36+index;pad.volume=Number.isFinite(pad.volume)?pad.volume:1;pad.pitch=Number.isFinite(pad.pitch)?pad.pitch:0;pad.pan=Number.isFinite(pad.pan)?pad.pan:0;pad.mute=Boolean(pad.mute)}}}
-function checkpointArrangement(){arrangementHistory.checkpoint(project.tracks)}
-function commitArrangement(){save();render()}
+function normalizeProject(){normalizeArrangementLoop(project);project.id ||= uid();project.schemaVersion=1;project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.bpm=Math.max(40,Math.min(240,Number(project.bpm)||120));project.patternBeats=64;project.exportSettings=normalizeExportSettings(project.exportSettings);for(const track of project.tracks){track.clips ||= [];track.pattern ||= {notes:[]};track.pattern.notes ||= [];if(!track.drumRack)continue;track.drumRack.steps=[16,32,64].includes(track.drumRack.steps)?track.drumRack.steps:16;track.drumRack.pads=(track.drumRack.pads||[]).slice(0,16);while(track.drumRack.pads.length<16){const index=track.drumRack.pads.length;track.drumRack.pads.push({name:`Pad ${index+1}`,note:36+index,asset:null,volume:1,pitch:0,pan:0,mute:false})}for(const [index,pad] of track.drumRack.pads.entries()){pad.name ||= `Pad ${index+1}`;pad.note=Number.isInteger(pad.note)?pad.note:36+index;pad.volume=Number.isFinite(pad.volume)?pad.volume:1;pad.pitch=Number.isFinite(pad.pitch)?pad.pitch:0;pad.pan=Number.isFinite(pad.pan)?pad.pan:0;pad.mute=Boolean(pad.mute)}}}
+function checkpointArrangement(){arrangementHistory.checkpoint(project.tracks,project)}
+function commitArrangement(){save();render();if(engine.playing)notify('Arrangement edit saved. Restart playback to hear the updated clips.')}
 function splitSelectedClip(){if(!selectedClip)return notify('Select a clip to split.');const track=project.tracks.find(item=>item.clips.some(clip=>clip.id===selectedClip)),clip=track?.clips.find(item=>item.id===selectedClip);if(!clip)return;const start=clip.bar*barSeconds(),end=start+clipDurationSeconds(clip);if(playhead<=start||playhead>=end)return notify('Move the playhead inside the selected clip to split it.');checkpointArrangement();const right=splitClipAtTime(project.tracks,track.id,selectedClip,playhead,project.bpm,uid);if(!right)return notify('Could not split the selected clip.');selectedClip=right.id;commitArrangement()}
 function duplicateSelectedClip(){if(!selectedClip)return notify('Select a clip to duplicate.');const track=project.tracks.find(item=>item.clips.some(clip=>clip.id===selectedClip));if(!track)return;checkpointArrangement();const copy=duplicateClip(project.tracks,track.id,selectedClip,project.bpm,uid);if(!copy){arrangementHistory.undo(project.tracks);return notify('Could not duplicate the selected clip.')}selectedClip=copy.id;commitArrangement()}
 function deleteSelectedClip(){if(!selectedClip)return;checkpointArrangement();for(const track of project.tracks)track.clips=track.clips.filter(clip=>clip.id!==selectedClip);selectedClip=null;commitArrangement()}
 function copySelectedClip(){const clip=project.tracks.flatMap(track=>track.clips).find(item=>item.id===selectedClip);if(!clip)return notify('Select a clip to copy.');arrangementClipboard={...clip,id:uid()};notify('Clip copied.')}
-function pasteClip(){if(!arrangementClipboard)return notify('Copy a clip before pasting.');const track=project.tracks[selectedTrack];if(!track)return;checkpointArrangement();const clip={...arrangementClipboard,id:uid(),bar:Math.max(0,snapBeats(playhead/barSeconds()*4,snapGrid)/4)};track.clips.push(clip);selectedClip=clip.id;commitArrangement()}
-function undoArrangement(){if(arrangementHistory.undo(project.tracks)){selectedClip=null;commitArrangement()}}
-function redoArrangement(){if(arrangementHistory.redo(project.tracks)){selectedClip=null;commitArrangement()}}
-document.addEventListener('keydown',event=>{if(view!=='arrange'||event.target.matches('input,select,textarea,[contenteditable="true"]'))return;const mod=event.ctrlKey||event.metaKey,key=event.key.toLowerCase();if(mod&&key==='z'){event.preventDefault();event.shiftKey?redoArrangement():undoArrangement()}else if(mod&&key==='y'){event.preventDefault();redoArrangement()}else if(mod&&key==='c'){event.preventDefault();copySelectedClip()}else if(mod&&key==='v'){event.preventDefault();pasteClip()}else if(mod&&key==='d'){event.preventDefault();duplicateSelectedClip()}else if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();deleteSelectedClip()}else if(key==='s'){event.preventDefault();splitSelectedClip()}});
+function pasteClip(){if(!arrangementClipboard)return notify('Copy a clip before pasting.');const track=project.tracks[selectedTrack];if(!track)return;if(track.sampler||track.drumRack)return notify('Paste audio clips onto an audio track.');checkpointArrangement();const clip={...arrangementClipboard,id:uid(),bar:Math.max(0,snapBeats(arrangementWorkspaceState.insertionBeat,snapGrid)/4)};track.clips.push(clip);selectedClip=clip.id;commitArrangement()}
+function undoArrangement(){if(arrangementHistory.undo(project.tracks,project)){selectedClip=null;commitArrangement()}}
+function redoArrangement(){if(arrangementHistory.redo(project.tracks,project)){selectedClip=null;commitArrangement()}}
+document.addEventListener('keydown',event=>{if(view!=='arrange'||event.target.matches('input,select,textarea,[contenteditable="true"]'))return;if(arrangementWorkspace?.handleKey(event))return;const mod=event.ctrlKey||event.metaKey,key=event.key.toLowerCase();if(mod&&key==='z'){event.preventDefault();event.shiftKey?redoArrangement():undoArrangement()}else if(mod&&key==='y'){event.preventDefault();redoArrangement()}else if(mod&&key==='c'){event.preventDefault();copySelectedClip()}else if(mod&&key==='v'){event.preventDefault();pasteClip()}else if(mod&&key==='d'){event.preventDefault();duplicateSelectedClip()}else if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();deleteSelectedClip()}else if(key==='s'){event.preventDefault();splitSelectedClip()}});
 function addArrangementControls(){
  const tools=$('.editor-tools');
  if(!tools)return;
@@ -200,31 +222,22 @@ function addArrangementControls(){
   if(id){placeClip(id,Number(lane.dataset.lane),bar);return}
   if(clipId&&targetTrack){checkpointArrangement();if(moveClipTo(project.tracks,clipId,targetTrack.id,bar)){selectedClip=clipId;commitArrangement()}}
  },true);
- arrangement.addEventListener('click',event=>{
-  const lane=event.target.closest('.lane');
-  if(!lane||event.target!==lane)return;
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  playhead=timelineTimeAtClientX(event.clientX,snapGrid);
-  tick(playhead);
- },true);
- const handle=$('#playhead');
- handle.addEventListener('pointerdown',event=>{
-  event.preventDefault();
-  if(engine.playing){playhead=engine.position();engine.stop();engine.offset=playhead}
-  handle.setPointerCapture(event.pointerId);
-  playhead=timelineTimeAtClientX(event.clientX);
-  engine.offset=playhead;
-  tick(playhead);
- });
- handle.addEventListener('pointermove',event=>{if(handle.hasPointerCapture(event.pointerId)){playhead=timelineTimeAtClientX(event.clientX);engine.offset=playhead;tick(playhead)}});
 }
 function createSamplerTrack(assetId){const asset=assets.get(assetId),buffer=buffers.get(assetId);if(!asset||!buffer)return notify('Import and decode a sample before creating a sampler.');const pitch=detectPitch(buffer),rootNote=pitch?.midi||60;project.tracks.push({id:uid(),name:`Sampler ${project.tracks.filter(track=>track.sampler).length+1}`,volume:.85,pan:0,mute:false,solo:false,color:'#a58bdb',clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25},sampler:{asset:assetId,rootNote,start:0,end:buffer.duration,mode:'melodic',detected:pitch?.name||null,confidence:pitch?.confidence||null},pattern:{notes:[]}});selectedTrack=project.tracks.length-1;selectedClip=null;save();view='keys';render();notify(pitch?`Sample root detected: ${pitch.name} (${pitch.frequency.toFixed(1)} Hz; ${(pitch.confidence*100).toFixed(0)}% confidence).`:'Could not reliably detect pitch; set the root key manually.')}
 function createDrumRack(assetId=null){const pads=Array.from({length:16},(_,index)=>({name:`Pad ${index+1}`,note:36+index,asset:assetId||null,volume:1,pitch:0,pan:0,mute:false}));if(assetId)pads[0].name=assets.get(assetId)?.name.replace(/\.[^.]+$/,'')||'Pad 1';project.tracks.push({id:uid(),name:`Drum Rack ${project.tracks.filter(track=>track.drumRack).length+1}`,volume:.85,pan:0,mute:false,solo:false,color:'#db8a70',clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25},drumRack:{pads,steps:16},pattern:{notes:[]}});selectedTrack=project.tracks.length-1;save();view='rack';render()}
 function renderKeys(){const track=project.tracks[selectedTrack];if(!track?.sampler&&!track?.drumRack){$('#main').innerHTML='<section class="studio"><h2>Sampler / Piano Roll</h2><p>Select or create an instrument track from Arrangement.</p><button id="backArrange">Back to Arrangement</button></section>';$('#backArrange').onclick=()=>{view='arrange';render()};return}$('#main').innerHTML=renderSamplerHTML(track,assets,buffers,snapGrid);wireSamplerUI($('#main'),{track,tracks:project.tracks,buffers,engine,save,notify,grid:snapGrid,setGrid:value=>{snapGrid=value;renderKeys()},playhead:()=>engine.position(),secondsPerBeat:60/project.bpm,back:()=>{view='arrange';render()}})}
 function renderRack(){const track=project.tracks[selectedTrack];if(!track?.drumRack){view='arrange';render();return}$('#main').innerHTML=renderDrumRackHTML(track,assets);wireDrumRackUI($('#main'),{track,assets,buffers,engine,tracks:project.tracks,save,notify,back:()=>{view='arrange';render()},openPiano:()=>{view='keys';render()},refresh:renderRack})}
 function renderSamplerBlocks(){project.tracks.forEach((track,index)=>{if(!track.sampler&&!track.drumRack)return;const lane=$(`.lane[data-lane="${index}"]`);if(!lane)return;const block=document.createElement('button');block.className=`sampler-block ${track.drumRack?'rack-block':''}`;block.style.left='0';const rackBeats=Math.min(64,Math.max(4,Math.ceil(Math.max(0,...(track.pattern?.notes||[]).map(note=>(note.beat||0)+(note.durationBeats||0)))/4)*4));block.style.width=`${beatsWidth()*(track.drumRack?rackBeats/4:16)}px`;block.textContent=`${track.drumRack?'Drum Rack':'Sampler pattern'} · ${track.pattern?.notes?.length||0} notes`;block.title='Open this instrument pattern';block.onclick=event=>{event.stopPropagation();selectedTrack=index;view=track.drumRack?'rack':'keys';render()};lane.append(block)})}
-function render(){ $$('[data-view]').forEach(b=>b.classList.toggle('selected',b.dataset.view===view));if(view==='arrange'){renderArrange();$$('.lane').forEach(lane=>lane.style.backgroundSize=`${beatsWidth()*(snapGrid||.0625)/4}px 100%`);renderSamplerBlocks();addArrangementControls()}if(view==='sample')renderSampleBatch003();if(view==='master')renderMaster();if(view==='export')renderExport();if(view==='keys')renderKeys();if(view==='rack')renderRack()}
+function render(){
+ const scroll=$('.arrangement'),scrollLeft=scroll?.scrollLeft||0,scrollTop=scroll?.scrollTop||0;
+ $$('[data-view]').forEach(b=>b.classList.toggle('selected',b.dataset.view===view));
+ if(view==='arrange'){
+  renderArrange();$$('.lane').forEach(lane=>lane.style.backgroundSize=`${beatsWidth()*(snapGrid||.0625)/4}px 100%`);renderSamplerBlocks();addArrangementControls();
+  arrangementWorkspace=mountArrangementWorkspace({root:$('#main'),project,buffers,state:arrangementWorkspaceState,scale:timelineScale(),grid:()=>snapGrid,selectedTrack,selectedClip,checkpoint:checkpointArrangement,commit:commitArrangement,save,notify,idFactory:uid,render,selectTrack:index=>{selectedTrack=index;render()},selectClip:(id,index)=>{selectedClip=id;selectedTrack=index;render()},seek:async seconds=>{const playing=engine.playing;playhead=seconds;engine.offset=seconds;tick(seconds);if(playing)try{await engine.play(project,buffers,seconds)}catch(error){notify(error.message)}},playFrom:async beat=>{try{playhead=beat*60/project.bpm;await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}},copyClip:copySelectedClip,pasteClip,duplicateClip:duplicateSelectedClip,deleteClip:deleteSelectedClip});
+  $('.arrangement').scrollLeft=scrollLeft;$('.arrangement').scrollTop=scrollTop;tick(playhead);
+ }
+ if(view==='sample')renderSampleBatch003();if(view==='master')renderMaster();if(view==='export')renderExport();if(view==='keys')renderKeys();if(view==='rack')renderRack();
+}
 function eqResponsePath(bands,sampleRate=48000,lowCut=20,highCut=20000){
  const width=420,height=120,minDb=-24,maxDb=24,points=[];
  const filterResponse=(type,frequency,cutoff)=>{
@@ -352,30 +365,15 @@ function wireArrange(){
  $$('[data-pan]').forEach(e=>e.oninput=()=>{project.tracks[+e.dataset.pan].pan=+e.value;engine.syncTracks(project.tracks);save()});
  const masterVolume=$('#masterVolume');masterVolume.oninput=()=>{engine.setMaster({volume:Number(masterVolume.value)});$('#masterVolumeValue').value=`${Math.round(Number(masterVolume.value)*100)}%`;save()};
  $$('[data-lane]').forEach(lane=>lane.ondragover=event=>event.preventDefault());
- $$('[data-clip]').forEach(element=>{
-  element.onclick=()=>{selectedClip=element.dataset.clip;selectedTrack=+element.dataset.trackIndex;render()};
-  element.ondragstart=event=>{event.stopPropagation();event.dataTransfer.setData('text/clip',element.dataset.clip)};
-  element.querySelectorAll('[data-resize]').forEach(handle=>handle.onpointerdown=event=>{
-   event.preventDefault();event.stopPropagation();const clipId=element.dataset.clip,track=project.tracks[+element.dataset.trackIndex],clip=track.clips.find(item=>item.id===clipId),buffer=buffers.get(clip.asset);if(!buffer)return;
-   checkpointArrangement();const edge=handle.dataset.resize,lane=element.parentElement,initialLeft=clip.bar*beatsWidth();
-   const move=pointer=>{const x=Math.max(0,pointer.clientX-lane.getBoundingClientRect().left+lane.scrollLeft),snapBeatsValue=snapBeats(x/beatsWidth()*4,snapGrid)/4;
-    if(edge==='start'){const sourceTime=clip.start+(snapBeatsValue*barSeconds()-(clip.bar*barSeconds()))*(clip.rate||1);resizeClipBoundary(clip,'start',sourceTime,buffer.duration,project.bpm);element.style.left=`${clip.bar*beatsWidth()}px`;element.style.width=`${clipWidth(clip)}px`}
-    else if(clip.loop){clip.duration=Math.max(.01,(x-initialLeft)/beatsWidth()*barSeconds());element.style.width=`${clipWidth(clip)}px`}
-    else{const sourceTime=clip.start+Math.max(.01,(x-initialLeft)/beatsWidth()*barSeconds())*(clip.rate||1);resizeClipBoundary(clip,'end',sourceTime,buffer.duration,project.bpm);element.style.width=`${clipWidth(clip)}px`}
-   };
-   const done=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',done);save();render()};
-   window.addEventListener('pointermove',move);window.addEventListener('pointerup',done,{once:true});
-  });
- });
  const c=project.tracks.flatMap(track=>track.clips).find(clip=>clip.id===selectedClip);if(!c)return;
- for(const [selector,key]of [['#clipStart','start'],['#clipEnd','end'],['#clipRate','rate'],['#clipGain','gain'],['#clipFadeIn','fadeIn'],['#clipFadeOut','fadeOut']])$(selector).onchange=event=>{checkpointArrangement();c[key]=Number(event.target.value);if(c.end<=c.start)c.end=c.start+.01;commitArrangement()};
+ for(const [selector,key]of [['#clipStart','start'],['#clipEnd','end'],['#clipRate','rate'],['#clipGain','gain'],['#clipFadeIn','fadeIn'],['#clipFadeOut','fadeOut']])$(selector).onchange=event=>{const value=Number(event.target.value);if(!Number.isFinite(value)||value<0||key==='rate'&&value<=0)return notify('Enter a valid non-negative clip value (speed must be positive).');checkpointArrangement();c[key]=value;if(key!=='gain'){delete c.envelopeOffset;delete c.envelopeDuration}if(key==='start'||key==='end')delete c.loopOffset;if(c.end<=c.start)c.end=c.start+.01;commitArrangement()};
  $('#clipLoop')?.addEventListener('change',event=>{checkpointArrangement();c.loop=event.target.checked;if(c.loop)c.duration=Math.max(.01,(c.end-c.start)/(c.rate||1)*4);else delete c.duration;commitArrangement()});
  $('#clipDuration')?.addEventListener('change',event=>{checkpointArrangement();c.duration=Math.max(.01,Number(event.target.value)||clipDurationSeconds(c));commitArrangement()});
  $('#moveClip').onclick=()=>{const bar=Number($('#clipBar').value),target=$('#clipTrack').value;if(!Number.isFinite(bar)||bar<0)return notify('Enter a non-negative clip bar position.');if(!project.tracks.some(track=>track.id===target))return notify('Choose a valid destination track.');checkpointArrangement();if(!moveClipTo(project.tracks,c.id,target,bar)){arrangementHistory.undo(project.tracks);return notify('Could not move this clip.')}selectedTrack=project.tracks.findIndex(track=>track.id===target);commitArrangement()};
  $('#deleteClip').onclick=deleteSelectedClip;
 }
 async function connectFolder(){if('showDirectoryPicker'in window){try{folderHandle=await showDirectoryPicker({mode:'readwrite'});const files=[];async function walk(dir,prefix='',depth=0){if(depth>8)return;for await(const [name,h] of dir.entries()){if(h.kind==='directory')await walk(h,prefix+name+'/',depth+1);else if(/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(name)){const f=await h.getFile();files.push(f)}}}await walk(folderHandle);await importFiles(files);notify(`Connected ${folderHandle.name}; ${files.length} files. Save-back enabled when permitted.`)}catch(e){if(e.name!=='AbortError')notify(e.message)}}else{$('#importFolder').click();notify('Folder import fallback: direct folder write is not available in this browser.')}}
-function tick(t){const bar=t/barSeconds(),p=$('#playhead'),ruler=$('#ruler'),arrangement=$('.arrangement');if(p&&ruler&&arrangement){p.style.left=`${timelineContentOrigin(ruler,arrangement)+timelineScale().timeToPixels(t)}px`;p.setAttribute('aria-valuenow',String(t));p.setAttribute('aria-valuetext',`${t.toFixed(3)} seconds`)}const clock=$('#clock');if(clock)clock.textContent=`${Math.floor(bar)+1}.${Math.floor((bar%1)*4)+1}.1`}
+function tick(t){const bar=t/barSeconds(),p=$('#playhead'),ruler=$('#ruler'),arrangement=$('.arrangement');if(p&&ruler&&arrangement){const x=timelineContentOrigin(ruler,arrangement)+timelineScale().timeToPixels(t);p.style.left=`${x}px`;p.setAttribute('aria-valuenow',String(t));p.setAttribute('aria-valuetext',`${t.toFixed(3)} seconds`);if(engine.playing&&arrangementWorkspaceState.follow&&x-arrangement.scrollLeft>arrangement.clientWidth-230)arrangement.scrollLeft=Math.max(0,x-arrangement.clientWidth/2)}const clock=$('#clock');if(clock)clock.textContent=`${Math.floor(bar)+1}.${Math.floor((bar%1)*4)+1}.1`}
 window.addEventListener('resize',()=>tick(playhead),{passive:true});
 function renderSample(){$('#main').innerHTML=`<section class="studio"><div class="section-title"><h2>Sample Studio</h2><p>Record → edit → preview → save to your library.</p></div><div class="record-controls"><button id="record" class="accent">● Record Own</button><button id="finishRecord" disabled>■ Stop Recording</button><button id="loadSample">＋ Edit Existing Sample</button><span id="recordState">Microphone idle</span></div><div class="wave-panel"><canvas id="sampleWave" class="sample-wave"></canvas><div class="edit-grid"><label>Start (seconds)<input id="trimStart" type="number" min="0" step=".01" value="${edit.start}"></label><label>End (seconds)<input id="trimEnd" type="number" min="0" step=".01" value="${edit.end}"></label><label>Gain<input id="editGain" type="range" min="0" max="3" step=".05" value="${edit.gain}"></label><label>Fade In (s)<input id="fadeIn" type="number" min="0" max="10" step=".01" value="${edit.fadeIn}"></label><label>Fade Out (s)<input id="fadeOut" type="number" min="0" max="10" step=".01" value="${edit.fadeOut}"></label><label>Reverse<input id="reverse" type="checkbox" ${edit.reverse?'checked':''}></label></div><div class="record-controls"><button id="previewEdit">▶ Preview Edited</button><button id="normalize">Normalize Gain</button><button id="saveSample" class="primary">Save Sample</button><button id="makeSampler" ${savedSampleId?'':'disabled'}>Create Sampler</button><button id="makeRack" ${savedSampleId?'':'disabled'}>Create Drum Rack with Sample</button></div><label>Sample name <input id="sampleName" value="My_Kick_01.wav" placeholder="My_Kick_01.wav"></label><p class="hint">Sample edits are non-destructive until Save. Recording uses your browser microphone permission. Chrome/Edge can save directly to an authorized folder; other browsers download the WAV.</p></div></section>`;wireSample();requestAnimationFrame(drawSample)}
 function drawSample(){drawWave($('#sampleWave'),recordBuffer)}

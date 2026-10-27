@@ -1,5 +1,6 @@
 import {isTrackAudible} from './project-state.js';
 import {createMasteringGraph,DEFAULT_MASTERING_SETTINGS,normalizeMasteringSettings} from './mastering.js';
+import {getWaveformRangePeaks} from './waveform.js';
 
 export const uid=()=>crypto.randomUUID();
 export function patternLengthBeats(track){
@@ -174,28 +175,32 @@ export async function renderSampleEffectChain(buffer,effects,bpm=120){
  return context.startRendering();
 }
 export function clipDurationSeconds(clip){const sourceDuration=Math.max(0,(clip.end-clip.start)/(clip.rate||1));return clip.loop?Math.max(0,Number(clip.duration)||sourceDuration):sourceDuration}
-function scheduleClipSource(ctx,source,gain,clip,when,skip=0,duration=clipDurationSeconds(clip)){
- const rate=clip.rate||1,total=clipDurationSeconds(clip),level=Number(clip.gain??1);
+export function scheduleClipSource(ctx,source,gain,clip,when,skip=0,duration=clipDurationSeconds(clip)){
+ const rate=clip.rate||1,total=clip.envelopeDuration??clipDurationSeconds(clip),level=Number(clip.gain??1),envelopeSkip=skip+(clip.envelopeOffset||0);
  let fadeIn=Math.max(0,Number(clip.fadeIn)||0),fadeOut=Math.max(0,Number(clip.fadeOut)||0);
  const fadeTotal=fadeIn+fadeOut;
  if(fadeTotal>total&&fadeTotal>0){const scale=total/fadeTotal;fadeIn*=scale;fadeOut*=scale}
  source.loop=Boolean(clip.loop);
  if(source.loop){source.loopStart=clip.start;source.loopEnd=clip.end}
- const fadeOutStart=total-fadeOut,atSkip=level*Math.min(fadeIn?Math.min(1,skip/fadeIn):1,fadeOut?Math.max(0,Math.min(1,(total-skip)/fadeOut)):1);
+ const fadeOutStart=total-fadeOut,atSkip=level*Math.min(fadeIn?Math.min(1,envelopeSkip/fadeIn):1,fadeOut?Math.max(0,Math.min(1,(total-envelopeSkip)/fadeOut)):1),endEnvelope=envelopeSkip+duration;
  gain.gain.setValueAtTime(atSkip,when);
- if(fadeIn>skip&&fadeIn<=fadeOutStart)gain.gain.linearRampToValueAtTime(level,when+fadeIn-skip);
- if(fadeOut>0&&fadeOutStart>=skip){
-  if(fadeOutStart>skip)gain.gain.setValueAtTime(level,when+fadeOutStart-skip);
-  gain.gain.linearRampToValueAtTime(0,when+duration);
- }else if(fadeOut>0)gain.gain.linearRampToValueAtTime(0,when+Math.max(0,total-skip));
- source.start(when,clip.start+skip*rate);
+ if(fadeIn>envelopeSkip){
+  const point=Math.min(endEnvelope,fadeIn);
+  gain.gain.linearRampToValueAtTime(level*Math.min(1,point/fadeIn),when+point-envelopeSkip);
+ }
+ if(fadeOut>0&&endEnvelope>fadeOutStart){
+  if(fadeOutStart>envelopeSkip)gain.gain.setValueAtTime(level,when+fadeOutStart-envelopeSkip);
+  gain.gain.linearRampToValueAtTime(level*Math.max(0,(total-endEnvelope)/fadeOut),when+duration);
+ }
+ const phase=(clip.loopOffset||0)+skip*rate;
+ source.start(when,clip.start+(clip.loop?phase%(clip.end-clip.start):skip*rate));
  source.stop(when+duration);
 }
 export function encodeWav(channels,sampleRate){const n=channels[0].length,c=channels.length,ab=new ArrayBuffer(44+n*c*2),v=new DataView(ab);const str=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};str(0,'RIFF');v.setUint32(4,36+n*c*2,true);str(8,'WAVE');str(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,c,true);v.setUint32(24,sampleRate,true);v.setUint32(28,sampleRate*c*2,true);v.setUint16(32,c*2,true);v.setUint16(34,16,true);str(36,'data');v.setUint32(40,n*c*2,true);let p=44;for(let i=0;i<n;i++)for(let j=0;j<c;j++){const x=Math.max(-1,Math.min(1,channels[j][i]||0));v.setInt16(p,x<0?x*32768:x*32767,true);p+=2}return new Blob([ab],{type:'audio/wav'})}
 export function toWav(buffer){return encodeWav(Array.from({length:buffer.numberOfChannels},(_,i)=>buffer.getChannelData(i)),buffer.sampleRate)}
 export function download(blob,name){const a=document.createElement('a');const url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
 export function processSample(ctx,buffer,{start=0,end=buffer.duration,gain=1,fadeIn=0,fadeOut=0,reverse=false}={}){const s=Math.max(0,Math.floor(start*buffer.sampleRate)),e=Math.min(buffer.length,Math.ceil(end*buffer.sampleRate)),length=Math.max(1,e-s),out=ctx.createBuffer(buffer.numberOfChannels,length,buffer.sampleRate);for(let ch=0;ch<out.numberOfChannels;ch++){const src=buffer.getChannelData(ch),dst=out.getChannelData(ch);for(let i=0;i<length;i++){const t=i/buffer.sampleRate;let g=gain;if(fadeIn>0)g*=Math.min(1,t/fadeIn);if(fadeOut>0)g*=Math.min(1,(length/buffer.sampleRate-t)/fadeOut);dst[i]=(src[reverse?e-1-i:s+i]||0)*g}}return out}
-export function drawWave(canvas,buffer,color='#79d5c1',start=0,end=buffer?.duration||0){if(!canvas||!buffer)return;const dpr=Math.min(devicePixelRatio||1,2),w=canvas.clientWidth||300,h=canvas.clientHeight||80;canvas.width=w*dpr;canvas.height=h*dpr;const x=canvas.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,w,h);x.strokeStyle=color;x.lineWidth=1;const data=buffer.getChannelData(0),s=Math.floor(start*buffer.sampleRate),e=Math.min(data.length,Math.ceil(end*buffer.sampleRate)),step=Math.max(1,Math.floor((e-s)/w));for(let i=0;i<w;i++){let lo=1,hi=-1;for(let j=s+i*step;j<Math.min(e,s+(i+1)*step);j++){const z=data[j]||0;if(z<lo)lo=z;if(z>hi)hi=z}x.beginPath();x.moveTo(i,(1-hi)*h/2);x.lineTo(i,(1-lo)*h/2);x.stroke()}}
+export function drawWave(canvas,buffer,color='#79d5c1',start=0,end=buffer?.duration||0){if(!canvas||!buffer)return;const dpr=Math.min(devicePixelRatio||1,2),w=canvas.clientWidth||300,h=canvas.clientHeight||80;canvas.width=w*dpr;canvas.height=h*dpr;const x=canvas.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,w,h);x.strokeStyle=color;x.lineWidth=1;const s=Math.floor(start*buffer.sampleRate),e=Math.min(buffer.length,Math.ceil(end*buffer.sampleRate)),step=Math.max(1,Math.floor((e-s)/w));for(let i=0;i<w;i++){const {minimum:lo,maximum:hi}=getWaveformRangePeaks(buffer,0,s+i*step,Math.min(e,s+(i+1)*step));x.beginPath();x.moveTo(i,(1-hi)*h/2);x.lineTo(i,(1-lo)*h/2);x.stroke()}}
 export function estimateProjectRender(project,buffers){
  const beat=60/project.bpm,bar=beat*4,patternBeats=project.patternBeats||16;
  let end=bar*4;
@@ -263,7 +268,7 @@ export class AudioEngine{
  stop(reset=false){this.playing=false;clearInterval(this.timer);if(this.raf!=null)globalThis.cancelAnimationFrame?.(this.raf);for(const source of [...this.sources]){try{source.stop()}catch{}this.releaseSource(source)}if(reset)this.offset=0;this.onTick(this.offset);this.onMeter(this.readMeters())}
  position(){return this.playing?this.offset+(this.ctx.currentTime-this.startedAt):this.offset}
  readMeters(){const now=performance.now(),meters={};for(const[id,graph]of this.trackNodes){const levels=graph.readMeter(),clipped=levels.leftPeak>=.999||levels.rightPeak>=.999;if(clipped)this.clipHoldUntil.set(id,now+1000);meters[id]={...levels,clipped:(this.clipHoldUntil.get(id)||0)>now}}return meters}
- async previewNote(track,buffers,midi,duration=.35,tracks=[track]){await this.init();this.syncTracks(tracks);const rack=track.drumRack,pad=rack?.pads.find(item=>item.note===midi),sampler=track.sampler,asset=pad?.asset||(sampler&&!rack?sampler.asset:null),buffer=buffers.get(asset);if(!buffer||pad?.mute)return false;const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner(),rate=pad?2**((pad.pitch||0)/12):sampler.mode==='oneShot'?1:2**((midi-(sampler.rootNote||60)+(sampler.transpose||0)+(sampler.fineTune||0)/100)/12),start=pad?0:Math.max(0,sampler.start||0),end=pad?buffer.duration:Math.min(buffer.duration,sampler.end||buffer.duration),region=Math.max(.01,end-start),length=Math.min(duration,region/rate),now=this.ctx.currentTime; source.buffer=buffer;source.playbackRate.value=rate;if(sampler?.mode==='loop'&&!pad){source.loop=true;source.loopStart=start;source.loopEnd=end}pan.pan.value=pad?.pan||0;source.connect(gain).connect(pan).connect(this.trackNodes.get(track.id).input);if(pad||sampler.mode==='oneShot')gain.gain.value=(pad?.volume??1)*.8;else{const attack=Math.min(sampler.attack||.005,length*.4),decay=Math.min(sampler.decay||.1,Math.max(0,length-attack)*.4),sustain=Math.max(0,Math.min(1,sampler.sustain??.8)),release=Math.min(sampler.release||.03,length*.4),noteOff=now+length;gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.8,now+attack);gain.gain.linearRampToValueAtTime(.8*sustain,now+attack+decay);gain.gain.setValueAtTime(.8*sustain,Math.max(now+attack+decay,noteOff-release));gain.gain.linearRampToValueAtTime(0,noteOff)}source.start(now,start);source.stop(now+length);return true}
+ async previewNote(track,buffers,midi,duration=.35,tracks=[track]){await this.init();this.syncTracks(tracks);const rack=track.drumRack,pad=rack?.pads.find(item=>item.note===midi),sampler=track.sampler,asset=pad?.asset||(sampler&&!rack?sampler.asset:null),buffer=buffers.get(asset);if(!buffer||pad?.mute)return false;const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner(),rate=pad?2**((pad.pitch||0)/12):sampler.mode==='oneShot'?1:2**((midi-(sampler.rootNote||60)+(sampler.transpose||0)+(sampler.fineTune||0)/100)/12),start=pad?0:Math.max(0,sampler.start||0),end=pad?buffer.duration:Math.min(buffer.duration,sampler.end||buffer.duration),region=Math.max(.01,end-start),length=Math.min(duration,region/rate),now=this.ctx.currentTime; source.buffer=buffer;source.playbackRate.value=rate;if(sampler?.mode==='loop'&&!pad){source.loop=true;source.loopStart=start;source.loopEnd=end}pan.pan.value=pad?.pan||0;source.connect(gain).connect(pan).connect(this.trackNodes.get(track.id).input);if(pad||sampler.mode==='oneShot')gain.gain.value=(pad?.volume??1)*.8;else{const attack=Math.min(sampler.attack||.005,length*.4),decay=Math.min(sampler.decay||.1,Math.max(0,length-attack)*.4),sustain=Math.max(0,Math.min(1,sampler.sustain??.8)),release=Math.min(sampler.release||.03,length*.4),noteOff=now+length;gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.8,now+attack);gain.gain.linearRampToValueAtTime(.8*sustain,now+attack+decay);gain.gain.setValueAtTime(.8*sustain,Math.max(now+attack+decay,noteOff-release));gain.gain.linearRampToValueAtTime(0,noteOff)}source.start(now,start);source.stop(now+length);this.registerSource(source,[gain,pan]);return true}
  async play(project,buffers,from=this.offset){
   await this.init();this.stop();this.syncTracks(project.tracks,project.bpm);this.playing=true;this.offset=from;this.startedAt=this.ctx.currentTime;
   const beat=60/project.bpm,bar=beat*4,patternBeats=project.patternBeats||16;let max=from;

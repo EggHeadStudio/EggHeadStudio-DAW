@@ -23,6 +23,8 @@ export class FeedForwardCompressorProcessor extends ProcessorBase {
   const program=inputs[0]||[],detector=inputs[1]||[],output=outputs[0]||[];
   if(!program.length||!output.length)return true;
   const frames=output[0].length,detectorGain=10**(this.settings.detectorGain/20),lowCut=Math.max(0,Number(this.settings.lowCut)||0),alpha=lowCut?Math.exp(-2*Math.PI*lowCut/this.sampleRate):0;
+  const attackCoefficient=Math.exp(-1/(Math.max(.001,Number(this.settings.attack)||.01)*this.sampleRate));
+  const releaseCoefficient=Math.exp(-1/(Math.max(.01,Number(this.settings.release)||.2)*this.sampleRate));
   let peakReduction=0;
   for(let frame=0;frame<frames;frame++){
    let detectorLevel=0;
@@ -35,8 +37,7 @@ export class FeedForwardCompressorProcessor extends ProcessorBase {
    }
    const levelDb=20*Math.log10(Math.max(1e-8,detectorLevel));
    const targetDb=-this.reductionFor(levelDb);
-   const time=targetDb<this.gainDb?Math.max(.001,Number(this.settings.attack)||.01):Math.max(.01,Number(this.settings.release)||.2);
-   const coefficient=Math.exp(-1/(time*this.sampleRate));
+   const coefficient=targetDb<this.gainDb?attackCoefficient:releaseCoefficient;
    this.gainDb=targetDb+(this.gainDb-targetDb)*coefficient;
    peakReduction=Math.max(peakReduction,-this.gainDb);
    const gain=10**(this.gainDb/20);

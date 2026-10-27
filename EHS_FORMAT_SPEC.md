@@ -41,6 +41,20 @@ Import checks ZIP directory/header agreement, UTF-8 paths, duplicate entries, lo
 
 Schema 0/legacy project objects are migrated to schema 1 on import; future or invalid schema versions are rejected without replacing the active project. Every referenced clip, sampler, and Drum Rack asset must be present. Conflicting local asset IDs are remapped after content comparison rather than overwriting different cached bytes. Decoding and validation are staged before a single IndexedDB write transaction and project swap. Imported artwork is stored under project-scoped keys; project data without artwork clears stale artwork keys.
 
+## Optional audio-clip editing metadata
+
+Archive format and project schema remain **version 1**. Existing clip fields keep their meanings: `bar` is the Arrangement start in bars (four beats per bar), `start`/`end` are source seconds, `rate` is source playback rate, and a loop clip's `duration` is its Arrangement duration in seconds.
+
+Non-destructive slicing can add these optional, finite, non-negative numeric fields:
+
+- `loopOffset`: source seconds elapsed from the loop's source start, wrapped within `end - start`. It preserves the phase when copying or splitting a loop.
+- `envelopeOffset`: Arrangement seconds elapsed within the original clip's gain/fade envelope.
+- `envelopeDuration`: original envelope duration in Arrangement seconds, so a partial copy does not restart or stretch its fades.
+
+Missing offsets default to zero; missing envelope duration uses the clip's normal duration. Both live and offline scheduling consume these fields. Import rejects invalid optional numeric fields before replacement. Existing v1 archives remain readable. Older app revisions may ignore the new fields and therefore play sliced loops/fades differently; forward playback equivalence with older renderers is not guaranteed.
+
+Selection, clipboard, insertion marker and panel layout are transient workspace state, not portable project fields. Project loop start/end remain bar-based. The application supplies safe defaults for missing/invalid legacy loop fields without changing the general JSON parser's round-trip behavior.
+
 ## Release metadata and audio tags
 
 The release editor stores validated metadata in the project. Exported MP3 files receive ID3v2.3 text frames using UTF-16LE with a byte-order mark, an APIC front-cover frame, a Producer TXXX frame, and a COMM comment frame. WAV files receive RIFF LIST/INFO metadata before the audio data chunk; RIFF sizes are updated and encoded PCM bytes are preserved. Release ZIPs include the selected mastered WAV/MP3 files, their matching metadata, human-readable release notes, and optional cover art. Audio formats in one package are encoded from the same offline arrangement render.
@@ -49,7 +63,11 @@ This implementation does not claim BWF/iXML, RF64, ID3v2.4, gapless MP3 metadata
 
 ## Browser and memory model
 
-ZIP compression runs in a module Worker when available, with a synchronous fallback. Compression is buffered, not streamed: input payload bytes and the resulting archive coexist in memory. Audio entries are stored to keep the compression ratio predictable, so `.ehs` size can approach the uncompressed media size. The limits and UI warning are safeguards, not a guarantee that every browser/device can process an archive near those limits. Do not treat archive import/export as a cloud backup; the browser's IndexedDB remains the app's local working cache.
+ZIP compression runs in a module Worker when available, with a synchronous fallback. Import also runs ZIP preflight, unpacking, CRC/SHA verification and manifest/reference validation in a module Worker; the main page passes an immutable Blob and receives verified asset Blobs and project metadata rather than a full extracted byte-array map. Worker failures are reported, not silently retried on the main thread. The no-Worker fallback retains the same validation, with cancellation checks between verification steps; its synchronous unpacking cannot be interrupted mid-step.
+
+Import reports progress and can be cancelled during validation or audio staging. Cancellation terminates the import Worker and leaves the active project untouched. The UI disables cancellation when the final IndexedDB write transaction begins. Identical embedded audio paths/MIME types reuse an immutable Blob; restoration reuses decoded audio for identical hashes and for matching local buffers known to have been decoded from the same packaged bytes. Matching a stored file alone does not establish that an edited in-memory buffer has identical PCM. Decoding consumes the staging ArrayBuffer directly instead of copying it first.
+
+Compression and decompression remain buffered, not streamed: input payload bytes and the resulting archive coexist in memory, and Worker memory is additional to the page's heap. No archive limit was raised. Audio entries are stored to keep the compression ratio predictable, so `.ehs` size can approach the uncompressed media size. The limits and UI warning are safeguards, not a guarantee that every browser/device can process an archive near those limits. Do not treat archive import/export as a cloud backup; the browser's IndexedDB remains the app's local working cache.
 
 ## Verification
 

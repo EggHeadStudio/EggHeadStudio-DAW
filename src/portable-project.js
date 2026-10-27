@@ -215,6 +215,7 @@ function validateProjectShape(project){
   if((track.drumRack?.pads||[]).length>16)throw new Error('Project contains more than 16 Drum Rack pads on a track.');
   for(const clip of track.clips||[]){
    if(!clip||typeof clip.asset!=='string'||!Number.isFinite(clip.bar)||clip.bar<0||!Number.isFinite(clip.start)||clip.start<0||!Number.isFinite(clip.end)||clip.end<=clip.start||clip.rate!==undefined&&(!Number.isFinite(clip.rate)||clip.rate<=0||clip.rate>16)||clip.gain!==undefined&&!Number.isFinite(clip.gain))throw new Error('Project contains an invalid audio clip.');
+   for(const key of ['loopOffset','envelopeOffset','envelopeDuration'])if(clip[key]!==undefined&&(!Number.isFinite(clip[key])||clip[key]<0))throw new Error(`Project contains an invalid clip ${key}.`);
   }
  }
  if(clips>100000||notes>1000000)throw new Error('Project exceeds clip or note safety limits.');
@@ -224,8 +225,31 @@ function validateProjectShape(project){
  return project;
 }
 
-export async function openPortableProjectArchive(input,{signal,onProgress=()=>{}}={}){
+export async function openPortableProjectArchive(input,{signal,onProgress=()=>{},useWorker=true}={}){
+ if(signal?.aborted)throw signal.reason||new DOMException('Archive import cancelled.','AbortError');
  if(Number.isFinite(input?.size)&&input.size>MAX_EHS_ARCHIVE_BYTES)throw new RangeError('Portable project exceeds the 256 MiB archive size limit.');
+ if(useWorker&&typeof Worker==='function'){
+  if(!(input instanceof Blob)&&!(input instanceof ArrayBuffer)&&!(input instanceof Uint8Array))throw new TypeError('Packaged assets must be Blob, File, ArrayBuffer, or Uint8Array values.');
+  if((input.byteLength||0)>MAX_EHS_ARCHIVE_BYTES)throw new RangeError('Portable project exceeds the 256 MiB archive size limit.');
+  const blob=input instanceof Blob?input:new Blob([input]);
+  const worker=new Worker(new URL('./archive-worker.js',import.meta.url),{type:'module'});
+  return new Promise((resolve,reject)=>{
+   let settled=false;
+   const cleanup=()=>{signal?.removeEventListener('abort',abort);worker.terminate()};
+   const finish=(callback,value)=>{if(settled)return;settled=true;cleanup();callback(value)};
+   const abort=()=>finish(reject,signal?.reason||new DOMException('Archive import cancelled.','AbortError'));
+   worker.onmessage=({data})=>{
+    if(settled)return;
+    if(data?.type==='progress'){try{onProgress(data.status)}catch(error){finish(reject,error)}return}
+    if(data?.type==='done'){finish(resolve,data.result);return}
+    if(data?.type==='error'){const error=new Error(data.message);error.name=data.name||'Error';finish(reject,error)}
+   };
+   worker.onerror=event=>finish(reject,new Error(event.message||'Archive import worker failed.'));
+   worker.onmessageerror=()=>finish(reject,new Error('Archive import worker returned unreadable data.'));
+   signal?.addEventListener('abort',abort,{once:true});
+   try{onProgress({stage:'verify',progress:0,message:'Validating portable project in a background worker…'});if(signal?.aborted){abort();return}worker.postMessage({type:'open',input:blob})}catch(error){finish(reject,error)}
+  });
+ }
  const bytes=await bytesOf(input);
  if(bytes.byteLength>MAX_EHS_ARCHIVE_BYTES)throw new RangeError('Portable project exceeds the 256 MiB archive size limit.');
  const entries=zipCentralDirectory(bytes),entryMap=new Map(entries.map(entry=>[entry.path,entry]));
@@ -234,6 +258,7 @@ export async function openPortableProjectArchive(input,{signal,onProgress=()=>{}
  for(const path of entryMap.keys())if(!allowedRoot.has(path)&&!path.startsWith('assets/audio/')&&!path.startsWith('assets/artwork/')&&!/^presets\/[^/]+\.json$/.test(path))throw new Error(`Portable project contains an unsupported file path: ${path}`);
  if(signal?.aborted)throw signal.reason||new DOMException('Archive import cancelled.','AbortError');
  let extracted;try{extracted=unzipSync(bytes)}catch(error){throw new Error(`ZIP archive could not be decoded: ${error.message}`)}
+ if(signal?.aborted)throw signal.reason||new DOMException('Archive import cancelled.','AbortError');
  const manifest=parseJson(extracted['manifest.json'],'manifest.json');
  if(manifest.format!=='EggHeadStudioProject'||manifest.formatVersion!==EHS_FORMAT_VERSION)throw new Error(`Unsupported EHS archive version "${manifest.formatVersion}".`);
  if(!Number.isInteger(manifest.projectSchemaVersion)||manifest.projectSchemaVersion<0||manifest.projectSchemaVersion>PROJECT_SCHEMA_VERSION)throw new Error(`Project schema ${manifest.projectSchemaVersion} is invalid or newer than supported schema ${PROJECT_SCHEMA_VERSION}; the archive was not opened.`);
@@ -249,6 +274,7 @@ export async function openPortableProjectArchive(input,{signal,onProgress=()=>{}
  if(declaredFiles.size!==manifest.files.length)throw new Error('Archive file manifest contains duplicate paths.');
  const verifiedContent=new Map();
  for(const path of entryMap.keys())if(path==='manifest.json')continue;else{
+  if(signal?.aborted)throw signal.reason||new DOMException('Archive import cancelled.','AbortError');
   assertSafePath(path);
   const record=declaredFiles.get(path),data=extracted[path];
   if(!record||record.size!==data?.byteLength)throw new Error(`Archive file ${path} is missing from the manifest or has the wrong size.`);
@@ -256,6 +282,8 @@ export async function openPortableProjectArchive(input,{signal,onProgress=()=>{}
   const digest=await sha256(data);
   if(digest!==record.sha256)throw new Error(`SHA-256 verification failed for ${path}.`);
   verifiedContent.set(path,digest);
+  onProgress({stage:'verify',progress:verifiedContent.size/(entryMap.size-1),message:`Verified ${verifiedContent.size}/${entryMap.size-1} archive files`});
+  await new Promise(resolve=>setTimeout(resolve,0));
  }
  if(declaredFiles.size!==entryMap.size-1)throw new Error('Archive file manifest does not match the ZIP contents.');
  const payloadBytes=[...declaredFiles.values()].reduce((sum,record)=>sum+record.size,0);
@@ -265,18 +293,21 @@ export async function openPortableProjectArchive(input,{signal,onProgress=()=>{}
  project.schemaVersion=PROJECT_SCHEMA_VERSION;
  project.id ||= globalThis.crypto?.randomUUID?.()||`project-${Date.now()}-${Math.random().toString(16).slice(2)}`;
  if(project.releaseMetadata&&validateReleaseMetadata(project.releaseMetadata).length)throw new Error('Project release metadata is invalid.');
- const assetFiles=new Map(),assetMetadata=new Map(),assets=Object.entries(manifest.assets);
+ const assetFiles=new Map(),assetMetadata=new Map(),audioBlobs=new Map(),assets=Object.entries(manifest.assets);
  let completed=0;
  for(const[id,record]of assets){
+  if(signal?.aborted)throw signal.reason||new DOMException('Archive import cancelled.','AbortError');
   if(!/^[A-Za-z0-9._-]{1,128}$/.test(id)||typeof record?.path!=='string'||!record.path.startsWith('assets/audio/')||!Number.isSafeInteger(record.size)||record.size<1||!/^[a-f0-9]{64}$/.test(record.sha256))throw new Error('Archive asset manifest contains an invalid record.');
   assertSafePath(record.path);
   const data=extracted[record.path];if(!data)throw new Error(`Archive is missing referenced asset ${record.path}.`);
   if(data.byteLength!==record.size)throw new Error(`Packaged audio size does not match for asset "${id}".`);
   const digest=verifiedContent.get(record.path);
   if(digest!==record.sha256)throw new Error(`SHA-256 verification failed for audio asset "${id}".`);
-  assetFiles.set(id,new Blob([data],{type:record.mime||'application/octet-stream'}));
+  const blobKey=JSON.stringify([record.path,record.mime||'application/octet-stream']);
+  if(!audioBlobs.has(blobKey))audioBlobs.set(blobKey,new Blob([data],{type:record.mime||'application/octet-stream'}));
+  assetFiles.set(id,audioBlobs.get(blobKey));
   assetMetadata.set(id,{...record,id});
-  completed++;onProgress({stage:'verify',progress:assets.length?completed/assets.length:1,message:`Verified ${completed}/${assets.length} audio assets`});
+  completed++;onProgress({stage:'assets',progress:assets.length?completed/assets.length:1,message:`Verified ${completed}/${assets.length} audio assets`});
   await new Promise(resolve=>setTimeout(resolve,0));
  }
  for(const id of referencedAssetIds(project))if(!assetFiles.has(id))throw new Error(`Project references missing packaged audio asset "${id}".`);
@@ -315,6 +346,7 @@ export async function openPortableProjectArchive(input,{signal,onProgress=()=>{}
   usedPresetPaths.add(preset.path);presetFiles.set(preset.name,parsed);
  }
  for(const path of entryMap.keys())if(path.startsWith('presets/')&&!usedPresetPaths.has(path))throw new Error(`Archive contains an unreferenced preset "${path}".`);
+ if(signal?.aborted)throw signal.reason||new DOMException('Archive import cancelled.','AbortError');
  return{project,assetFiles,assetMetadata,artworkFile,artworkSourceFile,presetFiles,manifest,entries:entryMap};
 }
 

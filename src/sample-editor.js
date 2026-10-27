@@ -78,6 +78,7 @@ export class SampleEditor {
 
   nearestZeroCrossing(frame,tolerance=Math.round(this.buffer.sampleRate*.01)){
     const target=clamp(Math.round(frame),0,this.frameCount);
+    if(target===0||target===this.frameCount)return target;
     const from=Math.max(1,target-tolerance),to=Math.min(this.frameCount-1,target+tolerance);
     let best=target,distance=Infinity;
     for(let candidate=from;candidate<=to;candidate++){
@@ -89,6 +90,15 @@ export class SampleEditor {
       if(crossing&&Math.abs(candidate-target)<distance){best=candidate;distance=Math.abs(candidate-target)}
     }
     return best;
+  }
+
+  setBoundary(which,frame,snap=false){
+    if(!['start','end'].includes(which)||!Number.isFinite(frame))throw new RangeError('A valid marker and finite sample frame are required.');
+    let next=clampFrame(frame,this.frameCount);
+    if(snap)next=this.nearestZeroCrossing(next);
+    next=which==='start'?Math.min(next,Math.max(0,this.selection.end-1)):Math.max(next,Math.min(this.frameCount,this.selection.start+1));
+    this.setSelection(which==='start'?next:this.selection.start,which==='end'?next:this.selection.end);
+    return next;
   }
 
   splitAt(frame,checkpoint=true){
@@ -332,13 +342,18 @@ export function wireSampleStudio(root,{editor,engine,notify,onRecord,onStopRecor
     canvas.dataset.start=editor.selection.start;canvas.dataset.end=editor.selection.end;canvas.dataset.duration=duration;canvas.dataset.length=length;
     root.querySelector('#sampleDuration').textContent=`${duration.toFixed(3)} s · ${rate} Hz · ${editor.buffer.numberOfChannels} ch`;
     for(const id of ['trimStart','trimEnd','fadeIn','fadeOut'])root.querySelector(`#${id}`).max=duration;
-    root.querySelector('#trimStart').value=(editor.selection.start/rate).toFixed(6);root.querySelector('#trimEnd').value=(editor.selection.end/rate).toFixed(6);
+    root.querySelector('#trimStart').value=(editor.selection.start/rate).toFixed(6);root.querySelector('#trimEnd').value=String(editor.selection.end/rate);
     root.querySelector('#startFine').value=editor.selection.start;root.querySelector('#endFine').value=editor.selection.end;
     root.querySelector('#startFine').max=length;root.querySelector('#endFine').max=length;
     root.querySelector('#fadeIn').value=(editor.fadeInFrames/rate).toFixed(3);root.querySelector('#fadeOut').value=(editor.fadeOutFrames/rate).toFixed(3);
     root.querySelector('#editGain').value=editor.gainDb;root.querySelector('#gainDbValue').textContent=`${editor.gainDb.toFixed(1)} dB`;
     root.querySelector('#startMarker').style.left=`${frameToX(editor.selection.start,length,canvas.clientWidth)}px`;
     root.querySelector('#endMarker').style.left=`${frameToX(editor.selection.end,length,canvas.clientWidth)}px`;
+    for(const [which,frame]of [['start',editor.selection.start],['end',editor.selection.end]]){
+      const marker=root.querySelector(`#${which}Marker`);
+      marker.classList.toggle('at-start',frame===0);marker.classList.toggle('at-end',frame===length);
+      marker.dataset.frame=String(frame);
+    }
     root.querySelector('#startMarker').title=`Start: ${(editor.selection.start/rate).toFixed(6)} seconds · frame ${editor.selection.start}`;
     root.querySelector('#endMarker').title=`End: ${(editor.selection.end/rate).toFixed(6)} seconds · frame ${editor.selection.end}`;
     const rulerContent=root.querySelector('.wave-ruler-content');
@@ -347,11 +362,9 @@ export function wireSampleStudio(root,{editor,engine,notify,onRecord,onStopRecor
     rulerContent.style.transform=`translateX(${-viewport.scrollLeft}px)`;
     drawSampleStudioWave(canvas,editor);
   };
-  const setMarkerPosition=(which,frame)=>{
-    const length=editor.frameCount,marker=root.querySelector(which==='start'?'#startMarker':'#endMarker');
-    let next=clampFrame(frame,length);if(zeroSnap)next=editor.nearestZeroCrossing(next);
-    next=which==='start'?Math.min(next,editor.selection.end-1):Math.max(next,editor.selection.start+1);
-    editor.setSelection(which==='start'?next:editor.selection.start,which==='end'?next:editor.selection.end);
+  const setMarkerPosition=(which,frame,snap=false)=>{
+    const marker=root.querySelector(which==='start'?'#startMarker':'#endMarker');
+    const next=editor.setBoundary(which,frame,snap);
     marker.dataset.frame=String(next);markDirty();refreshSelection();
   };
   const frameFromPointer=event=>xToFrame(event.clientX-canvas.getBoundingClientRect().left,editor.frameCount,canvas.clientWidth);
@@ -384,7 +397,7 @@ export function wireSampleStudio(root,{editor,engine,notify,onRecord,onStopRecor
   root.querySelector('#snapZero').onclick=event=>{zeroSnap=!zeroSnap;event.currentTarget.textContent=`Zero-crossing snap: ${zeroSnap?'on':'off'}`;event.currentTarget.setAttribute('aria-pressed',String(zeroSnap))};
   for(const [which,marker]of [['start',root.querySelector('#startMarker')],['end',root.querySelector('#endMarker')]]){
     marker.addEventListener('pointerdown',event=>{event.preventDefault();event.stopPropagation();marker.setPointerCapture(event.pointerId)});
-    marker.addEventListener('pointermove',event=>{if(marker.hasPointerCapture(event.pointerId))setMarkerPosition(which,frameFromPointer(event))});
+    marker.addEventListener('pointermove',event=>{if(marker.hasPointerCapture(event.pointerId))setMarkerPosition(which,frameFromPointer(event),zeroSnap)});
     marker.addEventListener('pointerup',event=>{if(marker.hasPointerCapture(event.pointerId))marker.releasePointerCapture(event.pointerId)});
   }
   canvas.addEventListener('pointerdown',event=>{dragging=true;canvas.focus({preventScroll:true});canvas.setPointerCapture(event.pointerId);selectionAnchor=frameFromPointer(event);if(zeroSnap)selectionAnchor=editor.nearestZeroCrossing(selectionAnchor);editor.setSelection(selectionAnchor,selectionAnchor);markDirty();refreshSelection()});
@@ -427,6 +440,6 @@ export function wireSampleStudio(root,{editor,engine,notify,onRecord,onStopRecor
   root.querySelector('#previewAB').onclick=()=>{abOriginal=!abOriginal;root.querySelector('#previewAB').textContent=abOriginal?'B: processed':'A/B original';preview(abOriginal?'original':'selection')};
   root.querySelector('#saveSample').onclick=async()=>{try{await engine.init();const output=await renderProcessed(true);await onSave(output,root.querySelector('#sampleName').value)}catch(error){notify(`Sample save failed: ${error.message}`)}};
   root.querySelector('#makeSampler').onclick=onCreateSampler;root.querySelector('#makeRack').onclick=onCreateRack;
-  root.addEventListener('keydown',event=>{if(event.target.matches('input,select,textarea,button'))return;if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();root.querySelector(event.shiftKey?'#sampleRedo':'#sampleUndo').click()}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='y'){event.preventDefault();root.querySelector('#sampleRedo').click()}else if(event.code==='Space'){event.preventDefault();root.querySelector('#previewSelection').click()}else if(event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('#splitSelection').click()}else if(event.key.toLowerCase()==='r'){event.preventDefault();root.querySelector('#reverseSample').click()}else if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();root.querySelector('#deleteSelection').click()}});
+  root.addEventListener('keydown',event=>{if(event.target.matches('input,select,textarea,button'))return;if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();root.querySelector(event.shiftKey?'#sampleRedo':'#sampleUndo').click()}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='y'){event.preventDefault();root.querySelector('#sampleRedo').click()}else if(event.code==='Space'){event.preventDefault();root.querySelector('#playSelection').click()}else if(event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('#splitSelection').click()}else if(event.key.toLowerCase()==='r'){event.preventDefault();root.querySelector('#reverseSample').click()}else if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();root.querySelector('#deleteSelection').click()}});
   root.tabIndex=0;refreshSelection();updateHistory();
 }

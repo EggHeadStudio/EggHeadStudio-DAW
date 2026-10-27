@@ -1,6 +1,13 @@
 export const DEFAULT_MASTER_SETTINGS=Object.freeze({eq:0,threshold:-12,makeup:0,volume:1});
 export const PROJECT_SCHEMA_VERSION=1;
 
+export function normalizeArrangementLoop(project){
+  project.loopStart=Number.isFinite(project.loopStart)&&project.loopStart>=0?project.loopStart:0;
+  project.loopEnd=Number.isFinite(project.loopEnd)&&project.loopEnd>project.loopStart?project.loopEnd:project.loopStart+4;
+  project.loop=Boolean(project.loop);
+  return project;
+}
+
 export function createEmptyProject(name='Untitled Project'){
   return{
     id:globalThis.crypto?.randomUUID?.()||`project-${Date.now()}-${Math.random().toString(16).slice(2)}`,
