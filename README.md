@@ -59,4 +59,6 @@ See `IDEA.md` for architecture, full requirements, acceptance tests, agent workf
 
 ## Automated tests
 
-Run `npm test` with Node.js installed. Node.js/npm were unavailable in the environment used for the latest browser checks, so the Node test suite was not run; see `IDEA.md` for the targeted browser checks and remaining verification gates.
+Run `npm test` with Node.js installed. The full suite passed locally on Node.js 24.20.0 (36 tests). `.github/workflows/test.yml` runs the suite on Node.js 22 for pushes to `main` and pull requests; the remote GitHub Actions run is pending because this work has not been pushed.
+
+Release-candidate checks used a generated 440 Hz WAV in Chromium. Sample Studio imported it, applied a 0.75-second selection and a Utility gain effect, then saved a stereo 48 kHz WAV with nonzero, unclipped PCM. Browser viewport checks at 360, 390, 430, 768 and 1280 CSS pixels found no page-level horizontal overflow and verified the timeline ruler/playhead origin remained aligned after viewport changes. These are browser-emulated checks, not physical-device or microphone-capture tests. The complete sampler-to-arrangement-to-export-to-project-reopen workflow has not yet been verified; see `BATCH_003_FINAL_REPORT.md`.

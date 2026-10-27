@@ -372,7 +372,7 @@ export function wireSampleStudio(root,{editor,engine,notify,onRecord,onStopRecor
     return renderSampleEffectChain(output,editor.processing.effects,engine.bpm||120);
   };
   const selectionSeconds=()=>({start:editor.selection.start/editor.buffer.sampleRate,end:editor.selection.end/editor.buffer.sampleRate});
-  const checkpointOnInput=element=>{element.addEventListener('pointerdown',()=>editor.checkpoint());element.addEventListener('keydown',()=>editor.checkpoint(),{once:true})};
+  const checkpointOnInput=element=>{element.addEventListener('pointerdown',()=>editor.checkpoint());element.addEventListener('keydown',()=>editor.checkpoint())};
   root.querySelector('#sampleUndo').onclick=()=>{stopPreview();if(editor.undo()){markDirty();refreshSelection();onStructureChange()}};
   root.querySelector('#sampleRedo').onclick=()=>{stopPreview();if(editor.redo()){markDirty();refreshSelection();onStructureChange()}};
   root.querySelector('#snapZero').onclick=event=>{zeroSnap=!zeroSnap;event.currentTarget.textContent=`Zero-crossing snap: ${zeroSnap?'on':'off'}`;event.currentTarget.setAttribute('aria-pressed',String(zeroSnap))};
@@ -406,10 +406,10 @@ export function wireSampleStudio(root,{editor,engine,notify,onRecord,onStopRecor
   root.querySelector('#splitSelection').onclick=()=>{if(editor.splitSelection()){markDirty();refreshSelection()}};
   root.querySelector('#reverseSample').onclick=()=>{editor.reverse();markDirty();refreshSelection()};
   root.querySelector('#removeSilence').onclick=()=>{if(editor.trimSilence(-60)){markDirty();refreshSelection()}else notify('No leading or trailing silence found above -60 dBFS.')};
-  root.querySelector('#editGain').onpointerdown=()=>editor.checkpoint();
+  root.querySelector('#editGain').onpointerdown=()=>editor.checkpoint();root.querySelector('#editGain').onkeydown=()=>editor.checkpoint();
   root.querySelector('#editGain').oninput=event=>{editor.setGainDb(Number(event.target.value),false);markDirty();refreshSelection()};
   root.querySelector('#normalize').onclick=()=>{if(!editor.normalize(Number(root.querySelector('#normalizeTarget').value),editor.selection.start,editor.selection.end))return notify('Cannot normalize silence.');markDirty();refreshSelection()};
-  for(const id of ['fadeIn','fadeOut'])root.querySelector(`#${id}`).onchange=event=>{editor.checkpoint();const currentIn=editor.fadeInFrames/editor.buffer.sampleRate,currentOut=editor.fadeOutFrames/editor.buffer.sampleRate;editor.setFades(id==='fadeIn'?Math.max(0,Number(event.target.value)||0):currentIn,id==='fadeOut'?Math.max(0,Number(event.target.value)||0):currentOut);markDirty();refreshSelection()};
+  for(const id of ['fadeIn','fadeOut'])root.querySelector(`#${id}`).onchange=event=>{const currentIn=editor.fadeInFrames/editor.buffer.sampleRate,currentOut=editor.fadeOutFrames/editor.buffer.sampleRate;editor.setFades(id==='fadeIn'?Math.max(0,Number(event.target.value)||0):currentIn,id==='fadeOut'?Math.max(0,Number(event.target.value)||0):currentOut);markDirty();refreshSelection()};
   for(const [id,key]of [['sampleSpeed','speed'],['samplePitch','pitchSemitones'],['sampleCents','pitchCents']]){const control=root.querySelector(`#${id}`);checkpointOnInput(control);control.oninput=event=>{const value=Number(event.target.value);editor.processing[key]=value;event.target.nextElementSibling.value=key==='speed'?`${value.toFixed(2)}×`:key==='pitchSemitones'?`${value} st`:`${value} cents`;markDirty()}}
   root.querySelector('#samplePitchMode').onchange=event=>{editor.checkpoint();editor.processing.mode=event.target.value;markDirty()};
   root.querySelector('#addSampleEffect').onchange=event=>{if(!event.target.value)return;editor.checkpoint();editor.processing.effects.push(createTrackEffect(event.target.value,`sample-${Date.now()}`));markDirty();onStructureChange()};

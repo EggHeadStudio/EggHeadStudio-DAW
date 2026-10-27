@@ -18,7 +18,7 @@ test('sample editor crop, split, delete, and undo preserve source audio',()=>{
   editor.setSelection(2,8);
   assert.equal(editor.cropSelection(),true);
   assert.equal(editor.frameCount,6);
-  assert.equal(editor.render(context()).getChannelData(0)[0],.2);
+  assert.ok(Math.abs(editor.render(context()).getChannelData(0)[0]-.2)<1e-6);
   assert.equal(editor.splitAt(3),true);
   assert.equal(editor.regions.length,2);
   editor.setSelection(1,3);
@@ -57,6 +57,18 @@ test('sample editor rejects invalid normalization targets and supports redo',()=
   assert.equal(editor.gainDb,0);
   editor.redo();
   assert.equal(editor.gainDb,-3);
+});
+
+test('sample fades are restored by a single undo and redo',()=>{
+  const editor=new SampleEditor(fixture(Array(100).fill(.5)));
+  editor.setFades(.1,.2);
+  assert.equal(editor.undoStack.length,1);
+  assert.equal(editor.undo(),true);
+  assert.equal(editor.fadeInFrames,0);
+  assert.equal(editor.fadeOutFrames,0);
+  assert.equal(editor.redo(),true);
+  assert.equal(editor.fadeInFrames,10);
+  assert.equal(editor.fadeOutFrames,20);
 });
 
 test('sample editor normalizes a quiet signal to the requested peak',()=>{

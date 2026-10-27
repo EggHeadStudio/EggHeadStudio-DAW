@@ -4,6 +4,9 @@ export function patternLengthBeats(track){
  const lastBeat=notes.reduce((end,note)=>Math.max(end,Number(note.beat)||0, (Number(note.beat)||0)+(Number(note.durationBeats)||0)),4);
  return Math.min(64,Math.max(4,Math.ceil(lastBeat/4)*4));
 }
+export function trackPatternCycleBeats(track,defaultBeats=16){
+ return track.drumRack?patternLengthBeats(track):Math.max(1,Number(defaultBeats)||16);
+}
 export const TRACK_EFFECT_DEFAULTS={
  eq:{lowCut:20,highCut:20000,bands:[{frequency:120,gain:0,q:1},{frequency:500,gain:0,q:1},{frequency:2500,gain:0,q:1},{frequency:10000,gain:0,q:1}]},
  compressor:{threshold:-24,ratio:4,attack:.01,release:.2,knee:12,makeup:0},
@@ -158,7 +161,7 @@ export function download(blob,name){const a=document.createElement('a');const ur
 export function processSample(ctx,buffer,{start=0,end=buffer.duration,gain=1,fadeIn=0,fadeOut=0,reverse=false}={}){const s=Math.max(0,Math.floor(start*buffer.sampleRate)),e=Math.min(buffer.length,Math.ceil(end*buffer.sampleRate)),length=Math.max(1,e-s),out=ctx.createBuffer(buffer.numberOfChannels,length,buffer.sampleRate);for(let ch=0;ch<out.numberOfChannels;ch++){const src=buffer.getChannelData(ch),dst=out.getChannelData(ch);for(let i=0;i<length;i++){const t=i/buffer.sampleRate;let g=gain;if(fadeIn>0)g*=Math.min(1,t/fadeIn);if(fadeOut>0)g*=Math.min(1,(length/buffer.sampleRate-t)/fadeOut);dst[i]=(src[reverse?e-1-i:s+i]||0)*g}}return out}
 export function drawWave(canvas,buffer,color='#79d5c1',start=0,end=buffer?.duration||0){if(!canvas||!buffer)return;const dpr=Math.min(devicePixelRatio||1,2),w=canvas.clientWidth||300,h=canvas.clientHeight||80;canvas.width=w*dpr;canvas.height=h*dpr;const x=canvas.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,w,h);x.strokeStyle=color;x.lineWidth=1;const data=buffer.getChannelData(0),s=Math.floor(start*buffer.sampleRate),e=Math.min(data.length,Math.ceil(end*buffer.sampleRate)),step=Math.max(1,Math.floor((e-s)/w));for(let i=0;i<w;i++){let lo=1,hi=-1;for(let j=s+i*step;j<Math.min(e,s+(i+1)*step);j++){const z=data[j]||0;if(z<lo)lo=z;if(z>hi)hi=z}x.beginPath();x.moveTo(i,(1-hi)*h/2);x.lineTo(i,(1-lo)*h/2);x.stroke()}}
 export class AudioEngine{
- constructor(){this.ctx=null;this.master=null;this.compressor=null;this.eq=null;this.trackNodes=new Map();this.sources=[];this.playing=false;this.startedAt=0;this.offset=0;this.timer=null;this.raf=null;this.onTick=()=>{};this.onMeter=()=>{};this.onEnd=()=>{};this.loop=false;this.bpm=120;this.masterSettings={eq:0,threshold:-12,makeup:0,volume:1};this.clipHoldUntil=new Map();}
+ constructor(){this.ctx=null;this.master=null;this.compressor=null;this.eq=null;this.trackNodes=new Map();this.sources=[];this.sourceNodes=new WeakMap();this.playing=false;this.startedAt=0;this.offset=0;this.timer=null;this.raf=null;this.onTick=()=>{};this.onMeter=()=>{};this.onEnd=()=>{};this.loop=false;this.bpm=120;this.masterSettings={eq:0,threshold:-12,makeup:0,volume:1};this.clipHoldUntil=new Map();}
  async init(){if(!this.ctx){this.ctx=new (window.AudioContext||window.webkitAudioContext)();this.eq=this.ctx.createBiquadFilter();this.eq.type='highshelf';this.eq.frequency.value=4500;this.compressor=this.ctx.createDynamicsCompressor();this.master=this.ctx.createGain();this.eq.connect(this.compressor).connect(this.master).connect(this.ctx.destination);this.setMaster(this.masterSettings)}await this.ctx.resume();return this.ctx}
  setMaster(s){this.masterSettings={...this.masterSettings,...s};if(!this.ctx)return;const eq=Number(this.masterSettings.eq),threshold=Number(this.masterSettings.threshold),makeup=Number(this.masterSettings.makeup),volume=Number(this.masterSettings.volume);this.eq.gain.value=Number.isFinite(eq)?eq:0;this.compressor.threshold.value=Number.isFinite(threshold)?threshold:-12;this.compressor.ratio.value=3;this.master.gain.value=Math.max(0,Number.isFinite(volume)?volume:1)*Math.pow(10,(Number.isFinite(makeup)?makeup:0)/20)}
  syncTracks(tracks,bpm=this.bpm){
@@ -173,7 +176,19 @@ export class AudioEngine{
    graph.update(track,solo,this.bpm);
   }
  }
- stop(reset=false){this.playing=false;clearInterval(this.timer);cancelAnimationFrame(this.raf);for(const s of this.sources){try{s.stop()}catch{}}this.sources=[];if(reset)this.offset=0;this.onTick(this.offset);this.onMeter(this.readMeters())}
+ registerSource(source,nodes=[]){
+  this.sources.push(source);
+  this.sourceNodes.set(source,nodes);
+  source.onended=()=>this.releaseSource(source);
+ }
+ releaseSource(source){
+  const index=this.sources.indexOf(source);
+  if(index<0)return;
+  this.sources.splice(index,1);
+  for(const node of [source,...(this.sourceNodes.get(source)||[])])try{node.disconnect()}catch{}
+  this.sourceNodes.delete(source);
+ }
+ stop(reset=false){this.playing=false;clearInterval(this.timer);if(this.raf!=null)globalThis.cancelAnimationFrame?.(this.raf);for(const source of [...this.sources]){try{source.stop()}catch{}this.releaseSource(source)}if(reset)this.offset=0;this.onTick(this.offset);this.onMeter(this.readMeters())}
  position(){return this.playing?this.offset+(this.ctx.currentTime-this.startedAt):this.offset}
  readMeters(){const now=performance.now(),meters={};for(const[id,graph]of this.trackNodes){const levels=graph.readMeter(),clipped=levels.leftPeak>=.999||levels.rightPeak>=.999;if(clipped)this.clipHoldUntil.set(id,now+1000);meters[id]={...levels,clipped:(this.clipHoldUntil.get(id)||0)>now}}return meters}
  async previewNote(track,buffers,midi,duration=.35,tracks=[track]){await this.init();this.syncTracks(tracks);const rack=track.drumRack,pad=rack?.pads.find(item=>item.note===midi),sampler=track.sampler,asset=pad?.asset||(sampler&&!rack?sampler.asset:null),buffer=buffers.get(asset);if(!buffer||pad?.mute)return false;const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner(),rate=pad?2**((pad.pitch||0)/12):sampler.mode==='oneShot'?1:2**((midi-(sampler.rootNote||60)+(sampler.transpose||0)+(sampler.fineTune||0)/100)/12),start=pad?0:Math.max(0,sampler.start||0),end=pad?buffer.duration:Math.min(buffer.duration,sampler.end||buffer.duration),region=Math.max(.01,end-start),length=Math.min(duration,region/rate),now=this.ctx.currentTime;source.buffer=buffer;source.playbackRate.value=rate;if(sampler?.mode==='loop'&&!pad){source.loop=true;source.loopStart=start;source.loopEnd=end}pan.pan.value=pad?.pan||0;source.connect(gain).connect(pan).connect(this.trackNodes.get(track.id).gain);if(pad||sampler.mode==='oneShot')gain.gain.value=(pad?.volume??1)*.8;else{const attack=Math.min(sampler.attack||.005,length*.4),decay=Math.min(sampler.decay||.1,Math.max(0,length-attack)*.4),sustain=Math.max(0,Math.min(1,sampler.sustain??.8)),release=Math.min(sampler.release||.03,length*.4),noteOff=now+length;gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.8,now+attack);gain.gain.linearRampToValueAtTime(.8*sustain,now+attack+decay);gain.gain.setValueAtTime(.8*sustain,Math.max(now+attack+decay,noteOff-release));gain.gain.linearRampToValueAtTime(0,noteOff)}source.start(now,start);source.stop(now+length);return true}
@@ -190,10 +205,10 @@ export class AudioEngine{
     const b=buffers.get(clip.asset);if(!b)continue;
     const at=clip.bar*bar,duration=clipDurationSeconds(clip);if(at+duration<=from)continue;
     const skip=Math.max(0,from-at),source=this.ctx.createBufferSource(),g=this.ctx.createGain();source.buffer=b;source.playbackRate.value=clip.rate||1;source.connect(g).connect(node.gain);
-    const when=this.ctx.currentTime+Math.max(0,at-from),dur=duration-skip;scheduleClipSource(this.ctx,source,g,clip,when,skip,dur);this.sources.push(source);
+    const when=this.ctx.currentTime+Math.max(0,at-from),dur=duration-skip;scheduleClipSource(this.ctx,source,g,clip,when,skip,dur);this.registerSource(source,[g]);
    }
    const sampler=track.sampler,rack=track.drumRack;if((!sampler?.asset&&!rack)||!track.pattern?.notes?.length)continue;
-   const cycleBeats=rack?4:patternBeats,cycles=Math.max(1,Math.ceil(max/(cycleBeats*beat)));
+   const cycleBeats=trackPatternCycleBeats(track,patternBeats),cycles=Math.max(1,Math.ceil(max/(cycleBeats*beat)));
    for(let cycle=0;cycle<cycles;cycle++)for(const note of track.pattern.notes){
     const at=cycle*cycleBeats*beat+(note.beat||0)*beat;if(at<from||at>=max)continue;
     const pad=rack?.pads.find(item=>item.note===note.midi),buffer=buffers.get(pad?.asset||(rack?null:sampler?.asset));if(!buffer||pad?.mute)continue;
@@ -204,7 +219,7 @@ export class AudioEngine{
     if(pad){gain.gain.value=velocity*pad.volume;source.stop(when+region/rate)}
     else if(sampler.mode==='oneShot'){gain.gain.value=velocity;source.stop(when+region/rate)}
     else{const duration=Math.min(sampler.mode==='loop'?Math.max(.02,(note.durationBeats||.25)*beat):region/rate,Math.max(.02,(note.durationBeats||.25)*beat)),attack=Math.min(sampler.attack||.005,duration*.4),decay=Math.min(sampler.decay||.1,Math.max(0,duration-attack)*.4),sustain=Math.max(0,Math.min(1,sampler.sustain??.8)),release=Math.min(sampler.release||.03,duration*.4),noteOff=when+duration;gain.gain.setValueAtTime(0,when);gain.gain.linearRampToValueAtTime(velocity,when+attack);gain.gain.linearRampToValueAtTime(velocity*sustain,when+attack+decay);gain.gain.setValueAtTime(velocity*sustain,Math.max(when+attack+decay,noteOff-release));gain.gain.linearRampToValueAtTime(0,noteOff);source.stop(noteOff)}
-    this.sources.push(source);
+    this.registerSource(source,[gain,voicePan]);
    }
   }
   this.timer=setInterval(()=>{if(!this.playing)return;const p=this.position();if(project.loop&&p>=project.loopEnd*bar){this.play(project,buffers,project.loopStart*bar);return}if(p>max+.15){this.stop();this.onEnd()}},70);

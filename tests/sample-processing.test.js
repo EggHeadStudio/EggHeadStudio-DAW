@@ -65,6 +65,14 @@ test('timeline coordinates are relative to the visible ruler and recover content
   assert.equal(timelineContentOrigin(ruler,container),365);
 });
 
+test('timeline origin follows mobile and desktop track headers through horizontal scrolling',()=>{
+  for(const headerWidth of [115,165])for(const scrollLeft of [0,240]){
+    const container={scrollLeft,getBoundingClientRect:()=>({left:20})};
+    const ruler={getBoundingClientRect:()=>({left:20+headerWidth-scrollLeft})};
+    assert.equal(timelineContentOrigin(ruler,container),headerWidth);
+  }
+});
+
 test('waveform frame conversions clamp and cache per-channel peaks',()=>{
   const audio=fixture([-1,.5,.75,-.25]);
   assert.equal(frameToX(2,4,100),50);
