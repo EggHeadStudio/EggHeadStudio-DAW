@@ -1,10 +1,37 @@
-# Batch 004C — Phase 1 Sidechain Stabilization Report
+# Batch 004C — Phase 1 Sidechain Stabilization and Phase 2 Mastering Report
 
-## Status
+## Current status
 
-**BATCH 004 INCOMPLETE — REMAINING REQUIREMENTS**
+**BATCH 004C PHASE 2 INCOMPLETE — CRITICAL REQUIREMENTS REMAIN**
 
-Per the requested execution order, work stopped after completing and verifying Phase 1. No Phase 2–6 implementation was started. Batch 004 is not ready to be marked complete.
+Phase 1 sidechain stabilization remains complete (59/59 tests at that boundary). Phase 2 now implements loudness analysis, oversampled peak estimation and a shared lookahead limiter, with the current full suite passing **69/69** and browser OfflineAudioContext/WAV ceiling measurements passing. Phase 2 is not marked complete because true-peak/LRA validation against independent published vectors, physical/live-output equivalence and percentage progress/long-file performance remain unverified. Phases 3–6 were not started.
+
+## Phase 2 acceptance matrix
+
+| Requirement | Implemented | Tested | Result | Remaining limitations |
+|---|---|---|---|---|
+| K-weighting, channel weights, 400 ms windows, integrated absolute/relative gates | Yes | Published BS.1770 K coefficients; generated 1 kHz reference; mono/stereo and 44.1/48/96 kHz tests | **PARTIAL PASS** | Reference-tone tolerance passes, but official EBU/ITU gate WAV vectors were not decoded independently. Channel layout for multichannel audio is inferred from standard channel order because AudioBuffer has no channel mask. |
+| Short-term and momentary loudness | Yes | 3 s short-term / 400 ms momentary windows on deterministic tones | **PASS — generated signal** | Independent published momentary/short-term files were not checked. |
+| LRA and gating | Yes | 3 s blocks at 100 ms hop, -70/-20 LU gates, percentile test on loud/quiet segments | **PARTIAL PASS** | No independent published EBU Tech 3342 LRA reference file was decoded. |
+| RMS, sample peak, clipping | Yes | Deterministic buffer and silence tests | **PASS** | Clipping is sample-domain; true-peak estimate is reported separately. |
+| 4× true-peak estimate | Yes | 16-tap windowed-sinc interpolation; exact generated quarter-rate sine fixture | **PASS — approximation** | Not formally certified against an independent ITU-R BS.1770-4 true-peak vector; UI labels it an estimate. |
+| Linked-stereo lookahead limiter, ceiling, release, smooth gain | Yes | Unit tests for lookahead, release, stereo link, ceiling; Chromium OfflineAudioContext impulse measured -3.085 dBTP estimated at -3 dBTP setting | **PASS — tested signals** | 0.1 dB internal guard plus verified 0.15 dB test tolerance; not a universal proof for every pathological waveform or all browser renderers. |
+| Shared live/offline DSP and latency compensation | Yes | Same `LookaheadLimiter` implementation in the AudioWorklet; offline mastering render adds/trims measured processor latency | **PARTIAL PASS** | Browser OAC and decoded WAV validated; physical real-time acoustic loopback and exact live-vs-offline null comparison unavailable. |
+| Limiter included in offline WAV | Yes | Rendered arrangement at -2 dBTP, encoded with `toWav`, decoded in Chromium, measured -2.099 dBTP estimated; duration preserved at 8.30 s | **PASS — Chromium fixture** | Stereo 16-bit/44.1 kHz remains the only WAV export format. |
+| Project settings persistence | Yes | JSON round-trip covers enabled state, ceiling, lookahead and release | **PASS** | No separate UI-driven close/reopen scenario in this phase. |
+| Basic/Advanced mastering UI, warnings, before/after | Yes | Chromium Mastering view render and 5 responsive viewport widths | **PARTIAL PASS** | Analysis is synchronous; status shows the analysis stage but no percentage progress. Gain-reduction display is the live AudioWorklet value, not a rendered offline history. |
+| Full Node.js suite | Yes | Portable Node.js 22.23.4, `node --test` over every `tests/*.test.js` | **PASS — 69/69** | `npm` unavailable; equivalent complete test-file list executed directly. Remote Actions pending. |
+| Browser/device verification | Browser checks only | HTTP-served Chromium worklet, OfflineAudioContext limiter and WAV decode; 360/390/430/768/1280 CSS px | **PARTIAL PASS** | Emulation is not physical iOS/Android or real-time audio loopback testing. Long-project performance is not measured. |
+
+### Phase 2 algorithm and tolerance details
+
+- The integrated loudness reference is the `pyloudnorm` published 1 kHz full-scale test expectation (**-3.0523438444 LUFS**); an equivalent generated 44.1 kHz sine measured within **0.1 LU**. A -23 LUFS alignment signal is within **0.15 LU** at 44.1, 48 and 96 kHz.
+- Integrated blocks are 400 ms with 100 ms hops; absolute gate is -70 LUFS and relative gate is -10 LU. Short-term/LRA blocks are 3 s with 100 ms hops; LRA applies -70 LUFS absolute and -20 LU relative gates and the 10th/95th percentiles.
+- True peak is a 4×, 16-tap windowed-sinc estimate. Limiter integration uses 0.1 dB internal detector margin; tests accept no more than **+0.15 dB** above the requested ceiling. Chromium fixture outputs were below the ceiling.
+- Analysis holds a 3-second energy ring and compact block histories; it does not allocate full-length filtered audio copies. The synchronous analysis loop still risks UI stalls on long mixes.
+- References: [ITU-R BS.1770](https://www.itu.int/rec/R-REC-BS.1770/en), [EBU Tech 3342](https://tech.ebu.ch/docs/tech/tech3342.pdf), and the [pyloudnorm 1 kHz test expectation](https://github.com/csteinmetz1/pyloudnorm/blob/master/tests/test_loudness.py). The EBU/ITU downloadable gating/LRA/true-peak reference files themselves were not run in this environment.
+
+## Phase 1 sidechain report (historical)
 
 ## Environment and test execution
 
@@ -15,7 +42,7 @@ Per the requested execution order, work stopped after completing and verifying P
 - Current result: **59 tests passed, 0 failed**.
 - `.github/workflows/test.yml` is configured for Node.js 22 on pushes to `main` and pull requests. A remote Actions run is pending; this work has not been pushed.
 
-## Phase-by-phase acceptance matrix
+## Phase 1 acceptance matrix (recorded at the phase boundary)
 
 | Phase / requirement | Implemented | Tested | Result | Remaining limitations |
 |---|---|---|---|---|

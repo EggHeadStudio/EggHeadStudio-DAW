@@ -1,3 +1,5 @@
+import {analyzeLoudness} from './mastering-dsp.js';
+
 const BAND_DEFAULTS=[
  {type:'lowshelf',frequency:80,gain:0,q:.707,enabled:true},
  {type:'peaking',frequency:180,gain:0,q:1,enabled:true},
@@ -13,7 +15,7 @@ export const DEFAULT_MASTERING_SETTINGS=Object.freeze({
  eq:{enabled:true,lowCut:20,highCut:20000,bands:BAND_DEFAULTS},
  saturation:{enabled:false,drive:1.5,mix:.15},
  imager:{enabled:false,width:1},
- limiter:{enabled:false,ceiling:-1},
+ limiter:{enabled:false,ceiling:-1,lookaheadMs:5,release:.1},
  inputGainDb:0,
  outputGainDb:0
 });
@@ -34,7 +36,7 @@ export function normalizeMasteringSettings(settings={}){
   eq:{...DEFAULT_MASTERING_SETTINGS.eq,...settings.eq,bands:BAND_DEFAULTS.map((band,index)=>({...band,...settings.eq?.bands?.[index]}))},
   saturation:{...DEFAULT_MASTERING_SETTINGS.saturation,...settings.saturation},
   imager:{...DEFAULT_MASTERING_SETTINGS.imager,...settings.imager},
-  limiter:{...DEFAULT_MASTERING_SETTINGS.limiter,...settings.limiter},
+  limiter:{...DEFAULT_MASTERING_SETTINGS.limiter,...settings.limiter,ceiling:settings.limiter?.ceiling??settings.limiter?.threshold??DEFAULT_MASTERING_SETTINGS.limiter.ceiling},
   inputGainDb:clampNumber(settings.inputGainDb,-24,24,0)
  };
  result.mode=result.mode==='advanced'?'advanced':'basic';
@@ -52,6 +54,8 @@ export function normalizeMasteringSettings(settings={}){
  result.saturation.mix=clampNumber(result.saturation.mix,0,1,.15);
  result.imager.width=clampNumber(result.imager.width,0,1.5,1);
  result.limiter.ceiling=clampNumber(result.limiter.ceiling,-6,0,-1);
+ result.limiter.lookaheadMs=clampNumber(result.limiter.lookaheadMs,1,100,5);
+ result.limiter.release=clampNumber(result.limiter.release,.005,2,.1);
  for(const key of ['enabled']){result.eq[key]=Boolean(result.eq[key]);result.saturation[key]=Boolean(result.saturation[key]);result.imager[key]=Boolean(result.imager[key]);result.limiter[key]=Boolean(result.limiter[key])}
  return result;
 }
@@ -94,11 +98,13 @@ export function createMasteringGraph(ctx,settings,destination){
  mid.gain.value=.5;side.gain.value=.5;sideInvert.gain.value=-1;mid.connect(left);side.connect(left);mid.connect(right);sideInvert.connect(side);side.connect(right);side.gain.value=.5*current.imager.width;
  left.gain.value=1;right.gain.value=1;left.connect(merger,0,0);right.connect(merger,0,1);last=merger;nodes.push(splitter,merger,mid,side,sideInvert,left,right);
 
- const limiter=connect(ctx.createDynamicsCompressor());
- limiter.knee.value=0;limiter.ratio.value=20;limiter.attack.value=.003;limiter.release.value=.12;
  const outputGain=connect(ctx.createGain());
- last.connect(destination);
+ const limiterAvailable=Boolean(ctx.masteringLimiterReady&&ctx.audioWorklet&&typeof globalThis.AudioWorkletNode==='function');
+ if(current.limiter.enabled&&!limiterAvailable)throw new Error('The mastering limiter requires AudioWorklet support in this browser.');
+ const limiter=limiterAvailable?new globalThis.AudioWorkletNode(ctx,'egghead-lookahead-limiter',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[2],channelCount:2,channelCountMode:'explicit',processorOptions:{channels:2,lookaheadSeconds:current.limiter.lookaheadMs/1000,settings:{enabled:current.limiter.enabled,ceilingDbtp:current.limiter.ceiling,releaseSeconds:current.limiter.release}}}):null;
+ if(limiter){last.connect(limiter);limiter.connect(destination);nodes.push(limiter)}else last.connect(destination);
 
+ let latencyFrames=limiter?Math.round(current.limiter.lookaheadMs/1000*ctx.sampleRate)+8:0;
  const update=nextSettings=>{
   const next=normalizeMasteringSettings(nextSettings);
   setParam(inputTrim.gain,10**(next.inputGainDb/20),ctx);
@@ -109,12 +115,16 @@ export function createMasteringGraph(ctx,settings,destination){
   setParam(wet.gain,next.saturation.enabled?next.saturation.mix:0,ctx);
   if(saturationDrive!==next.saturation.drive){saturator.curve=makeSaturationCurve(next.saturation.drive);saturationDrive=next.saturation.drive}
   setParam(side.gain,.5*(next.imager.enabled?next.imager.width:1),ctx);
-  setParam(limiter.threshold,next.limiter.enabled?next.limiter.ceiling:0,ctx);
-  setParam(limiter.ratio,next.limiter.enabled?20:1,ctx);
+  if(next.limiter.enabled&&!limiter)throw new Error('The mastering limiter requires AudioWorklet support in this browser.');
+  latencyFrames=limiter?Math.round(next.limiter.lookaheadMs/1000*ctx.sampleRate)+8:0;
+  limiter?.port.postMessage({type:'settings',settings:{enabled:next.limiter.enabled,ceilingDbtp:next.limiter.ceiling,releaseSeconds:next.limiter.release,lookaheadMs:next.limiter.lookaheadMs}});
   setParam(outputGain.gain,10**(next.outputGainDb/20),ctx);
  };
  update(current);
- return{input,nodes,eqFilters,bands,limiter,inputTrim,disconnect(){input.disconnect();for(const node of nodes)node.disconnect()},update};
+ limiter?.port.start?.();
+ if(limiter)limiter.port.onmessage=event=>{if(event.data?.type==='gain-reduction')graph.gainReductionDb=Math.max(0,Number(event.data.db)||0)};
+ const graph={input,nodes,eqFilters,bands,limiter,inputTrim,gainReductionDb:0,get latencyFrames(){return latencyFrames},disconnect(){input.disconnect();for(const node of nodes)node.disconnect()},update};
+ return graph;
 }
 
 export function masteringEqResponse(settings,sampleRate=48000,pointCount=160){
@@ -159,11 +169,6 @@ function filterDb(type,frequency,cutoff,q,sampleRate,gain=0){
 
 export function analyzeMasterBuffer(buffer){
  if(!buffer||!Number.isInteger(buffer.length)||buffer.length===0)throw new TypeError('A non-empty rendered audio buffer is required.');
- let peak=0,sumSquares=0;
  const channels=Array.from({length:buffer.numberOfChannels},(_,index)=>buffer.getChannelData(index));
- for(let frame=0;frame<buffer.length;frame++)for(const channel of channels){
-  const sample=channel[frame]||0;peak=Math.max(peak,Math.abs(sample));sumSquares+=sample*sample;
- }
- const count=buffer.length*buffer.numberOfChannels;
- return{samplePeak:peak,rms:Math.sqrt(sumSquares/count),rmsDbfs:20*Math.log10(Math.max(1e-12,Math.sqrt(sumSquares/count)))};
+ return analyzeLoudness(channels,buffer.sampleRate);
 }

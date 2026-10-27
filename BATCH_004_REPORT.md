@@ -4,19 +4,19 @@
 
 **BATCH 004 IN PROGRESS — FUNCTIONAL VERTICAL SLICE**
 
-This pass prioritized real signal processing and a verifiable master-to-export path. It does not complete the full Batch 004 scope. Missing professional measurements, multiband processing, a verified peak-safe limiter, extended export formats, and additional analysis are listed below.
+This pass adds to the Batch 004C Phase 2 DSP work but does not complete the full Batch 004 scope. Multiband processing, extended export formats, metadata/artwork and other release workflow items remain.
 
 ## Implemented
 
 - Replaced the prior master-only controls with a responsive Mastering workspace.
 - Added one master graph shared by real-time arrangement playback and offline WAV rendering/export:
-  existing arrangement/track graph → legacy master bus → input trim → mastering EQ → saturation → mid/side width → compressor-based peak control → output gain. Module order is fixed in this slice.
+  existing arrangement/track graph → legacy master bus → input trim → mastering EQ → saturation → mid/side width → output gain → optional linked-stereo lookahead limiter. Module order is fixed in this slice.
 - Added six parametric EQ bands (low shelf, four bells, high shelf), high/low-cut controls, an actual biquad response plot, and draggable/touch band points.
 - Added a waveshaper saturation module with 4× Web Audio oversampling.
 - Added mid/side width processing; width zero folds the stereo signal to mono.
-- Added an adjustable Web Audio dynamics-compressor stage clearly labelled as compressor-based peak control, not a verified true-peak/lookahead limiter.
+- Replaced the mastering compressor-as-limiter approximation with a shared LookaheadLimiter DSP used by the final mastering AudioWorklet for live playback and offline rendering. Offline render adds and trims the exact lookahead/interpolation latency.
 - Added input and output gain in Basic and Advanced modes over the same settings, six built-in parameter presets, locally saved custom presets, and reset.
-- Added complete arrangement offline render, A/B buffers, preview playback with cursor, RMS dBFS and sample-peak readouts, clipping warning, and stereo 16-bit WAV export.
+- Added complete arrangement offline render, A/B buffers, preview playback with cursor, BS.1770-oriented loudness measurements, sample/estimated-true-peak readouts, clipping/ceiling warnings, and stereo 16-bit WAV export.
 - Stored mastering controls in the existing project JSON so old project files load with default mastering parameters and new settings survive project reload.
 - Added an external track-to-track feed-forward compressor to the existing track-effect chain. A compressor can select a different track as its detector source, choose a pre- or post-fader tap, use a muted/unsoloed source as a ghost trigger, adjust detector gain/high-pass, and retain settings in project JSON and effect presets. The detector input is separate from the destination program input; kick audio is not mixed into the destination track.
 - Implemented the sidechain detector/compressor in an AudioWorklet shared by live and offline track graphs. Missing/deleted sources are not connected; deleting a source clears dependent project references. Self-sidechains are ignored, and detector sends do not feed back into the source track.
@@ -26,17 +26,19 @@ This pass prioritized real signal processing and a verifiable master-to-export p
 - EQ response is computed from the configured biquad transfer functions; the graph is not a decorative curve.
 - The saturation is a normalized tanh waveshaper using the browser's 4× waveshaper oversampling mode.
 - Stereo width uses mid/side sum/difference processing.
-- The limiter-labelled setting controls a `DynamicsCompressorNode` (20:1 ratio, configured threshold, short attack/release). Web Audio does not provide a guaranteed lookahead or hard sample ceiling here. It can exceed the selected ceiling and is not called true-peak limiting.
-- Metering reports RMS dBFS and sample peak only. No value is labelled LUFS or true peak; no BS.1770/EBU R128 gating or loudness range is implemented.
+- Loudness analysis uses published BS.1770 K-weighting biquad coefficients at 48 kHz, bilinear rate transformation, ITU channel weights (including zero-weighted LFE), 400 ms windows at 100 ms hops, -70 LUFS absolute/-10 LU relative integrated gating, and 3-second short-term/LRA windows with -70/-20 LU gates and 10th/95th percentiles.
+- True peak uses a 4× oversampling estimate with a 16-tap windowed-sinc interpolator. It is labelled as an estimate and is not asserted to be certified EBU/ITU true-peak compliance.
+- The lookahead limiter uses stereo-linked peak detection, the same 4× interpolation estimate, configurable lookahead/release, smoothed attack/release gain and a 0.1 dB detector safety margin. Tests verified covered fixtures remained within 0.15 dB of or below ceiling; this is not a universal mathematical guarantee.
+- Analysis stores a 3-second energy ring and compact histories instead of full-length filtered float copies. The UI analysis still runs synchronously on the main thread and does not provide percentage progress for long files.
 - A/B compares the signal with the new mastering graph bypassed against the mastered signal while retaining existing legacy master-bus processing. It is not level-matched. Playback pause/resume and A/B switching retain the rendered position.
 
 ## Automated tests
 
 - Runtime: official portable Node.js **22.23.4**, SHA-256 verified against the Node.js distribution checksums.
-- JavaScript syntax checks: `src\app.js`, `src\audio.js`, and `src\sidechain-processor.js` passed.
+- JavaScript syntax checks: `src\app.js`, `src\audio.js`, `src\mastering.js`, `src\mastering-dsp.js`, `src\mastering-processor.js`, and `src\sidechain-processor.js` passed.
 - Command: `node --test <all tests/*.test.js paths>` (Node test runner; `npm` is not present in the environment).
-- Result for the current worktree: **59 passed, 0 failed**.
-- New deterministic tests cover settings bounds and defaults, six-band EQ response/cuts, graph module wiring/parameters, preset parameter changes, project JSON persistence, and correct RMS/sample-peak analysis.
+- Result for the current worktree: **69 passed, 0 failed**.
+- New deterministic tests cover published 1 kHz loudness alignment, 44.1/48/96 kHz calibration, silence/gating, stereo/LFE/surround weighting, LRA dynamics, RMS/clipping, 4× inter-sample peaks, limiter ceiling/lookahead/stereo linking/release/broadband transients and project persistence.
 - Existing project, timeline, arrangement, sample, and audio tests remained passing.
 - Added deterministic sidechain DSP, attack/release, routing, worklet-readiness, sidechain project persistence and source-deletion tests. The full suite was executed successfully using the verified temporary Node runtime. The configured GitHub Actions run is pending.
 
@@ -53,6 +55,15 @@ Local Chromium testing used the existing generated-audio multi-track acceptance 
 - No browser page or console errors were observed during the final local workflow.
 
 The export is verified for this project/fixture only; these results do not prove a universal ceiling or standards-compliant mastering.
+
+### Batch 004C Phase 2 DSP acceptance
+
+- The analyzer implements K-weighted channel energy, 400 ms/100 ms-hop integrated windows, absolute/relative gates, 3-second short-term and LRA windows, RMS, sample peak, clipping and loudness history.
+- The integrated loudness implementation matched the published `pyloudnorm` 1 kHz full-scale test expectation of **-3.0523 LUFS within 0.1 LU** using an equivalent generated sine fixture; the BS.1770 alignment tone at -23 LUFS was within **0.15 LU** at 44.1, 48 and 96 kHz. Synthetic loud/quiet sections exercised LRA, but published LRA audio vectors were not independently decoded here.
+- OfflineAudioContext loaded the mastering AudioWorklet. A deterministic impulse at a **-3 dBTP** setting measured **-3.085 dBTP estimated**. `AudioEngine.render()` with a **-2 dBTP** ceiling, followed by WAV encoding and Chromium decoding, measured **-2.099 dBTP estimated**, passed a **+0.15 dB** tolerance, and retained an **8.30 s** render duration after latency trim.
+- The 16-tap windowed-sinc 4× peak estimator recovered a generated 0.9-amplitude quarter-rate sine's inter-sample peak within **0.001 amplitude** (after edge fades). It is still an estimate and has no independent standards-certification claim.
+- Browser-emulated mastering UI had no horizontal overflow at **360, 390, 430, 768 or 1280 CSS px**. Physical-device touch and real-time audio loopback were not measured in this run.
+- Meter analysis is memory-bounded to a 3-second energy ring, but processing is synchronous on the UI thread; the UI indicates rendering/analysis phase, not percentage completion. Long-song interaction performance remains unmeasured.
 
 ### Batch 004B sidechain verification
 

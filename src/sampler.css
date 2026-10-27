@@ -184,6 +184,10 @@
 .master-meters article span{color:#aab8c8;font-size:12px}
 .master-meters article strong{font-variant-numeric:tabular-nums;font-size:20px}
 .master-warning{grid-column:1/-1;color:#ff9f91;background:#392321;border:1px solid #8a4c45;border-radius:8px;padding:10px}
+.master-target,.master-before-after,.master-history{grid-column:1/-1;margin:0;padding:10px;color:#b5c3d1;background:#151d27;border:1px solid #354152;border-radius:8px;font-size:12px}
+.master-history{display:grid;gap:8px}
+#masterLoudnessHistory{width:100%;height:64px}
+.master-advanced-reading[hidden]{display:none}
 .master-advanced{margin:12px 0;border:1px solid #364253;border-radius:10px;background:#141b25}
 .master-advanced summary{padding:14px;color:#dce7f1;font-weight:700;cursor:pointer}
 .master-module{margin:10px;display:grid;gap:12px}
