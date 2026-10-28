@@ -332,7 +332,7 @@ Update this checklist only after relevant test evidence is recorded. A feature e
 Continue Batch 005A using `BATCH_005A_REPORT.md`: establish a reliable foreground-browser long-project export baseline, implement bounded/chunked archive processing and reference-aware sample caches, then complete scheduling, native-memory and recovery acceptance. The archive/waveform/voice checkpoint passes 119 Node tests but is not full 005A completion. Keep independent standards references, physical-device 005B work and deployment of an approved release as explicit gates; do not claim unverified results.
 
 
-## Batch 005A.7-UX — Instrument Workflow Cleanup
+## Batch 005A.7-UX â€” Instrument Workflow Cleanup
 
 Drum Racks now start with one pad and grow with Add Pad (max 32); the Piano Roll has a fixed vertical keyboard (C4=MIDI 60, C#4 directly above). See BATCH_005A_7_UX_REPORT.md. Earlier notes mentioning a fixed 16-pad rack describe the legacy default.
 
