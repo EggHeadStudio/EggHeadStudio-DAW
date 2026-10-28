@@ -26,6 +26,25 @@ import {mountTransportShortcuts} from './transport-shortcuts.js';
 import {updateTrackMeters} from './meter-ui.js';
 import {organizeExportStudio,organizeInstrumentStudio,organizeMasteringStudio,organizeSampleStudio} from './studio-workflows.js';
 import {mountMasterEq,mountTrackEqs} from './eq-workspace.js';
+import {WorkspaceNavigation,mountMobileShell,syncMobileShell,mountExpandedEditors,closeExpandedEditor} from './mobile-workspace.js';
+const workspaceNavigation=new WorkspaceNavigation();
+const navigationBlocked=()=>recordingStudio.busy||sampleCapturePending||recorder?.state==='recording';
+const navigationWarning=()=>notify('Finish or recover the current recording before switching workspaces. Your audio is preserved.');
+function navigateWorkspace(next){
+ if(navigationBlocked()){navigationWarning();return}
+ if(next==='keys'||next==='rack'){
+  const type=next==='keys'?'sampler':'drumRack';
+  if(!project.tracks[selectedTrack]?.[type]){
+   const index=project.tracks.findIndex(track=>track[type]);if(index>=0)selectedTrack=index;
+  }
+ }
+ closeExpandedEditor({focus:false});workspaceNavigation.sync(view);
+ if(workspaceNavigation.visit(next)){view=next;render()}
+}
+function mobileBack(){
+ if(navigationBlocked()){navigationWarning();return}
+ const previous=workspaceNavigation.back();if(previous){view=previous;render()}
+}
 let eqEditors=[];
 function disposeEqEditors(){eqEditors.forEach(editor=>editor.dispose());eqEditors=[]}
 function refreshEqEditors(){eqEditors.forEach(editor=>editor.refresh())}
@@ -33,6 +52,7 @@ const arrangementWorkspaceState={selection:null,insertionBeat:0,selectMode:false
 let arrangementWorkspace=null;
 const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={id:uid(),schemaVersion:1,name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,releaseMetadata:{},exportSettings:normalizeExportSettings(),tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null,exportController=null,exportRun=null,releaseZipController=null,releaseArtworkBlob=null,releaseArtworkSourceBlob=null,releaseArtworkUrl=null;
 let portableImportController=null;
+let sampleCapturePending=false;
 let portableExportController=null;
 let recoverySnapshot=null;
 let renderedWorkspace=null,transportPending=false;
@@ -43,7 +63,7 @@ const recordingStudio=new RecordingStudio({engine,getProject:()=>project,assets,
  createTrack:()=>{const track=createProjectTrack({name:`Recording ${project.tracks.length+1}`,color:'#db8a70'},uid());project.tracks.push(track);save();return track},
  openSample:openInstrumentSample,
  openArrangement:(trackId,clipId)=>{selectedTrack=project.tracks.findIndex(track=>track.id===trackId);selectedClip=clipId;view='arrange';render()},
- onBusy:busy=>{for(const element of document.querySelectorAll('header button,header input,nav button'))element.disabled=busy;const stop=$('#stop');if(stop)stop.disabled=false}
+ onBusy:busy=>{for(const element of document.querySelectorAll('header button,header input,nav button'))element.disabled=busy;const stop=$('#stop');if(stop)stop.disabled=false;syncMobileShell(app,view,{canBack:workspaceNavigation.history.length>0,busy})}
 });
 engine.onError=error=>{notify(error.message);if($('#play'))$('#play').textContent='▶';if(recordingStudio.busy)recordingStudio.finish()};
 async function toggleWorkspacePlayback(){
@@ -252,13 +272,14 @@ function wireShell(){
  $('#openProject').onclick=()=>$('#importProject').click();
  $('#importProject').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;if(projectDirty&&!window.confirm('The current project has unsaved changes. Open this JSON project anyway?')){e.target.value='';return}try{const p=normalizeProjectData(parseProject(await file.text()));engine.stop();resetArrangementEditing();project=p;engine.setMaster({...DEFAULT_MASTER_SETTINGS,...p.masterSettings});engine.setMastering(p.mastering||DEFAULT_MASTERING_SETTINGS);await restoreAssets();save(false);projectDirty=false;shell();notify('JSON project loaded; samples not present in the local library may need relinking.')}catch(err){notify(err.message)}finally{e.target.value=''}};
  $('#exportMix').onclick=()=>openExportStudio();
- $$('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;render()});
+ $$('[data-view]').forEach(b=>b.onclick=()=>navigateWorkspace(b.dataset.view));
  $('#importFiles').onchange=e=>importFiles([...e.target.files]);
  $('#importFolder').onchange=e=>importFiles([...e.target.files]);
  engine.onTick=t=>{playhead=t;tick(t);updateTransportButton()};
  engine.onMeter=meters=>updateTrackMeters(app,meters);
  engine.onEnd=()=>$('#play').textContent='▶';
  mountProjectControls(app);
+ mountMobileShell(app,{navigate:navigateWorkspace,back:mobileBack,blocked:navigationBlocked,onBlocked:navigationWarning});
 }
 const $$=s=>[...document.querySelectorAll(s)];
 async function addAsset(file){const id=uid(),ctx=await engine.init(),buffer=await ctx.decodeAudioData(await file.arrayBuffer());assets.set(id,{id,name:file.name,path:file.webkitRelativePath||file.name,size:file.size,duration:buffer.duration});buffers.set(id,buffer);await dbSet(id,file);return id}
@@ -390,6 +411,7 @@ function renderKeys(){
  mountInstrumentDevices();
  organizeInstrumentStudio($('#main'));
  if(scroll){$('#pianoScroll').scrollLeft=scroll.left;$('#pianoScroll').scrollTop=scroll.top}
+ mountMobileEditors();
 }
 function renderRack(){
  const source=project.tracks[selectedTrack];if(!source?.drumRack){view='arrange';render();return}
@@ -400,6 +422,12 @@ function renderRack(){
  mountPatternControls(context);
  mountInstrumentDevices();
  organizeInstrumentStudio($('#main'));
+ mountMobileEditors();
+}
+function mountMobileEditors(){
+ workspaceNavigation.sync(view);
+ mountExpandedEditors($('#main'),{blocked:navigationBlocked,onBlocked:navigationWarning,onChange:()=>syncMobileShell(app,view,{canBack:workspaceNavigation.history.length>0,busy:navigationBlocked()})});
+ syncMobileShell(app,view,{canBack:workspaceNavigation.history.length>0,busy:navigationBlocked()});
 }
 function instrumentEditorContext(track){
  if(track.clips.some(isInstrumentClip))return selectedPatternContext(track,selectedClip);
@@ -443,6 +471,8 @@ function renderSamplerBlocks(){
  });
 }
 function render(){
+ workspaceNavigation.sync(view);
+ closeExpandedEditor({focus:false});
  if(renderedWorkspace!==view){
   stopLibraryPreview();
   if(renderedWorkspace==='sample')stopSampleStudioPreview();
@@ -463,6 +493,7 @@ function render(){
  }
  if(view==='sample')renderSampleBatch003();if(view==='master')renderMaster();if(view==='export')renderExport();if(view==='keys')renderKeys();if(view==='rack')renderRack();
  if(view==='recording')recordingStudio.mount($('#main'));
+ mountMobileEditors();
  updateTransportButton();
 }
 function selectArrangementTrack(index){
@@ -622,7 +653,7 @@ function drawSample(){drawWave($('#sampleWave'),recordBuffer)}
 function wireSample(){ $('#record').onclick=async()=>{try{savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true;await engine.init();recordStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});chunks=[];recorder=new MediaRecorder(recordStream);recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=async()=>{recordBlob=new Blob(chunks,{type:recorder.mimeType});recordBuffer=await engine.ctx.decodeAudioData(await recordBlob.arrayBuffer());edit={start:0,end:recordBuffer.duration,gain:1,fadeIn:0,fadeOut:0,reverse:false};recordStream.getTracks().forEach(t=>t.stop());renderSample();notify('Recording captured. Edit and preview before saving.')};recorder.start();$('#record').disabled=true;$('#finishRecord').disabled=false;$('#recordState').textContent='● Recording…'}catch(e){notify(`Microphone unavailable: ${e.message}`)}};$('#finishRecord').onclick=()=>{if(recorder?.state==='recording')recorder.stop()};$('#loadSample').onclick=()=>{const f=document.createElement('input');f.type='file';f.accept='audio/*';f.onchange=async()=>{try{recordBuffer=await(await engine.init()).decodeAudioData(await f.files[0].arrayBuffer());savedSampleId=null;edit={start:0,end:recordBuffer.duration,gain:1,fadeIn:0,fadeOut:0,reverse:false};renderSample();$('#sampleName').value=f.files[0].name}catch(e){notify(e.message)}};f.click()};for(const [sel,k] of [['#trimStart','start'],['#trimEnd','end'],['#editGain','gain'],['#fadeIn','fadeIn'],['#fadeOut','fadeOut']])$(sel).oninput=e=>{edit[k]=+e.target.value;savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true};$('#reverse').onchange=e=>{edit.reverse=e.target.checked;savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true};$('#sampleName').oninput=()=>{savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true};$('#normalize').onclick=()=>{if(!recordBuffer)return notify('Record or load a sample first');let peak=0;for(let c=0;c<recordBuffer.numberOfChannels;c++)for(const x of recordBuffer.getChannelData(c))peak=Math.max(peak,Math.abs(x));edit.gain=peak?Math.min(3,.95/peak):1;$('#editGain').value=edit.gain;savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true;notify(`Gain set to ${edit.gain.toFixed(2)}×`)};$('#previewEdit').onclick=async()=>{if(!recordBuffer)return notify('No sample loaded');await engine.init();try{previewSource?.stop()}catch{}const b=processSample(engine.ctx,recordBuffer,edit),s=engine.ctx.createBufferSource();s.buffer=b;s.connect(engine.ctx.destination);s.start();previewSource=s};$('#saveSample').onclick=()=>saveSample().catch(error=>notify(`Sample save failed: ${error.message}`));$('#makeSampler').onclick=()=>savedSampleId&&createSamplerTrack(savedSampleId);$('#makeRack').onclick=()=>savedSampleId&&createDrumRack(savedSampleId)}
 async function nextFolderFileName(directory,name){const dot=name.lastIndexOf('.'),stem=dot>0?name.slice(0,dot):name,extension=dot>0?name.slice(dot):'';let candidate=name,index=2;while(true){try{await directory.getFileHandle(candidate);candidate=`${stem} (${index++})${extension}`}catch(error){if(error.name==='NotFoundError')return candidate;throw error}}}
 async function saveSample(){if(!recordBuffer)return notify('Record or load a sample first');if(edit.end<=edit.start)return notify('End must be greater than start');const b=processSample(await engine.init(),recordBuffer,edit),name=($('#sampleName').value.trim()||'Sample').replace(/\.wav$/i,'')+'.wav',blob=toWav(b),file=new File([blob],name,{type:'audio/wav'});savedSampleId=await addAsset(file);let savedName=null,folderError=null;if(folderHandle){try{savedName=await nextFolderFileName(folderHandle,name);const h=await folderHandle.getFileHandle(savedName,{create:true}),w=await h.createWritable();await w.write(blob);await w.close()}catch(error){folderError=error}}if(!savedName)download(blob,name);renderSample();notify(folderError?`Folder save failed (${folderError.message}); downloaded ${name}.`:`${name} ready in sample library${savedName?` and saved as ${savedName}`:' (downloaded)'}.`)}
-function renderSampleBatch003(){const filename=sampleFilename||'My_Sample.wav';$('#main').innerHTML=renderSampleStudioHTML(sampleEditor,filename,Boolean(savedSampleId));wireSampleStudio($('#main'),{editor:sampleEditor,engine,bpm:project.bpm,notify,onRecord:startSampleRecording,onStopRecord:()=>{if(recorder?.state==='recording')recorder.stop()},onCancelRecord:cancelSampleRecording,onDiscardSample:discardSampleStudio,onLoad:loadSampleForEditing,onSave:saveEditedSample,onEdit:()=>{savedSampleId=null},onStructureChange:renderSampleBatch003,onPlaybackChange:updateTransportButton,onCreateSampler:()=>savedSampleId&&createSamplerTrack(savedSampleId),onCreateRack:()=>savedSampleId&&createDrumRack(savedSampleId),recording:recorder?.state==='recording',recordingElapsed:(performance.now()-recordingStartedAt)/1000});organizeSampleStudio($('#main'))}
+function renderSampleBatch003(){const filename=sampleFilename||'My_Sample.wav';$('#main').innerHTML=renderSampleStudioHTML(sampleEditor,filename,Boolean(savedSampleId));wireSampleStudio($('#main'),{editor:sampleEditor,engine,bpm:project.bpm,notify,onRecord:startSampleRecording,onStopRecord:()=>{if(recorder?.state==='recording')recorder.stop()},onCancelRecord:cancelSampleRecording,onDiscardSample:discardSampleStudio,onLoad:loadSampleForEditing,onSave:saveEditedSample,onEdit:()=>{savedSampleId=null},onStructureChange:renderSampleBatch003,onPlaybackChange:updateTransportButton,onCreateSampler:()=>savedSampleId&&createSamplerTrack(savedSampleId),onCreateRack:()=>savedSampleId&&createDrumRack(savedSampleId),recording:recorder?.state==='recording',recordingElapsed:(performance.now()-recordingStartedAt)/1000});organizeSampleStudio($('#main'));mountMobileEditors()}
 let sampleFilename='My_Sample.wav';
 function resetSampleEditor(buffer,name){stopSampleStudioPreview();recordBuffer=buffer;sampleEditor=new SampleEditor(buffer);sampleFilename=name||'My_Sample.wav';savedSampleId=null;if(view==='sample'){renderSampleBatch003();requestAnimationFrame(()=>{const viewport=$('#waveViewport'),canvas=$('#sampleWave');if(viewport&&canvas){canvas.style.width=`${Math.max(280,viewport.clientWidth)*sampleEditor.view.zoom}px`;drawSampleStudioWave(canvas,sampleEditor)}})}}
 function drawRecordingWave(){if(!recorder||recorder.state!=='recording'||!recordingAnalyser)return;const canvas=$('#sampleWave'),ctx=canvas?.getContext('2d');if(!canvas||!ctx){recordingRaf=requestAnimationFrame(drawRecordingWave);return}const width=canvas.clientWidth,height=canvas.clientHeight,dpr=Math.min(devicePixelRatio||1,2),data=new Float32Array(recordingAnalyser.fftSize);recordingAnalyser.getFloatTimeDomainData(data);canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);ctx.strokeStyle='#79d5c1';ctx.lineWidth=1;let peak=0;ctx.beginPath();for(let i=0;i<data.length;i++){peak=Math.max(peak,Math.abs(data[i]));const x=i/(data.length-1)*width,y=height/2-data[i]*height*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.stroke();const level=peak?`${(20*Math.log10(peak)).toFixed(1)} dBFS`:'−∞ dBFS';$('#inputMeter').textContent=`Input ${level}`;$('#recordState').textContent=`● Recording · ${((performance.now()-recordingStartedAt)/1000).toFixed(1)} s`;recordingRaf=requestAnimationFrame(drawRecordingWave)}
@@ -630,7 +661,33 @@ function releaseRecordingResources(){cancelAnimationFrame(recordingRaf);recordin
 function clearSampleStudioSession(){stopSampleStudioPreview();recordBuffer=null;recordBlob=null;sampleEditor=null;savedSampleId=null;sampleFilename='My_Sample.wav';chunks=[]}
 function cancelSampleRecording(silent=false,refresh=true){const activeRecorder=recorder;recordingToken++;recorder=null;if(activeRecorder?.state==='recording'){try{activeRecorder.stop()}catch(error){notify(`Could not stop recording: ${error.message}`)}}releaseRecordingResources();clearSampleStudioSession();if(refresh&&view==='sample')renderSampleBatch003();if(!silent)notify('Recording cancelled and temporary audio discarded.')}
 function discardSampleStudio(){if(shouldConfirmSampleDiscard({hasBuffer:Boolean(sampleEditor),saved:Boolean(savedSampleId)})&&!confirm('Discard this unsaved sample and its edits?'))return;cancelSampleRecording(true,false);if(view==='sample')renderSampleBatch003();notify('Temporary sample discarded. Saved samples were kept.')}
-async function startSampleRecording(){if(shouldConfirmSampleDiscard({hasBuffer:Boolean(sampleEditor),saved:Boolean(savedSampleId)})&&!confirm('Discard the current unsaved sample and start a new recording?'))return;let stream;const token=++recordingToken;try{await engine.init();if(token!==recordingToken)return;stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});if(token!==recordingToken){stream.getTracks().forEach(track=>track.stop());return}recordStream=stream;chunks=[];recordingSource=engine.ctx.createMediaStreamSource(stream);recordingAnalyser=engine.ctx.createAnalyser();recordingAnalyser.fftSize=2048;recordingSource.connect(recordingAnalyser);recordingStartedAt=performance.now();const activeRecorder=new MediaRecorder(stream);recorder=activeRecorder;activeRecorder.ondataavailable=event=>{if(token===recordingToken&&event.data.size)chunks.push(event.data)};activeRecorder.onerror=event=>notify(`Recording failed: ${event.error?.message||'unknown recorder error'}`);activeRecorder.onstop=async()=>{if(token!==recordingToken)return;const parts=resolveRecordingChunks(chunks);chunks=[];const mimeType=activeRecorder.mimeType;releaseRecordingResources();recorder=null;if(!parts){clearSampleStudioSession();if(view==='sample')renderSampleBatch003();notify('Recording contained no audio and was discarded.');return}try{recordBlob=new Blob(parts,{type:mimeType});const buffer=await engine.ctx.decodeAudioData(await recordBlob.arrayBuffer());if(token!==recordingToken)return;resetSampleEditor(buffer,'My_Recording.wav');notify('Recording captured. Select, edit, preview, and save the new sample.')}catch(error){if(token!==recordingToken)return;clearSampleStudioSession();if(view==='sample')renderSampleBatch003();notify(`Recording decode failed: ${error.message}`)}};clearSampleStudioSession();view='sample';activeRecorder.start();renderSampleBatch003();drawRecordingWave()}catch(error){stream?.getTracks().forEach(track=>track.stop());if(recordStream===stream)releaseRecordingResources();if(token===recordingToken)notify(`Microphone unavailable: ${error.message}`)}}
+async function startSampleRecording(){
+ if(sampleCapturePending||recorder?.state==='recording')return;
+ if(shouldConfirmSampleDiscard({hasBuffer:Boolean(sampleEditor),saved:Boolean(savedSampleId)})&&!confirm('Discard the current unsaved sample and start a new recording?'))return;
+ let stream;const token=++recordingToken;sampleCapturePending=true;mountMobileEditors();
+ try{
+  await engine.init();if(token!==recordingToken)return;
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  if(token!==recordingToken){stream.getTracks().forEach(track=>track.stop());return}
+  recordStream=stream;chunks=[];recordingSource=engine.ctx.createMediaStreamSource(stream);recordingAnalyser=engine.ctx.createAnalyser();recordingAnalyser.fftSize=2048;recordingSource.connect(recordingAnalyser);recordingStartedAt=performance.now();
+  const activeRecorder=new MediaRecorder(stream);recorder=activeRecorder;
+  activeRecorder.ondataavailable=event=>{if(token===recordingToken&&event.data.size)chunks.push(event.data)};
+  activeRecorder.onerror=event=>notify(`Recording failed: ${event.error?.message||'unknown recorder error'}`);
+  activeRecorder.onstop=async()=>{
+   if(token!==recordingToken)return;
+   const parts=resolveRecordingChunks(chunks);chunks=[];const mimeType=activeRecorder.mimeType;releaseRecordingResources();recorder=null;
+   if(!parts){clearSampleStudioSession();if(view==='sample')renderSampleBatch003();notify('Recording contained no audio and was discarded.');return}
+   try{
+    recordBlob=new Blob(parts,{type:mimeType});const buffer=await engine.ctx.decodeAudioData(await recordBlob.arrayBuffer());if(token!==recordingToken)return;
+    resetSampleEditor(buffer,'My_Recording.wav');notify('Recording captured. Select, edit, preview, and save the new sample.');
+   }catch(error){if(token!==recordingToken)return;clearSampleStudioSession();if(view==='sample')renderSampleBatch003();notify(`Recording decode failed: ${error.message}`)}
+  };
+  clearSampleStudioSession();view='sample';activeRecorder.start();renderSampleBatch003();drawRecordingWave();
+ }catch(error){
+  stream?.getTracks().forEach(track=>track.stop());if(recordStream===stream)releaseRecordingResources();
+  if(token===recordingToken)notify(`Microphone unavailable: ${error.message}`);
+ }finally{sampleCapturePending=false;mountMobileEditors()}
+}
 function loadSampleForEditing(){if(shouldConfirmSampleDiscard({hasBuffer:Boolean(sampleEditor),saved:Boolean(savedSampleId)})&&!confirm('Discard the current unsaved sample and load another audio file?'))return;const token=recordingToken,input=document.createElement('input');input.type='file';input.accept='audio/*';input.onchange=async()=>{const file=input.files?.[0];if(!file)return;try{const buffer=await(await engine.init()).decodeAudioData(await file.arrayBuffer());if(token!==recordingToken)return;resetSampleEditor(buffer,file.name);notify(`${file.name} loaded for non-destructive editing.`)}catch(error){if(token===recordingToken)notify(`Sample decode failed: ${error.message}`)}};input.click()}
 async function saveEditedSample(buffer,name){if(!buffer||!buffer.length)throw Error('Edited sample contains no audio frames.');const token=recordingToken,filename=(name.trim()||'Sample').replace(/\.wav$/i,'')+'.wav',blob=toWav(buffer),file=new File([blob],filename,{type:'audio/wav'}),assetId=await addAsset(file);if(token===recordingToken)savedSampleId=assetId;let savedName=null,folderError=null;if(folderHandle){try{savedName=await nextFolderFileName(folderHandle,filename);const handle=await folderHandle.getFileHandle(savedName,{create:true}),writer=await handle.createWritable();await writer.write(blob);await writer.close()}catch(error){folderError=error}}if(!savedName)download(blob,filename);if(token===recordingToken){sampleFilename=filename;renderSampleBatch003()}notify(folderError?`Folder save failed (${folderError.message}); downloaded ${filename}.`:`${filename} saved to the sample library${savedName?` and folder as ${savedName}`:' and downloaded'}.`)}
 function masterEqSvg(settings){

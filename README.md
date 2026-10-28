@@ -32,6 +32,42 @@ After deployment, reload and inspect `document.querySelector('meta[name="ehs-bui
 
 ## Batch 005B.1 workspace foundation
 
+### Batch 005B.5 mobile foundation (in progress)
+
+At widths up to 850 CSS pixels, a compact transport and persistent bottom
+**Back / Arrange / Workspace** navigation replace the desktop workspace strip.
+The workspace button opens all seven production destinations; Sampler/Drum
+destinations select an existing compatible instrument when available. Create
+instruments through Arrangement when none exists. **Tempo** holds the same BPM,
+musical-position, Loop and Return-to-Start controls; Project retains JSON/.EHS.
+Desktop navigation and transport controls return at larger widths.
+
+**Expand** opens the existing Piano Roll, Step Sequencer, pad inspector, sample
+stage, graphical EQ or Device Panel in a phone-sized editor. **Done**, Back or
+Escape closes it; controls are not cloned and no new DSP graph is created.
+The Piano Roll includes:
+
+- **Draw / move:** tap empty rows, drag notes/pitch or their resize edge.
+- **Select notes:** tap notes to toggle an additive selection without modifiers.
+- **Scroll:** pan across notes without moving or creating them.
+- Cancelled note/velocity gestures restore their pre-gesture data, selection
+  and Undo/Redo history. Normal commits retain existing velocity/model behavior.
+
+Arrangement's Range and Clip Edit modes are mutually exclusive. Mobile
+navigation is guarded during Recording Studio permission requests, recording,
+calibration and unsaved recovery, plus Sample Studio microphone requests and
+capture. Explicit Stop/recovery actions remain separate. Background/suspended
+capture is not promised: existing Recording Studio interruption handling saves
+buffered dry audio where possible.
+
+This is a **tested foundation, not completed smartphone production acceptance**.
+Pinch zoom, expanded selected-track Mixer ergonomics, comprehensive Arrangement
+touch/section editing, remaining workspace optimizations and the complete
+22-step phone production/.EHS/WAV/MP3 workflow remain open. No Android/iPhone,
+Firefox or Safari verification is claimed. See the
+[mobile audit](./BATCH_005B_5_MOBILE_UX_AUDIT.md) and
+[milestone report](./BATCH_005B_5_REPORT.md) for precise evidence and next steps.
+
 The global transport stays at the top. **Project** groups New Project, portable
 Save/Open .EHS and legacy JSON operations. **Download JSON** is the former
 "Save Locally" button: it downloads metadata, not audio. Local autosave remains
@@ -211,8 +247,8 @@ Arrangement Stop retains song position; Return to Start resets it. Sample/
 Master Stop reset their own preview. Explicit recording Finish/Stop/Cancel
 controls remain separate from keyboard playback.
 
-The current full Node suite passes **310/310**, preserving the 298-test starting
-baseline. See the [effect inventory](./BATCH_005B_4B_EFFECT_AUDIT.md) and
+Batch 005B.4B finished at **310/310**, preserving its 298-test starting
+baseline. The mobile foundation adds five tests (**315/315**). See the [effect inventory](./BATCH_005B_4B_EFFECT_AUDIT.md) and
 [execution / audio / portability report](./BATCH_005B_4B_REPORT.md) for precise
 browser evidence and limitations. Five-width synthetic touch is not
 physical-device verification or the complete 005B.5 mobile architecture.

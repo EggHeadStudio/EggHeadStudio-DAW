@@ -196,8 +196,8 @@ export function mountArrangementWorkspace(options){
     document.querySelector('#loop')?.classList.add('active');commit();
   };
   $('#copyClip').onclick=copy;$('#pasteClip').onclick=()=>paste();$('#duplicateClip').onclick=duplicate;$('#cutRange').onclick=cut;$('#deleteRange').onclick=remove;
-  $('#selectRange').onclick=()=>{state.selectMode=!state.selectMode;render()};
-  $('#editClips').onclick=()=>{state.editMode=!state.editMode;render()};
+  $('#selectRange').onclick=()=>{state.selectMode=!state.selectMode;state.editMode=false;render()};
+  $('#editClips').onclick=()=>{state.editMode=!state.editMode;state.selectMode=false;render()};
   $('#clearRange').onclick=()=>{state.selection=null;paintSelection()};
   $('#setLoopRange').onclick=loopFromRange;
   $('#selectLoopRange').onclick=()=>{state.selection=normalizeTimeSelection(loopState().start,loopState().end,0,Math.max(0,project.tracks.length-1));paintSelection()};

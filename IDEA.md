@@ -329,7 +329,7 @@ Update this checklist only after relevant test evidence is recorded. A feature e
 
 ## 13. NEXT IMMEDIATE ACTION
 
-Continue toward 005B.5 from `BATCH_005B_4B_REPORT.md` and `BATCH_005B_4B_EFFECT_AUDIT.md`, retaining `BATCH_005B_4_EQ_ARCHITECTURE.md`, the 005B.3 workflow reports, `BATCH_005B_2_DESIGN_SYSTEM.md` for controls/tokens and `BATCH_005A_7C_REPORT.md` for audio/reliability. Continuous-context bounded offline scheduling closes the demonstrated future-source graph bottleneck without resetting DSP state. The medium/large full-chain exports and independent WAV/MP3 decoding have measured results; native crash/relaunch boundaries and extended scheduling stress have also been exercised. ZIP output is chunked but input collection/extraction remain buffered. Compact Arrangement/Mixer, production workflow organization, shared native-response graphical EQ/live FFT, live sample/master previews and centralized safe Space routing are implemented. Dedicated mobile architecture remains staged work. Independent standards references, physical-device/cross-engine acceptance and deployment of an approved release remain explicit gates.
+Continue **005B.5**, not 005B.6, from [the mobile milestone report](./BATCH_005B_5_REPORT.md) and [prioritized audit](./BATCH_005B_5_MOBILE_UX_AUDIT.md). Compact mobile navigation, guarded Back/workspace switching, expanded existing editors and explicit Piano Roll modes are implemented. Complete the remaining Arrangement/Mixer/gesture and 22-step phone production acceptance before claiming mobile completion. Retain `BATCH_005B_4B_REPORT.md`, `BATCH_005B_4B_EFFECT_AUDIT.md`, `BATCH_005B_4_EQ_ARCHITECTURE.md`, the 005B.3 workflow reports, `BATCH_005B_2_DESIGN_SYSTEM.md` and `BATCH_005A_7C_REPORT.md` for established DSP/reliability. Continuous-context bounded offline scheduling and existing measured medium/large exports remain unchanged. ZIP output is chunked but input collection/extraction remain buffered. Physical-device/cross-engine acceptance and an explicitly approved deployment remain gates.
 
 
 ## Batch 005A.7-UX — Instrument Workflow Cleanup
@@ -439,6 +439,33 @@ results in `BATCH_005B_4_REPORT.md`. Retain the tap/probe/disposal contracts in
 `BATCH_005B_4_EQ_ARCHITECTURE.md` during 005B.5. Visualization timings are not
 audio-thread CPU or physical-phone budgets. Full phone workspace architecture,
 physical-device and non-Chromium acceptance remain explicit next-stage gates.
+
+## Batch 005B.5 - Mobile production foundation (incomplete)
+
+The intake baseline of 310 tests is preserved; five additive navigation/history/
+gesture rollback tests bring the Node suite to 315. This milestone adds:
+
+- Compact mobile transport, Tempo disclosure, Project access and seven-workspace
+  bottom switcher with bounded transient Back history. Desktop UI is retained.
+- Existing wired editors expand without duplicating parameter/audio state.
+  Expanded Piano Roll retains its tools, velocity lane and scroll across local
+  note-edit redraws. Done/Back/Escape exit and keyboard focus stays in the editor.
+- Draw/move, additive Select and Scroll Piano Roll modes. Native scrolling can
+  begin over notes in Scroll mode; cancellation restores notes/velocities and
+  exact Undo/Redo history rather than committing cancelled edits.
+- Mutually exclusive Arrangement range/clip-edit modes and larger mobile step
+  cells. No scheduler, sample source, clip/pattern or pad identity changes.
+- Busy recording navigation guard, including sample microphone acquisition.
+  Existing Recording Studio interruption saves dry buffered PCM; no claim that
+  the OS permits background recording.
+- Hidden/obscured EQ analyzers detach while another expanded editor covers them.
+
+The complete smartphone song-production workflow is **not yet verified**.
+Continue pinch/two-finger interaction, selected-track mobile Mixer, Arrangement
+section-edit acceptance and remaining Drum/Sample/Recording/Master/Export mobile
+workflows before 005B.6. Android, iPhone, Firefox and Safari remain untested.
+See [the milestone report](./BATCH_005B_5_REPORT.md) for actual browser/audio
+measurements, phase status and cross-workspace regression checklist.
 
 ## Batch 005B.4B - Shared effects, live previews and safe transport
 

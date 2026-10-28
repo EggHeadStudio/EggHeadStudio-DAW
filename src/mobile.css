@@ -1,0 +1,55 @@
+.mobile-navigation,.mobile-expand,.mobile-tempo>summary{display:none}
+.mobile-tempo{display:contents}
+.mobile-tempo-options{display:flex;align-items:center;gap:6px}
+.mobile-workspace-picker{color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;max-width:min(440px,calc(100vw - 16px));max-height:85dvh;overflow:auto}
+.mobile-workspace-picker[open]{display:grid;gap:8px}
+.mobile-workspace-picker button{min-height:44px;text-align:left}
+.mobile-workspace-picker [aria-current=page]{border-color:var(--accent);color:var(--accent)}
+.mobile-workspace-picker::backdrop{background:#0009}
+.piano-interaction-tools select{min-width:120px}
+.sampler-studio button:is(.piano-key,.piano-note,.velocity-bar){min-height:0}
+.piano-world[data-touch-mode=scroll] .piano-note,.piano-world[data-touch-mode=select] .piano-note{touch-action:pan-x pan-y}
+.piano-world[data-touch-mode=scroll] .piano-note{cursor:grab}
+@media(max-width:850px){
+  :root{--mobile-nav-height:calc(56px + env(safe-area-inset-bottom))}
+  body{padding-bottom:var(--mobile-nav-height)}
+  .global-header{position:relative;padding:4px 8px;gap:4px;align-items:center;z-index:25}
+  .global-header .brand{display:none}
+  .global-header #projectName{max-width:none;flex:1;min-width:0;width:100px;height:44px}
+  .global-header .actions{margin-left:0;order:initial}
+  .global-header .project-menu>summary{min-height:44px}
+  .global-header .transport{order:3;display:grid;grid-template-columns:48px 48px minmax(70px,1fr) 76px;gap:4px;width:100%}
+  .global-header .transport>#play,.global-header .transport>#stop{min-height:44px}
+  .global-header .transport>.elapsed-time{min-width:0;text-align:center;font-size:12px}
+  .mobile-tempo{display:block;position:relative}
+  .mobile-tempo>summary{display:block;min-height:44px;padding:12px 6px}
+  .mobile-tempo-options{position:absolute;right:0;top:100%;width:240px;padding:10px;background:var(--surface);border:1px solid var(--border);flex-wrap:wrap;z-index:45}
+  .mobile-tempo:not([open])>.mobile-tempo-options{display:none}
+  #app>nav[aria-label=Workspaces]{display:none}
+  .mobile-navigation{position:fixed;inset:auto 0 0;z-index:45;display:grid;grid-template-columns:68px 76px minmax(0,1fr);gap:4px;padding:4px 8px calc(4px + env(safe-area-inset-bottom));background:var(--surface);border-top:1px solid var(--border)}
+  .mobile-navigation button{min-height:48px;padding:6px 4px;min-width:0;white-space:normal;font-size:12px}
+  #app>footer{padding-bottom:12px}
+  #toast{bottom:calc(var(--mobile-nav-height) + 10px);left:8px;right:8px;max-width:none;z-index:60}
+  .project-menu>.disclosure-body{max-height:70dvh;overflow:auto}
+  .mobile-expand{display:block;min-height:44px;max-width:100%;margin:6px 0}
+  .device-body>.mobile-expand{grid-column:1/-1}
+  .mobile-expanded-editor{position:fixed!important;inset:0 0 var(--mobile-nav-height)!important;z-index:40!important;background:var(--surface-canvas)!important;margin:0!important;padding:8px!important;width:auto!important;max-width:none!important;height:auto!important;max-height:none!important;min-height:0!important;overflow:auto!important;overscroll-behavior:contain}
+  .mobile-editor-open{overflow:hidden}
+  .mobile-editor-exit{display:block;position:sticky;top:0;z-index:30;min-height:44px;width:100%;margin-bottom:8px;background:var(--surface-raised)}
+  .piano-editor.mobile-expanded-editor{display:flex;flex-direction:column}
+  .piano-editor.mobile-expanded-editor .piano-toolbar{flex:none;max-height:30dvh;overflow:auto;margin:0 0 6px}
+  .piano-editor.mobile-expanded-editor .piano-scroll{flex:1;min-height:100px;max-height:none}
+  .piano-editor.mobile-expanded-editor .velocity-panel{flex:none}
+  .mobile-expanded-editor .device-body{max-height:none}
+  .mobile-expanded-editor .mobile-expand{display:none}
+  .graphical-eq.mobile-expanded-editor{display:block}
+  .graphical-eq.mobile-expanded-editor .eq-plot{height:min(42dvh,360px)}
+  .piano-tool-group{gap:4px}
+  .piano-tool-group label{flex-wrap:wrap}
+  .piano-toolbar select,.piano-toolbar button{min-height:44px}
+  .piano-note .note-resize{width:min(16px,40%)}
+  .drum-step{min-height:44px;min-width:36px}
+  .step-grid{grid-template-columns:75px repeat(var(--step-count),minmax(36px,1fr))}
+  .step-scroll.mobile-expanded-editor .step-grid{width:max-content}
+  .recording-studio .recording-controls{top:0}
+}

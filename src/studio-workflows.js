@@ -74,6 +74,9 @@ export function organizeInstrumentStudio(root){
     toolbar.before(hint);
     const settings=root.querySelector('.sampler-settings');
     if(settings){const details=document.createElement('details');details.className='source-configuration';details.innerHTML='<summary>Sample configuration: root, region & envelope</summary>';settings.before(details);details.append(settings)}
+    const editor=document.createElement('section');editor.className='piano-editor';editor.setAttribute('aria-label','Piano Roll editor');
+    toolbar.before(editor);editor.append(toolbar,root.querySelector('#pianoScroll'),root.querySelector('#velocityPanel'));
+    editor.hidden=root.querySelector('#pianoScroll').hidden;
   }
   const rack=root.querySelector('.drum-rack-studio');
   if(rack){

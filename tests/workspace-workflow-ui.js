@@ -3,7 +3,10 @@ export async function runWorkspaceWorkflowAcceptance(page){
   const check=(condition,message)=>{if(!condition)throw new Error(message)},errors=[];
   page.on('pageerror',error=>errors.push(error.message));
   const read=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('pulse-project')));
-  const navigate=async view=>{await page.locator(`[data-view="${view}"]`).click()};
+  const navigate=async view=>{
+    if(await page.locator('.mobile-navigation').isVisible()){await page.locator('[data-mobile-switch]').click();await page.locator(`[data-mobile-workspace="${view}"]`).click()}
+    else await page.locator(`[data-view="${view}"]`).click();
+  };
   const expand=page.getByRole('button',{name:'Expand Independent Kit track',exact:true});
   await page.setViewportSize({width:1280,height:1100});await navigate('arrange');
   check(await page.locator('.track-row:has(.lane)').evaluateAll(rows=>rows.every(row=>row.getBoundingClientRect().height===84)),'Compact is not the default.');
@@ -136,9 +139,12 @@ export async function runPianoTouchWorkflowAcceptance(page){
   await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
   try{
     for(const width of [360,390,430,768,1280]){
-      await page.setViewportSize({width,height:1100});await page.locator('[data-view=arrange]').click();
+      await page.setViewportSize({width,height:1100});
+      if(width<=850){await page.locator('[data-mobile-switch]').click();await page.locator('[data-mobile-workspace=arrange]').click()}
+      else await page.locator('[data-view=arrange]').click();
       await page.getByRole('button',{name:'Select Empty Lead track',exact:true}).click();
       await page.locator('.arrangement-edit-menu>summary').click();await page.locator('#openPiano').click();
+      await page.locator('#pianoTouchMode').selectOption('draw');
       await page.locator('#pianoGrid').selectOption('.25');
       await page.locator('#timeZoom').fill('2');await page.locator('#timeZoom').dispatchEvent('input');
       await page.locator('#noteLength').selectOption('1');

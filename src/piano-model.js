@@ -22,6 +22,15 @@ export class PianoNoteEditor {
     this.redoStack = [];
   }
 
+  gestureSnapshot() {
+    return{notes:cloneNotes(this.notes),selected:new Set(this.selected),undo:[...this.undoStack],redo:[...this.redoStack]};
+  }
+
+  cancelGesture(snapshot) {
+    this.notes.splice(0,this.notes.length,...cloneNotes(snapshot.notes));
+    this.selected=new Set(snapshot.selected);this.undoStack=snapshot.undo;this.redoStack=snapshot.redo;
+  }
+
   add(note, patternBeats = 64) {
     this.checkpoint();
     const beat = Math.max(0, Math.min(patternBeats - 0.0625, Number(note.beat) || 0));

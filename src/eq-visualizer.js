@@ -172,7 +172,9 @@ export function mountEqVisualizer(host,{name,getState,change,getContext,getTap,o
   function tick(time){
     if(disposed)return;
     if(!host.isConnected){dispose();return}
-    if(!document.hidden&&visible&&host.getClientRects().length&&time-lastDraw>=1000/30){
+    const obscured=document.body.classList.contains('mobile-editor-open')&&!host.closest('.mobile-expanded-editor');
+    if(obscured)detach();
+    if(!obscured&&!document.hidden&&visible&&host.getClientRects().length&&time-lastDraw>=1000/30){
       lastDraw=time;const start=performance.now();
       try{draw()}catch(error){dispose();onError(error);return}
       stats.frames++;stats.drawMs+=performance.now()-start;

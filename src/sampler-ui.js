@@ -12,6 +12,7 @@ let rowZoom = 1;
 let topPitch = 76;
 let highlightedPitch = null;
 let velocityOpen = true;
+let touchMode='draw';
 const editors = new Map();
 let activePianoRoot = null;
 let activeSecondsPerBeat = .5;
@@ -58,6 +59,7 @@ function pianoMarkup(track, grid, editor) {
   }
   const keys = keyboardKeys().map(key => `<button class="piano-key ${key.black?'black':'white'} ${key.isC?'is-c':''}" data-key-midi="${key.midi}" style="height:${rowHeight}px" aria-label="Preview ${key.name}">${key.isC||rowHeight>=26?key.name:''}</button>`).join('');
   return `<div class="piano-toolbar">
+    <label class="piano-interaction-tools">Touch mode <select id="pianoTouchMode"><option value="draw">Draw / move</option><option value="select">Select notes</option><option value="scroll">Scroll</option></select></label>
     <label>Grid <select id="pianoGrid"><option value="4">1 bar</option><option value="2">1/2 bar</option><option value="1">1/4 note</option><option value=".5">1/8 note</option><option value=".25">1/16 note</option><option value=".125">1/32 note</option><option value=".0625">1/64 note</option><option value="0">Off</option></select></label>
     <label>New note <select id="noteLength"><option value=".25">1/16</option><option value=".5">1/8</option><option value="1">1/4</option><option value="2">1/2</option><option value="4">1 bar</option><option value="8">2 bars</option></select></label>
     <label>Velocity <input id="noteVelocity" type="range" min=".05" max="1" step=".01" value=".85"></label>
@@ -129,6 +131,9 @@ export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, sav
   const buffer = () => sampler && buffers.get(sampler.asset);
   const editor = editorFor(track);
   root.querySelector('#backArrange').onclick = back;
+  const mode=root.querySelector('#pianoTouchMode');
+  const updateMode=()=>{touchMode=mode.value;root.querySelector('#pianoWorld').dataset.touchMode=touchMode};
+  mode.value=touchMode;mode.onchange=updateMode;updateMode();
   root.querySelector('#pianoGrid').value = String(grid);
   root.querySelector('#pianoGrid').onchange = event => setGrid(+event.target.value);
   root.querySelector('#timeZoom').oninput = event => {pianoZoom=+event.target.value;setGrid(grid)};
@@ -217,21 +222,27 @@ export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, sav
   };
   const velocityY=event=>velocityAtY(event.clientY-velocityScroll.querySelector('#velocityWorld').getBoundingClientRect().top,VELOCITY_LANE_HEIGHT);
   velocityScroll.addEventListener('pointerdown',event=>{
+    if(event.button!==0||velocityDrag)return;
     const bar=event.target.closest('.velocity-bar');if(!bar)return;
     event.preventDefault();
     const id=bar.dataset.velocityId;
+    const snapshot=editor.gestureSnapshot();
     if(!editor.selected.has(id))editor.select([id],event.ctrlKey||event.metaKey||event.shiftKey);
-    velocityDrag={id,pointerId:event.pointerId,changed:false,initial:Object.fromEntries(notes.map(note=>[note.id,note.velocity??.85]))};
+    velocityDrag={id,pointerId:event.pointerId,snapshot,changed:false,initial:Object.fromEntries(notes.map(note=>[note.id,note.velocity??.85]))};
     bar.setPointerCapture(event.pointerId);drawSelection();drawVelocities();
   });
   velocityScroll.addEventListener('pointermove',event=>{
-    if(!velocityDrag)return;
+    if(!velocityDrag||event.pointerId!==velocityDrag.pointerId)return;
     const value=velocityY(event);
     if(!velocityDrag.changed){editor.checkpoint();velocityDrag.changed=true}
     applyVelocityDrag(notes,editor.selected,velocityDrag.id,velocityDrag.initial,value);
     drawVelocities();
   });
-  const endVelocityDrag=()=>{
+  const endVelocityDrag=event=>{
+    if(!velocityDrag||event.pointerId!==velocityDrag.pointerId)return;
+    const bar=root.querySelector(`[data-velocity-id="${velocityDrag.id}"]`);
+    if(bar?.hasPointerCapture(event.pointerId))bar.releasePointerCapture(event.pointerId);
+    if(event.type==='pointercancel'){editor.cancelGesture(velocityDrag.snapshot);velocityDrag=null;drawSelection();return}
     if(velocityDrag?.changed){track.pattern={notes};save();root.querySelector('#noteVelocity').value=notes.find(item=>item.id===velocityDrag.id)?.velocity??.85}
     velocityDrag=null;
   };
@@ -246,18 +257,20 @@ export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, sav
     if(selected)root.querySelector('#noteVelocity').value=selected.velocity??.85;
   }
   world.addEventListener('pointerdown',event=>{
+    if(event.button!==0||gesture||touchMode!=='draw')return;
     const noteElement=event.target.closest('.piano-note');
     if(!noteElement)return;
     event.preventDefault();
     const id=noteElement.dataset.noteId;
+    const snapshot=editor.gestureSnapshot();
     const resize=event.target.closest('.note-resize');
     if(!editor.selected.has(id))editor.select([id],event.ctrlKey||event.metaKey||event.shiftKey);
     const note=notes.find(item=>item.id===id);
-    gesture={id,pointerId:event.pointerId,mode:resize?'resize':'move',x:event.clientX,y:event.clientY,beat:note.beat,midi:note.midi,duration:note.durationBeats,changed:false,initial:notes.filter(item=>editor.selected.has(item.id)).map(item=>({id:item.id,beat:item.beat,midi:item.midi}))};
+    gesture={id,pointerId:event.pointerId,snapshot,mode:resize?'resize':'move',x:event.clientX,y:event.clientY,beat:note.beat,midi:note.midi,duration:note.durationBeats,changed:false,initial:notes.filter(item=>editor.selected.has(item.id)).map(item=>({id:item.id,beat:item.beat,midi:item.midi}))};
     noteElement.setPointerCapture(event.pointerId);
   });
   world.addEventListener('pointermove',event=>{
-    if(!gesture)return;
+    if(!gesture||event.pointerId!==gesture.pointerId)return;
     const dx=event.clientX-gesture.x,dy=event.clientY-gesture.y;
     if(Math.abs(dx)<5&&Math.abs(dy)<5)return;
     if(!gesture.changed){editor.checkpoint();gesture.changed=true}
@@ -277,6 +290,7 @@ export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, sav
     gesture.changed=true;
   });
   world.addEventListener('pointerup',event=>{
+    if(!gesture||event.pointerId!==gesture.pointerId)return;
     if(gesture?.changed){
       track.pattern={notes};save();
       // Keep the dragged note mounted until its synthetic click has targeted it.
@@ -284,11 +298,20 @@ export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, sav
     }
     gesture=null;
   });
-  world.addEventListener('pointercancel',()=>{
-    if(gesture?.changed){track.pattern={notes};save();setGrid(grid)}
+  world.addEventListener('pointercancel',event=>{
+    if(!gesture||event.pointerId!==gesture.pointerId)return;
+    editor.cancelGesture(gesture.snapshot);
+    for(const note of notes)noteElementStyle(note.id,note);
+    drawSelection();
     gesture=null;
   });
   world.addEventListener('click',event=>{
+    if(touchMode==='scroll')return;
+    if(touchMode==='select'){
+      const id=event.target.closest('.piano-note')?.dataset.noteId;
+      if(id){const selected=new Set(editor.selected);if(selected.has(id))selected.delete(id);else selected.add(id);editor.select([...selected]);drawSelection()}
+      return;
+    }
     if(event.target.closest('.piano-note')){const id=event.target.closest('.piano-note').dataset.noteId;if(!event.ctrlKey&&!event.metaKey&&!event.shiftKey)editor.select([id]);drawSelection();return}
     const lane=event.target.closest('.piano-lane');if(!lane)return;
     const durationBeats=Math.min(patternBeats,Math.max(grid||.0625,+root.querySelector('#noteLength').value));
