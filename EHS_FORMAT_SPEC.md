@@ -55,6 +55,12 @@ Missing offsets default to zero; missing envelope duration uses the clip's norma
 
 Selection, clipboard, insertion marker and panel layout are transient workspace state, not portable project fields. Project loop start/end remain bar-based. The application supplies safe defaults for missing/invalid legacy loop fields without changing the general JSON parser's round-trip behavior.
 
+## Instrument-clip development checkpoint (not an archive extension yet)
+
+Batch 005A.6 introduces an internal, opt-in model with `track.patterns` and clips tagged `kind: "instrument"`. Patterns contain stable IDs, names, beat lengths and note events; clips reference pattern IDs and carry Arrangement position, beat duration, source offset, gain and loop state. Instrument sample/pad configuration remains on the track.
+
+**These fields are not yet a supported portable-project schema.** Automatic project migration is not enabled, and the archive validator still requires audio asset/source fields on Arrangement clips. New typed-clip archives therefore fail validation rather than being presented as portable. Existing `.EHS` format version 1 and project schema 1 behavior is unchanged; existing archive tests remain passing. Do not construct/import typed-clip JSON through the application or claim an instrument-clip `.EHS` round trip until editor binding, reference validation, safety limits, compatibility signaling and clean-context round trips are implemented together. A future extension must explicitly resolve older-app behavior; this checkpoint does not silently declare compatibility.
+
 ## Release metadata and audio tags
 
 The release editor stores validated metadata in the project. Exported MP3 files receive ID3v2.3 text frames using UTF-16LE with a byte-order mark, an APIC front-cover frame, a Producer TXXX frame, and a COMM comment frame. WAV files receive RIFF LIST/INFO metadata before the audio data chunk; RIFF sizes are updated and encoded PCM bytes are preserved. Release ZIPs include the selected mastered WAV/MP3 files, their matching metadata, human-readable release notes, and optional cover art. Audio formats in one package are encoded from the same offline arrangement render.
