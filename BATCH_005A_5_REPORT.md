@@ -32,6 +32,22 @@ New Chromium evidence:
 
 These are local Chromium and synthetic audio/touch checks, not physical-device evidence. Original project data was restored after disposable UI fixtures. Structural device changes can reset effect tails, and voice rescheduling is not guaranteed click-free. Waveform discontinuities can click even when loop timing is exact. The original remaining-work items about mandatory playback restart and UI-timer looping are superseded by this follow-up; instrument clip/range work and the other listed acceptance limitations remain open.
 
+### Track setup / elapsed-time follow-up
+
+The current full suite passes **159/159**, with seven added regressions in [track-setup.test.js](./tests/track-setup.test.js). Syntax checks for changed JavaScript and `git diff --check` passed.
+
+- New tracks can be named, colored and configured as Audio, Sampler or Drum Rack through a keyboard/touch-sized dialog. Existing + Sampler/+ Drum Rack shortcuts preselect the appropriate type. As confirmed by the user, Bass/Synth remain names, not new engine types.
+- Sampler requires a decoded sample and uses existing pitch detection. Drum Rack supports empty pads or an optional starting sample. Shared factory defaults retain the direct Sample Studio instrument workflows.
+- Track header/right-mixer Edit buttons change name/color. Type is intentionally fixed after creation to avoid destructive conversion of clips, note patterns or instruments.
+- The global transport displays Arrangement position as `MM:SS.mmm` beside musical position, including minutes beyond 59. It updates from the same playhead tick for playback, seeks, loops, Stop and Return to Start, rather than a separate wall clock.
+- Existing name/color/instrument fields persist through autosave, JSON and `.EHS` v1; no new schema or format change.
+
+Executed Chromium checks created a colored Audio track, renamed/recolored it from the right mixer, created an empty 16-pad Drum Rack and created a pitched Sampler using the loaded fixture sample. Both header and mixer showed the new name; all three types/appearance settings survived reload. Cancel and Escape left no new track. Setup dialogs and elapsed-time readout fit 360/390/430/768/1280 px without page-level overflow.
+
+Clock verification sought to about 65.125 seconds, displayed `01:05.135`, advanced to `01:05.346` while playing, froze at `01:05.455` after Stop, and reset to `00:00.000`. This uses current playhead position, not cumulative listening time. Original project tracks were restored exactly afterward; shared audio assets were not deleted. Browser measurements are not physical-device verification.
+
+Additional changed files: [track-ui.js](./src/track-ui.js), [track-setup.test.js](./tests/track-setup.test.js), plus the existing app/model/timeline/workspace/styles/documentation surfaces.
+
 This is a tested audio-editing checkpoint, not completion of the entire requested workspace. Existing Sampler/Drum Rack patterns remain functional, but independent instrument Arrangement clips and instrument time-range editing are not implemented. No commit, push or deployment was performed. Earlier Batch 005A performance changes in the worktree were preserved.
 
 The audit followed the relevant editing, timeline, scheduling, persistence and layout paths; it was not a complete source-repository audit. The supplied attachment contained text, not accessible screenshot files.

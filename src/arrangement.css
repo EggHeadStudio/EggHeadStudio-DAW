@@ -1,4 +1,19 @@
 .workspace [hidden]{display:none!important}
+.elapsed-time{font-variant-numeric:tabular-nums;white-space:nowrap;color:#c8d6e8;font-size:12px;min-width:76px}
+.track-setup{color:#e6e9f1;background:#202735;border:1px solid #536478;border-radius:10px;width:min(420px,calc(100% - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:20px}
+.track-setup::backdrop{background:#0009}
+.track-setup form{display:grid;gap:14px}
+.track-setup h2{margin:0}
+.track-setup label{display:grid;gap:7px}
+.track-setup input,.track-setup select,.track-setup button{min-height:42px}
+.track-setup input[type=color]{width:100%;padding:4px}
+.track-setup select{color:#e6e9f1;background:#191e29;border:1px solid #536478;border-radius:5px;width:100%;min-width:0}
+.track-setup [hidden]{display:none}
+.track-setup p{margin:0}
+#trackSetupError{color:#ffb1b1}
+.track-setup-actions{display:flex;justify-content:flex-end;gap:10px}
+.workspace .track-label .track-actions{flex-wrap:wrap}
+.workspace .track-label strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .workspace .editor-tools{flex-wrap:wrap;max-height:150px;overflow:auto;flex-shrink:0}
 .editor-tools button[aria-pressed=true]{background:#3b5e5a;border-color:#76d8c3}
 .workspace .track-row{height:124px}
@@ -33,7 +48,7 @@
 .right-mixer label input{display:block;min-height:22px}
 .right-mixer>span{display:none}
 .right-mixer .stereo-meter{grid-column:2;grid-row:4}
-.right-mixer .track-actions{grid-column:1;grid-row:4;margin:0;gap:2px}
+.right-mixer .track-actions{grid-column:1;grid-row:4;margin:0;gap:2px;flex-wrap:wrap}
 .right-mixer .track-actions button{padding:3px 4px;min-height:27px;font-size:10px}
 .right-mixer [data-remove]{display:none}
 .right-mixer.track-selected{box-shadow:inset 3px 0 #76d8c3}

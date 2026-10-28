@@ -236,6 +236,8 @@ Do not close this batch: independent Sampler/Drum Rack Arrangement pattern clips
 
 ### Next batch instructions
 
+Track setup follow-up: **+ Track / + Sampler / + Drum Rack** now provide a name/color/playback-type dialog using the existing Audio, Sampler and Drum Rack engines. Bass/Synth remain user-selected names, not new synth implementations. Existing track headers/right-mixer strips offer Edit for name/color; type is fixed after creation to protect existing content. Sampler sample selection is required; empty Drum Racks are supported. Shared creation defaults preserve Sample Studio instrument workflows and existing project compatibility. The transport shows live Arrangement minutes:seconds.milliseconds next to musical position. Seven new regressions bring the full suite to **159/159**, with JSON/`.EHS` v1 persistence, time formatting, all three creation types, rename/recolor, reload/cancel, five viewport widths and browser clock behavior verified. No new archive/schema field is needed.
+
 1. Keep Node-based model/DSP tests running in CI; confirm the configured GitHub Actions workflow after a user-approved push and retain browser signal/UI checks as integration coverage.
 2. Before release, test real microphone permissions/capture and touch behavior on physical iOS and Android devices, and measure performance with long recordings and larger projects.
 3. Preserve vanilla static deployment until an independently tested architecture migration is justified; GitHub Pages must continue working without a backend.

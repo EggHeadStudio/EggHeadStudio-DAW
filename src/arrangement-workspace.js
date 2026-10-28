@@ -270,7 +270,7 @@ export function mountArrangementWorkspace(options){
     for(const input of strip.querySelectorAll('input'))input.setAttribute('aria-label',`${project.tracks[index].name} ${input.hasAttribute('data-vol')?'volume':'pan'}`);
     const actions=actionsByTrack[index];strip.append(actions.cloneNode(true));
     for(const button of strip.querySelectorAll('button')){
-      const selector=button.hasAttribute('data-mute')?'data-mute':button.hasAttribute('data-solo')?'data-solo':button.hasAttribute('data-fx')?'data-fx':'data-remove';
+      const selector=button.hasAttribute('data-mute')?'data-mute':button.hasAttribute('data-solo')?'data-solo':button.hasAttribute('data-fx')?'data-fx':button.hasAttribute('data-track-settings')?'data-track-settings':'data-remove';
       const source=actions.querySelector(`[${selector}]`);button.onclick=event=>{event.stopPropagation();source?.click()};
     }
     lanes[index].parentElement.append(strip);

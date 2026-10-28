@@ -4,8 +4,8 @@ import {renderSamplerHTML,wireSamplerUI} from './sampler-ui.js';
 import {renderDrumRackHTML,wireDrumRackUI} from './drum-rack-ui.js';
 import {SampleEditor,renderSampleStudioHTML,wireSampleStudio,drawSampleStudioWave,stopSampleStudioPreview} from './sample-editor.js';
 import {ArrangementHistory,duplicateClip,moveClipTo,splitClipAtTime} from './arrangement.js';
-import {TimelineScale,timelineBeatsAtClientX as timelineBeatsAtScale,timelineContentOrigin,timelinePixelsAtClientX} from './timeline.js';
-import {createEmptyProject,deleteProjectTrack,DEFAULT_MASTER_SETTINGS,normalizeArrangementLoop,parseProject,planProjectReset,serializeProject} from './project-state.js';
+import {TimelineScale,formatTransportTime,timelineBeatsAtClientX as timelineBeatsAtScale,timelineContentOrigin,timelinePixelsAtClientX} from './timeline.js';
+import {createEmptyProject,createProjectTrack,deleteProjectTrack,DEFAULT_MASTER_SETTINGS,normalizeArrangementLoop,parseProject,planProjectReset,serializeProject} from './project-state.js';
 import {createEmptySampleSession,resolveRecordingChunks,shouldConfirmSampleDiscard} from './sample-lifecycle.js';
 import {DEFAULT_MASTERING_SETTINGS,MASTERING_PRESETS,analyzeMasterBufferAsync,masteringEqResponse,normalizeMasteringSettings} from './mastering.js';
 import {loudnessMatchGainDb,stereoMonitorMatrix} from './mastering-dsp.js';
@@ -14,6 +14,7 @@ import {EXPORT_BITRATES,EXPORT_SAMPLE_RATES} from './export-dsp.js';
 import {createPortableProjectArchive,getProjectAssetIds,openPortableProjectArchive,createReleaseZip} from './portable-project.js';
 import {addId3v23Metadata,addWavInfoMetadata,normalizeReleaseMetadata,validateReleaseMetadata} from './release-metadata.js';
 import {mountArrangementWorkspace} from './arrangement-workspace.js';
+import {showTrackSetup} from './track-ui.js';
 const arrangementWorkspaceState={selection:null,insertionBeat:0,selectMode:false,follow:false,browserOpen:true,mixerOpen:true,devicesOpen:true};
 let arrangementWorkspace=null;
 const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={id:uid(),schemaVersion:1,name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,releaseMetadata:{},exportSettings:normalizeExportSettings(),tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null,exportController=null,exportRun=null,releaseZipController=null,releaseArtworkBlob=null,releaseArtworkSourceBlob=null,releaseArtworkUrl=null;
@@ -161,6 +162,9 @@ function openNewProjectDialog(){
  $('#cancelNewProject').onclick=()=>dialog.close();
 }
 function wireShell(){
+ $('#clock').setAttribute('aria-label','Musical position (bar.beat.subdivision)');
+ $('#clock').insertAdjacentHTML('afterend','<output id="elapsedTime" class="elapsed-time" aria-label="Arrangement time (minutes:seconds.milliseconds)" title="Arrangement position · minutes:seconds.milliseconds">00:00.000</output>');
+ $('#elapsedTime').textContent=formatTransportTime(engine.position());
  $('#projectName').onchange=e=>{project.name=e.target.value;save()};
  $('#bpm').onchange=async e=>{const playing=engine.playing,beat=(playing?engine.position():playhead)*project.bpm/60;project.bpm=Math.max(40,Math.min(240,+e.target.value||120));playhead=beat*60/project.bpm;if(playing)engine.stop();engine.offset=playhead;engine.syncTracks(project.tracks,project.bpm);save();render();if(playing)try{await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}};
  $('#loop').onclick=()=>{checkpointArrangement();project.loop=!project.loop;save();$('#loop').classList.toggle('active',project.loop);if(view==='arrange')render()};
@@ -204,8 +208,13 @@ function addArrangementControls(){
  $('#snapGrid').value=String(snapGrid);
  $('#snapGrid').onchange=event=>snapGrid=Number(event.target.value);
  $('#openPiano').onclick=()=>{if(project.tracks[selectedTrack]?.sampler||project.tracks[selectedTrack]?.drumRack){view='keys';render()}else notify('Select an instrument track first, or create a sampler or Drum Rack.')};
- $('#addSampler').onclick=()=>{const asset=[...assets.values()].at(-1);if(asset)createSamplerTrack(asset.id);else{$('#importFiles').click();notify('Import a sample, then choose + Sampler again.')}};
- $('#addRack').onclick=()=>{const asset=[...assets.values()].at(-1);createDrumRack(asset?.id||null);if(!asset)notify('Drum Rack created. Assign imported samples to its pads.')};
+ $('#addSampler').onclick=()=>openTrackSetup('sampler');
+  $('#addRack').onclick=()=>openTrackSetup('drumRack');
+  for(const [index,label]of $$('.track-label[data-track]').entries()){
+   const button=document.createElement('button');button.textContent='Edit';button.dataset.trackSettings=String(index);button.title='Edit track name and color';button.setAttribute('aria-label',`Edit ${project.tracks[index].name} track settings`);
+   button.onclick=event=>{event.stopPropagation();openTrackSetup('audio',project.tracks[index])};
+   label.querySelector('.track-actions').append(button);
+  }
  $('#splitClip').onclick=splitSelectedClip;
  $('#duplicateClip').onclick=duplicateSelectedClip;
  $('#copyClip').onclick=copySelectedClip;
@@ -223,8 +232,27 @@ function addArrangementControls(){
   if(clipId&&targetTrack){checkpointArrangement();if(moveClipTo(project.tracks,clipId,targetTrack.id,bar)){selectedClip=clipId;commitArrangement()}}
  },true);
 }
-function createSamplerTrack(assetId){const asset=assets.get(assetId),buffer=buffers.get(assetId);if(!asset||!buffer)return notify('Import and decode a sample before creating a sampler.');const pitch=detectPitch(buffer),rootNote=pitch?.midi||60;project.tracks.push({id:uid(),name:`Sampler ${project.tracks.filter(track=>track.sampler).length+1}`,volume:.85,pan:0,mute:false,solo:false,color:'#a58bdb',clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25},sampler:{asset:assetId,rootNote,start:0,end:buffer.duration,mode:'melodic',detected:pitch?.name||null,confidence:pitch?.confidence||null},pattern:{notes:[]}});selectedTrack=project.tracks.length-1;selectedClip=null;save();view='keys';render();notify(pitch?`Sample root detected: ${pitch.name} (${pitch.frequency.toFixed(1)} Hz; ${(pitch.confidence*100).toFixed(0)}% confidence).`:'Could not reliably detect pitch; set the root key manually.')}
-function createDrumRack(assetId=null){const pads=Array.from({length:16},(_,index)=>({name:`Pad ${index+1}`,note:36+index,asset:assetId||null,volume:1,pitch:0,pan:0,mute:false}));if(assetId)pads[0].name=assets.get(assetId)?.name.replace(/\.[^.]+$/,'')||'Pad 1';project.tracks.push({id:uid(),name:`Drum Rack ${project.tracks.filter(track=>track.drumRack).length+1}`,volume:.85,pan:0,mute:false,solo:false,color:'#db8a70',clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25},drumRack:{pads,steps:16},pattern:{notes:[]}});selectedTrack=project.tracks.length-1;save();view='rack';render()}
+function openTrackSetup(type='audio',track=null){
+ showTrackSetup({track,type,number:project.tracks.length+1,assets,buffers,onSubmit:settings=>{
+  if(track){track.name=settings.name;track.color=settings.color;save();render();return}
+  if(settings.type==='sampler'){createSamplerTrack(settings.assetId,settings);return}
+  if(settings.type==='drumRack'){createDrumRack(settings.assetId,settings);return}
+  project.tracks.push(createProjectTrack(settings,uid()));selectedTrack=project.tracks.length-1;selectedClip=null;save();render();
+ }});
+}
+function createSamplerTrack(assetId,settings={}){
+ const asset=assets.get(assetId),buffer=buffers.get(assetId);
+ if(!asset||!buffer)return notify('Import and decode a sample before creating a sampler.');
+ const pitch=detectPitch(buffer);
+ project.tracks.push(createProjectTrack({name:`Sampler ${project.tracks.filter(track=>track.sampler).length+1}`,color:'#a58bdb',...settings,type:'sampler',assetId,duration:buffer.duration,pitch},uid()));
+ selectedTrack=project.tracks.length-1;selectedClip=null;save();view='keys';render();
+ notify(pitch?`Sample root detected: ${pitch.name} (${pitch.frequency.toFixed(1)} Hz; ${(pitch.confidence*100).toFixed(0)}% confidence).`:'Could not reliably detect pitch; set the root key manually.');
+}
+function createDrumRack(assetId=null,settings={}){
+ const track=createProjectTrack({name:`Drum Rack ${project.tracks.filter(track=>track.drumRack).length+1}`,color:'#db8a70',...settings,type:'drumRack',assetId},uid());
+ if(assetId)track.drumRack.pads[0].name=assets.get(assetId)?.name.replace(/\.[^.]+$/,'')||'Pad 1';
+ project.tracks.push(track);selectedTrack=project.tracks.length-1;selectedClip=null;save();view='rack';render();
+}
 function renderKeys(){
  const track=project.tracks[selectedTrack];
  if(!track?.sampler&&!track?.drumRack){$('#main').innerHTML='<section class="studio"><h2>Sampler / Piano Roll</h2><p>Select or create an instrument track from Arrangement.</p><button id="backArrange">Back to Arrangement</button></section>';$('#backArrange').onclick=()=>{view='arrange';render()};return}
@@ -361,7 +389,7 @@ function wireArrange(){
  $$('[data-solo]').forEach(button=>{button.title='Solo Track — Listen to this track only';button.setAttribute('aria-label',`Solo ${project.tracks[Number(button.dataset.solo)].name}`);button.setAttribute('aria-pressed',String(project.tracks[Number(button.dataset.solo)].solo))});
  $$('[data-remove]').forEach(button=>{button.title='Delete Track';button.setAttribute('aria-label',`Delete ${project.tracks[Number(button.dataset.remove)].name}`)});
  $('#connectFolder').onclick=connectFolder;$('#addFiles').onclick=()=>$('#importFiles').click();$('#search').oninput=e=>drawList(e.target.value);$('#recordOwn').onclick=()=>{view='sample';render()};
- $('#addTrack').onclick=()=>{project.tracks.push({id:uid(),name:`Audio ${project.tracks.length+1}`,volume:.85,pan:0,mute:false,solo:false,color:'#88a8db',clips:[]});save();render()};
+ $('#addTrack').onclick=()=>openTrackSetup();
  $('#zoomIn').onclick=event=>setArrangementZoom(zoom*1.25,event.clientX);$('#zoomOut').onclick=event=>setArrangementZoom(zoom/1.25,event.clientX);
  $$('[data-track]').forEach(e=>e.onclick=()=>{selectedTrack=+e.dataset.track;render()});
  $$('[data-mute]').forEach(b=>b.onclick=e=>{e.stopPropagation();selectedTrack=+b.dataset.mute;project.tracks[selectedTrack].mute=!project.tracks[selectedTrack].mute;engine.syncTracks(project.tracks);save();render()});
@@ -380,7 +408,7 @@ function wireArrange(){
  $('#deleteClip').onclick=deleteSelectedClip;
 }
 async function connectFolder(){if('showDirectoryPicker'in window){try{folderHandle=await showDirectoryPicker({mode:'readwrite'});const files=[];async function walk(dir,prefix='',depth=0){if(depth>8)return;for await(const [name,h] of dir.entries()){if(h.kind==='directory')await walk(h,prefix+name+'/',depth+1);else if(/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(name)){const f=await h.getFile();files.push(f)}}}await walk(folderHandle);await importFiles(files);notify(`Connected ${folderHandle.name}; ${files.length} files. Save-back enabled when permitted.`)}catch(e){if(e.name!=='AbortError')notify(e.message)}}else{$('#importFolder').click();notify('Folder import fallback: direct folder write is not available in this browser.')}}
-function tick(t){const bar=t/barSeconds(),p=$('#playhead'),ruler=$('#ruler'),arrangement=$('.arrangement');if(p&&ruler&&arrangement){arrangementWorkspace?.ensureBeat(t*project.bpm/60+8);const x=timelineContentOrigin(ruler,arrangement)+timelineScale().timeToPixels(t);p.style.left=`${x}px`;p.setAttribute('aria-valuenow',String(t));p.setAttribute('aria-valuetext',`${t.toFixed(3)} seconds`);if(engine.playing&&arrangementWorkspaceState.follow&&x-arrangement.scrollLeft>arrangement.clientWidth-230)arrangement.scrollLeft=Math.max(0,x-arrangement.clientWidth/2)}const clock=$('#clock');if(clock)clock.textContent=`${Math.floor(bar)+1}.${Math.floor((bar%1)*4)+1}.1`}
+function tick(t){const bar=t/barSeconds(),p=$('#playhead'),ruler=$('#ruler'),arrangement=$('.arrangement');if(p&&ruler&&arrangement){arrangementWorkspace?.ensureBeat(t*project.bpm/60+8);const x=timelineContentOrigin(ruler,arrangement)+timelineScale().timeToPixels(t);p.style.left=`${x}px`;p.setAttribute('aria-valuenow',String(t));p.setAttribute('aria-valuetext',`${t.toFixed(3)} seconds`);if(engine.playing&&arrangementWorkspaceState.follow&&x-arrangement.scrollLeft>arrangement.clientWidth-230)arrangement.scrollLeft=Math.max(0,x-arrangement.clientWidth/2)}const clock=$('#clock');if(clock)clock.textContent=`${Math.floor(bar)+1}.${Math.floor((bar%1)*4)+1}.1`;const elapsed=$('#elapsedTime'),text=formatTransportTime(t);if(elapsed&&elapsed.textContent!==text)elapsed.textContent=text}
 window.addEventListener('resize',()=>tick(playhead),{passive:true});
 function renderSample(){$('#main').innerHTML=`<section class="studio"><div class="section-title"><h2>Sample Studio</h2><p>Record → edit → preview → save to your library.</p></div><div class="record-controls"><button id="record" class="accent">● Record Own</button><button id="finishRecord" disabled>■ Stop Recording</button><button id="loadSample">＋ Edit Existing Sample</button><span id="recordState">Microphone idle</span></div><div class="wave-panel"><canvas id="sampleWave" class="sample-wave"></canvas><div class="edit-grid"><label>Start (seconds)<input id="trimStart" type="number" min="0" step=".01" value="${edit.start}"></label><label>End (seconds)<input id="trimEnd" type="number" min="0" step=".01" value="${edit.end}"></label><label>Gain<input id="editGain" type="range" min="0" max="3" step=".05" value="${edit.gain}"></label><label>Fade In (s)<input id="fadeIn" type="number" min="0" max="10" step=".01" value="${edit.fadeIn}"></label><label>Fade Out (s)<input id="fadeOut" type="number" min="0" max="10" step=".01" value="${edit.fadeOut}"></label><label>Reverse<input id="reverse" type="checkbox" ${edit.reverse?'checked':''}></label></div><div class="record-controls"><button id="previewEdit">▶ Preview Edited</button><button id="normalize">Normalize Gain</button><button id="saveSample" class="primary">Save Sample</button><button id="makeSampler" ${savedSampleId?'':'disabled'}>Create Sampler</button><button id="makeRack" ${savedSampleId?'':'disabled'}>Create Drum Rack with Sample</button></div><label>Sample name <input id="sampleName" value="My_Kick_01.wav" placeholder="My_Kick_01.wav"></label><p class="hint">Sample edits are non-destructive until Save. Recording uses your browser microphone permission. Chrome/Edge can save directly to an authorized folder; other browsers download the WAV.</p></div></section>`;wireSample();requestAnimationFrame(drawSample)}
 function drawSample(){drawWave($('#sampleWave'),recordBuffer)}

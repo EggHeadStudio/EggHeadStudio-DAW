@@ -27,6 +27,11 @@ export function pianoBeatAtClientX(clientX,laneLeft,pixelsPerBeat){
   return Math.max(0,(clientX-laneLeft)/pixelsPerBeat);
 }
 
+export function formatTransportTime(seconds){
+  const milliseconds=Math.floor(Math.max(0,Number.isFinite(seconds)?seconds:0)*1000);
+  return`${String(Math.floor(milliseconds/60000)).padStart(2,'0')}:${String(Math.floor(milliseconds/1000)%60).padStart(2,'0')}.${String(milliseconds%1000).padStart(3,'0')}`;
+}
+
 export function timelineContentOrigin(ruler,scrollContainer){
   if(!ruler||!scrollContainer)return 0;
   return ruler.getBoundingClientRect().left-scrollContainer.getBoundingClientRect().left+scrollContainer.scrollLeft;
