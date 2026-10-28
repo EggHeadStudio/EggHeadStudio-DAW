@@ -256,19 +256,19 @@ export class AudioEngine{
  }
  stop(reset=false){this.offset=reset?0:this.position();this.playing=false;clearInterval(this.timer);if(this.raf!=null)globalThis.cancelAnimationFrame?.(this.raf);for(const source of [...this.sources]){try{source.stop()}catch{}this.releaseSource(source)}this.onTick(this.offset);this.onMeter(this.readMeters())}
  position(){
-  const position=this.playing?this.offset+(this.ctx.currentTime-this.startedAt):this.offset;
+  const position=this.playing?this.offset+Math.max(0,this.ctx.currentTime-this.startedAt):this.offset;
   const loop=this.transportLoop;
   return this.playing&&loop&&position>=loop.end?loop.start+(position-loop.start)%(loop.end-loop.start):position;
  }
  readMeters(){const now=performance.now(),meters={};for(const[id,graph]of this.trackNodes){const levels=graph.readMeter(),clipped=levels.leftPeak>=.999||levels.rightPeak>=.999;if(clipped)this.clipHoldUntil.set(id,now+1000);meters[id]={...levels,clipped:(this.clipHoldUntil.get(id)||0)>now}}return meters}
  async previewNote(track,buffers,midi,duration=.35,tracks=[track]){await this.init();this.syncTracks(tracks);const rack=track.drumRack,pad=rack?.pads.find(item=>item.note===midi),sampler=track.sampler,asset=pad?.asset||(sampler&&!rack?sampler.asset:null),buffer=buffers.get(asset);if(!buffer||pad?.mute)return false;const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner(),rate=pad?2**((pad.pitch||0)/12):sampler.mode==='oneShot'?1:2**((midi-(sampler.rootNote||60)+(sampler.transpose||0)+(sampler.fineTune||0)/100)/12),start=pad?0:Math.max(0,sampler.start||0),end=pad?buffer.duration:Math.min(buffer.duration,sampler.end||buffer.duration),region=Math.max(.01,end-start),length=Math.min(duration,region/rate),now=this.ctx.currentTime; source.buffer=buffer;source.playbackRate.value=rate;if(sampler?.mode==='loop'&&!pad){source.loop=true;source.loopStart=start;source.loopEnd=end}pan.pan.value=pad?.pan||0;source.connect(gain).connect(pan).connect(this.trackNodes.get(track.id).input);if(pad||sampler.mode==='oneShot')gain.gain.value=(pad?.volume??1)*.8;else{const attack=Math.min(sampler.attack||.005,length*.4),decay=Math.min(sampler.decay||.1,Math.max(0,length-attack)*.4),sustain=Math.max(0,Math.min(1,sampler.sustain??.8)),release=Math.min(sampler.release||.03,length*.4),noteOff=now+length;gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.8,now+attack);gain.gain.linearRampToValueAtTime(.8*sustain,now+attack+decay);gain.gain.setValueAtTime(.8*sustain,Math.max(now+attack+decay,noteOff-release));gain.gain.linearRampToValueAtTime(0,noteOff)}source.start(now,start);source.stop(now+length);this.registerSource(source,[gain,pan]);return true}
- async play(project,buffers,from=this.offset){
+ async play(project,buffers,from=this.offset,{when}={}){
   await this.init();this.stop();this.syncTracks(project.tracks,project.bpm);
-  this.playing=true;this.playbackSignature=null;this.updatePlayback(project,buffers,from);
+  this.playing=true;this.playbackSignature=null;this.updatePlayback(project,buffers,from,when);
   this.timer=setInterval(()=>this.scheduleAhead(),25);
   const tick=()=>{if(this.playing){this.onTick(this.position());this.onMeter(this.readMeters());this.raf=requestAnimationFrame(tick)}};tick();
  }
- updatePlayback(project,buffers,from){
+ updatePlayback(project,buffers,from,when){
   if(!this.playing)return;
   const signature=JSON.stringify([project.bpm,project.loop,project.loopStart,project.loopEnd,project.patternBeats,project.tracks.map(track=>[track.id,track.clips,track.pattern,track.patterns,track.sampler,track.drumRack])]);
   this.playbackProject=project;this.playbackBuffers=buffers;
@@ -276,7 +276,7 @@ export class AudioEngine{
   const position=from??this.position(),bar=240/project.bpm,start=project.loopStart*bar,end=project.loopEnd*bar;
   this.transportLoop=project.loop&&Number.isFinite(start)&&Number.isFinite(end)&&end>start?{start,end}:null;
   this.offset=this.transportLoop&&(position<start||position>=end)?start:Math.max(0,position);
-  this.startedAt=this.ctx.currentTime;this.scheduleTime=this.startedAt;this.schedulePosition=this.offset;this.scheduleInitial=true;
+  this.startedAt=Math.max(this.ctx.currentTime,when??this.ctx.currentTime);this.scheduleTime=this.startedAt;this.schedulePosition=this.offset;this.scheduleInitial=true;
   for(const source of [...this.sources]){try{source.stop()}catch{}this.releaseSource(source)}
   this.playbackSignature=signature;this.scheduleAhead();
  }
@@ -305,7 +305,7 @@ export class AudioEngine{
   for(const track of project.tracks){
    const node=this.trackNodes.get(track.id);
    for(const clip of track.clips){
-    const b=buffers.get(clip.asset);if(!b)continue;
+    const b=buffers.get(clip.asset);if(!b||clip.mute)continue;
     const at=clip.bar*bar,duration=clipDurationSeconds(clip);if(at>=to||at+duration<=from||(!initial&&at<from))continue;
      const skip=Math.max(0,from-at),source=this.ctx.createBufferSource(),g=this.ctx.createGain();source.buffer=b;source.playbackRate.value=clip.rate||1;source.connect(g).connect(node.input);
     const when=contextStart+Math.max(0,at-from),dur=Math.min(duration-skip,stopAt-Math.max(at,from));scheduleClipSource(this.ctx,source,g,clip,when,skip,dur);this.registerSource(source,[g]);
@@ -340,7 +340,7 @@ export class AudioEngine{
    const graph=createTrackGraph(ctx,track,eq,null,project.bpm);
    offlineTrackNodes.set(track.id,graph);
    graph.update(track,project.tracks.some(item=>item.solo),project.bpm,isTrackAudible(track,project.tracks));
-   for(const clip of track.clips){const buffer=buffers.get(clip.asset);if(!buffer)continue;const source=ctx.createBufferSource(),clipGain=ctx.createGain(),when=clip.bar*bar,duration=clipDurationSeconds(clip);source.buffer=buffer;source.playbackRate.value=clip.rate||1;source.connect(clipGain).connect(graph.input);scheduleClipSource(ctx,source,clipGain,clip,when,0,duration)}
+   for(const clip of track.clips){const buffer=buffers.get(clip.asset);if(!buffer||clip.mute)continue;const source=ctx.createBufferSource(),clipGain=ctx.createGain(),when=clip.bar*bar,duration=clipDurationSeconds(clip);source.buffer=buffer;source.playbackRate.value=clip.rate||1;source.connect(clipGain).connect(graph.input);scheduleClipSource(ctx,source,clipGain,clip,when,0,duration)}
    for(const event of instrumentEvents(track,buffers,project.bpm,end/beat,0,end/beat,patternBeats))scheduleInstrumentEvent(ctx,graph.input,event,0,end,0,true);
   }
   connectTrackSidechains(project.tracks,offlineTrackNodes,ctx);

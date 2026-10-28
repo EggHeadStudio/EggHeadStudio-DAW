@@ -3,6 +3,26 @@ import {copyTimeRange,deleteTimeRange,moveClipTo,normalizeTimeSelection,pasteTim
 import {clipViewportWindow,draggedClipStart,editLoopRegion,quantizeBeat,timelineBeatsAtClientX} from './timeline.js';
 import {getWaveformRangePeaks} from './waveform.js';
 import {normalizeArrangementLoop} from './project-state.js';
+import {assertClipDestination,instrumentType,isInstrumentClip,patternForClip} from './instrument-clips.js';
+
+function drawPattern(canvas,track,clip,window,height){
+  const width=Math.max(1,Math.ceil(window.width)),dpr=Math.min(devicePixelRatio||1,2),pattern=patternForClip(track,clip);
+  canvas.width=width*dpr;canvas.height=height*dpr;
+  const context=canvas.getContext('2d');context.scale(dpr,dpr);context.fillStyle='#10252aaa';
+  if(!pattern?.notes.length)return;
+  let low=127,high=0;for(const note of pattern.notes){low=Math.min(low,note.midi);high=Math.max(high,note.midi)}high=Math.max(low+1,high);
+  const start=window.start*clip.durationBeats,end=window.end*clip.durationBeats,scale=width/(end-start),offset=clip.offsetBeats||0;
+  for(const note of pattern.notes){
+    const first=clip.loop?Math.max(0,Math.floor((start+offset-note.beat-note.durationBeats)/pattern.lengthBeats)):0;
+    const last=clip.loop?Math.ceil((end+offset-note.beat)/pattern.lengthBeats):1;
+    for(let cycle=first;cycle<last;cycle++){
+      const at=cycle*pattern.lengthBeats+note.beat-offset,until=Math.min(clip.durationBeats,at+note.durationBeats);
+      if(until<=start||at>=end)continue;
+      const left=Math.max(start,at),right=Math.min(end,until),y=4+(high-note.midi)/(high-low)*Math.max(1,height-12);
+      context.globalAlpha=.4+.6*(note.velocity??.85);context.fillRect((left-start)*scale,y,Math.max(2,(right-left)*scale),track.drumRack?6:3);
+    }
+  }
+}
 
 function drawClipWave(canvas,buffer,clip,window,height){
   const width=Math.max(1,Math.ceil(window.width)),dpr=Math.min(devicePixelRatio||1,2),rate=clip.rate||1;
@@ -55,11 +75,11 @@ export function mountArrangementWorkspace(options){
       const rect=wave.element.getBoundingClientRect();
       return{...wave,height:Math.max(1,rect.height-25),window:rect.bottom>viewport.top&&rect.top<viewport.bottom?clipViewportWindow(rect.left,rect.width,viewport.left,viewport.right):null};
     });
-    for(const {canvas,buffer,clip,height,window}of visible){
+    for(const {canvas,buffer,track,clip,height,window}of visible){
       canvas.hidden=!window;
       if(!window){canvas.width=0;canvas.height=0;continue}
       canvas.style.left=`${window.offset}px`;canvas.style.width=`${window.width}px`;
-      drawClipWave(canvas,buffer,clip,window,height);
+      if(isInstrumentClip(clip))drawPattern(canvas,track,clip,window,height);else drawClipWave(canvas,buffer,clip,window,height);
     }
   };
   const queueWaves=()=>{if(!waveFrame)waveFrame=requestAnimationFrame(paintWaves)};
@@ -73,7 +93,7 @@ export function mountArrangementWorkspace(options){
   const mobile=matchMedia('(max-width:850px)').matches;
   if(state.mobile!==mobile){state.mobile=mobile;state.browserOpen=!mobile;state.mixerOpen=!mobile}
   const beatAt=clientX=>quantizeBeat(timelineBeatsAtClientX(clientX,ruler,arrangement,scale),grid());
-  let maxBeat=Math.max(64,(project.loopEnd||4)*4,...project.tracks.flatMap(track=>(track.clips||[]).map(clip=>clip.bar*4+scale.secondsToBeats(clipDurationSeconds(clip))+16)));
+  let maxBeat=Math.max(64,(project.loopEnd||4)*4,...project.tracks.flatMap(track=>(track.clips||[]).map(clip=>clip.bar*4+scale.secondsToBeats(clipDurationSeconds(clip,project.bpm))+16)));
   const width=Math.max(1200,scale.beatsToPixels(maxBeat));
   ruler.style.width=`${width}px`;lanes.forEach(lane=>lane.style.width=`${width}px`);
   ruler.replaceChildren();
@@ -138,16 +158,12 @@ export function mountArrangementWorkspace(options){
   const hasRange=()=>state.selection&&state.selection.endBeat>state.selection.startBeat;
   const validateRange=()=>{
     if(!hasRange()){notify('Select a time range first.');return false}
-    const range=state.selection;
-    if(project.tracks.slice(range.firstTrack,range.lastTrack+1).some(track=>(track.sampler||track.drumRack)&&track.pattern?.notes?.length)){
-      notify('This range includes a repeating instrument pattern. Pattern-region editing is not supported yet; select audio tracks only.');return false;
-    }
     return true;
   };
   const copy=()=>{
     if(!hasRange()){state.clipboard=null;return options.copyClip()}
     if(!validateRange())return false;
-    state.clipboard=copyTimeRange(project.tracks,state.selection,project.bpm);notify('Audio range copied, including its track spacing and gaps.');return true;
+    state.clipboard=copyTimeRange(project.tracks,state.selection,project.bpm);notify('Range copied, including patterns, track spacing and gaps.');return true;
   };
   const remove=()=>{
     if(!hasRange())return options.deleteClip();
@@ -158,7 +174,7 @@ export function mountArrangementWorkspace(options){
     if(!clipboard)return options.pasteClip();
     try{
       if(firstTrack+clipboard.trackCount>project.tracks.length)throw new Error('Add enough destination tracks before pasting this range.');
-      if(project.tracks.slice(firstTrack,firstTrack+clipboard.trackCount).some(track=>track.sampler||track.drumRack))throw new Error('Paste this audio range onto audio tracks, not instrument tracks.');
+      pasteTimeRange(project.tracks,clipboard,at,firstTrack,idFactory,true);
       checkpoint();pasteTimeRange(project.tracks,clipboard,at,firstTrack,idFactory);
       state.selection=normalizeTimeSelection(at,at+clipboard.durationBeats,firstTrack,firstTrack+clipboard.trackCount-1);commit();
     }catch(error){notify(error.message)}
@@ -216,7 +232,6 @@ export function mountArrangementWorkspace(options){
       if(event.target!==lane)return;
       if(event.pointerType==='touch')return;
     }
-    if(event.target.closest('.sampler-block')){notify('Instrument range editing is not available yet.');return}
     const anchor=event.shiftKey&&state.selection?{beat:state.selection.startBeat,track:state.selection.firstTrack}:{beat:beatAt(event.clientX),track:index};
     let moved=false;
     gesture(lane,event,next=>{
@@ -229,34 +244,46 @@ export function mountArrangementWorkspace(options){
     element.draggable=false;element.onclick=null;element.ondragstart=null;
     element.classList.toggle('clip-selected',clip.id===selectedClip);
     const buffer=buffers.get(clip.asset);let wave;
-    if(buffer){
+    if(buffer||isInstrumentClip(clip)){
       const canvas=document.createElement('canvas');canvas.className='clip-waveform';canvas.setAttribute('aria-hidden','true');element.prepend(canvas);
-      wave={element,canvas,buffer,clip};waves.push(wave);
+      wave={element,canvas,buffer,clip,track:project.tracks[index]};waves.push(wave);
     }
     element.onpointerdown=event=>{
       if(state.selectMode||event.shiftKey)return;
-      if(event.pointerType==='touch'&&!state.editMode)return;
+      if(event.pointerType==='touch'&&!state.editMode&&!event.target.closest('[data-resize]')){
+        const clear=()=>{element.onpointerup=null;element.onpointercancel=null};
+        element.onpointercancel=clear;
+        element.onpointerup=next=>{
+          clear();
+          if(Math.abs(next.clientX-event.clientX)>6||Math.abs(next.clientY-event.clientY)>6)return;
+          const now=performance.now(),last=state.lastTap;state.lastTap={id:clip.id,time:now};
+          if(isInstrumentClip(clip)&&last?.id===clip.id&&now-last.time<450)options.openClip(clip.id,index);else selectClip(clip.id,index);
+        };
+        return;
+      }
       const handle=event.target.closest('[data-resize]'),edge=handle?.dataset.resize;
-      if(edge&&!buffer)return notify('Load the clip source before trimming.');
+      if(edge&&!buffer&&!isInstrumentClip(clip))return notify('Load the clip source before trimming.');
       const original={...clip},grabOffset=timelineBeatsAtClientX(event.clientX,ruler,arrangement,scale)-clip.bar*4;
-      const edgeOffset=edge==='end'?grabOffset-scale.secondsToBeats(clipDurationSeconds(clip)):grabOffset;
+      const edgeOffset=edge==='end'?grabOffset-scale.secondsToBeats(clipDurationSeconds(clip,project.bpm)):grabOffset;
       let draft={...original},targetIndex=index,moved=false;
       gesture(element,event,next=>{
         moved ||= Math.abs(next.clientX-event.clientX)>3||Math.abs(next.clientY-event.clientY)>3;
         if(!moved)return;
         draft={...original};
-        if(edge)resizeClipAtBeat(draft,edge,quantizeBeat(timelineBeatsAtClientX(next.clientX,ruler,arrangement,scale)-edgeOffset,grid()),buffer.duration,project.bpm);
+        if(edge)resizeClipAtBeat(draft,edge,quantizeBeat(timelineBeatsAtClientX(next.clientX,ruler,arrangement,scale)-edgeOffset,grid()),buffer?.duration||0,project.bpm,patternForClip(project.tracks[index],clip));
         else{
           draft.bar=draggedClipStart(timelineBeatsAtClientX(next.clientX,ruler,arrangement,scale),grabOffset,grid())/4;
           const nextTrack=selectAt(next);targetIndex=nextTrack<0?index:nextTrack;
         }
-        element.style.left=`${scale.barsToPixels(draft.bar)}px`;element.style.width=`${scale.timeToPixels(clipDurationSeconds(draft))}px`;
+        element.style.left=`${scale.barsToPixels(draft.bar)}px`;element.style.width=`${scale.timeToPixels(clipDurationSeconds(draft,project.bpm))}px`;
         element.style.transform=`translateY(${lanes[targetIndex].getBoundingClientRect().top-laneTop(index)}px)`;
         if(wave){wave.clip=draft;queueWaves()}
       },()=>{
-        if(!moved){state.selection=null;selectClip(clip.id,index);return}
-        if(targetIndex!==index&&(project.tracks[targetIndex].sampler||project.tracks[targetIndex].drumRack)){notify('Move audio clips onto an audio track.');render();return}
-        checkpoint();Object.assign(clip,draft);moveClipTo(project.tracks,clip.id,project.tracks[targetIndex].id,draft.bar);state.selection=null;commit();
+        if(!moved){
+          const now=performance.now(),last=state.lastTap;state.lastTap={id:clip.id,time:now};state.selection=null;
+          if(isInstrumentClip(clip)&&last?.id===clip.id&&now-last.time<450)options.openClip(clip.id,index);else selectClip(clip.id,index);return;
+        }
+        try{assertClipDestination(clip,instrumentType(project.tracks[index]),project.tracks[targetIndex]);checkpoint();moveClipTo(project.tracks,clip.id,project.tracks[targetIndex].id,draft.bar);if(edge&&isInstrumentClip(clip))delete clip.legacyTail;Object.assign(clip,draft);state.selection=null;commit()}catch(error){notify(error.message);render()}
       },render);
     };
     element.querySelectorAll('[data-resize]').forEach(handle=>handle.onpointerdown=null);
@@ -281,7 +308,7 @@ export function mountArrangementWorkspace(options){
   bottom.querySelector('.pane-head').firstChild.textContent='DEVICES & CLIP EDITOR ';
   if(project.tracks[selectedTrack]?.sampler||project.tracks[selectedTrack]?.drumRack){
     const instrument=document.createElement('button');instrument.className='selected-instrument';instrument.textContent=project.tracks[selectedTrack].drumRack?'Open Drum Rack instrument':'Open Sampler instrument';
-    instrument.onclick=()=>{state.selectMode=false;lanes[selectedTrack].querySelector('.sampler-block')?.click()};$('.device-panel').prepend(instrument);
+    instrument.onclick=()=>{state.selectMode=false;options.openClip(selectedClip,selectedTrack)};$('.device-panel').prepend(instrument);
   }
   paintWaves();
   return{ensureBeat,handleKey(event){

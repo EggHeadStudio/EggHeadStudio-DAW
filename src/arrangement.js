@@ -45,6 +45,7 @@ export function splitClipAtTime(tracks,trackId,clipId,timeSeconds,bpm,idFactory)
   if(timeSeconds<=clipStart||timeSeconds>=clipStart+clipDuration)return false;
   const elapsed=timeSeconds-clipStart;
   const right=sliceAudioClip(clip,elapsed,clipDuration,bpm,idFactory());
+  if(isInstrumentClip(clip))delete clip.legacyTail;
   Object.assign(clip,sliceAudioClip(clip,0,elapsed,bpm,clip.id));
   track.clips.splice(index+1,0,right);
   return right;

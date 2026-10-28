@@ -1,9 +1,9 @@
 import {detectPitch,noteName,snapBeats} from './music.js';
 import {PianoNoteEditor} from './piano-model.js';
 import {pianoBeatAtClientX} from './timeline.js';
+import {assignSamplerSource,bindSampleDrop,showSamplePicker} from './instrument-source.js';
 
 const escapeHTML = value => String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const patternBeats = 64;
 const lowestMidi = 36;
 const highestMidi = 95;
 let pianoZoom = 1;
@@ -12,28 +12,32 @@ const editors = new Map();
 let activePianoRoot = null;
 let activeSecondsPerBeat = .5;
 let originalEngineTick = null;
+let activePosition=seconds=>seconds;
 const cursorTick = seconds => {
   originalEngineTick?.(seconds);
   const world=activePianoRoot?.querySelector('#pianoWorld');
   const cursor=activePianoRoot?.querySelector('#pianoCursor');
-  if(world&&cursor)cursor.style.left=`${seconds/activeSecondsPerBeat*parseFloat(world.style.getPropertyValue('--beat-width'))}px`;
+  if(world&&cursor)cursor.style.left=`${activePosition(seconds)/activeSecondsPerBeat*parseFloat(world.style.getPropertyValue('--beat-width'))}px`;
 };
-function attachCursor(engine,root,secondsPerBeat){
+function attachCursor(engine,root,secondsPerBeat,position){
   activePianoRoot=root;
   activeSecondsPerBeat=secondsPerBeat;
+  activePosition=position;
   if(engine.onTick!==cursorTick){originalEngineTick=engine.onTick;engine.onTick=cursorTick}
 }
 function editorFor(track) {
   const notes = track.pattern?.notes || [];
-  let editor = editors.get(track.id);
+  const key=track.pattern?.id||track.id;
+  let editor = editors.get(key);
   if (!editor || editor.notes !== notes) {
     editor = new PianoNoteEditor(notes);
-    editors.set(track.id, editor);
+    editors.set(key, editor);
   }
   return editor;
 }
 
 function pianoMarkup(track, grid, editor) {
+  const patternBeats=track.pattern?.lengthBeats||64;
   const displayStep = grid || .0625;
   const beatWidth = 40 * pianoZoom;
   const rowHeight = 22 * rowZoom;
@@ -60,7 +64,7 @@ function pianoMarkup(track, grid, editor) {
   <div class="piano-preview" aria-label="Preview sample notes">${Array.from({length:24},(_,i)=>48+i).map(midi=>`<button data-preview-midi="${midi}" aria-label="Preview ${noteName(midi)}">${noteName(midi)}</button>`).join('')}</div>
   <div class="piano-scroll" id="pianoScroll">
     <div class="piano-world" id="pianoWorld" style="width:${patternBeats*beatWidth}px;height:${(highestMidi-lowestMidi+1)*rowHeight}px;--beat-width:${beatWidth}px;--row-height:${rowHeight}px">
-      <div class="piano-ruler" style="width:${patternBeats*beatWidth}px;height:28px">${Array.from({length:16},(_,bar)=>`<span style="left:${bar*4*beatWidth}px;width:${4*beatWidth}px">Bar ${bar+1}</span>`).join('')}</div>
+      <div class="piano-ruler" style="width:${patternBeats*beatWidth}px;height:28px">${Array.from({length:Math.ceil(patternBeats/4)},(_,bar)=>`<span style="left:${bar*4*beatWidth}px;width:${4*beatWidth}px">Bar ${bar+1}</span>`).join('')}</div>
       <div class="piano-lanes">${rows.join('')}</div>
       <div class="piano-cursor" id="pianoCursor"></div>
     </div>
@@ -71,8 +75,8 @@ export function renderSamplerHTML(track, assets, buffers, grid) {
   const editor = editorFor(track);
   const sampler = track.sampler;
   const buffer = sampler && buffers.get(sampler.asset);
-  const instrumentSettings = sampler ? `<div class="sampler-settings">
-      <label>Sample <select id="samplerAsset">${[...assets.values()].map(asset =>
+  const instrumentSettings = sampler ? `<section class="sample-source"><h3>Sample Source</h3><strong>${sampler.asset?escapeHTML(assets.get(sampler.asset)?.name||'Missing sample'):'No sample selected — Choose a sample to create an instrument.'}</strong><div><button id="chooseSamplerSample">${sampler.asset?'Replace Sample':'Select Sample'}</button><button id="clearSamplerSample" ${sampler.asset?'':'disabled'}>Clear Sample</button><button id="previewSamplerSample" ${sampler.asset?'':'disabled'}>Preview Sample</button><button id="editSamplerSample" ${sampler.asset?'':'disabled'}>Open in Sample Studio</button></div><div class="sampler-settings">
+      <label>Sample <select id="samplerAsset"><option value="">No sample selected</option>${[...assets.values()].map(asset =>
         `<option value="${asset.id}" ${asset.id === sampler.asset ? 'selected' : ''}>${escapeHTML(asset.name)}</option>`
       ).join('')}</select></label>
       <label>Root key <input id="rootKey" type="number" min="24" max="96" value="${sampler.rootNote}"></label>
@@ -87,7 +91,7 @@ export function renderSamplerHTML(track, assets, buffers, grid) {
       <label>Transpose <input id="samplerTranspose" type="number" min="-24" max="24" step="1" value="${sampler.transpose ?? 0}"></label>
       <label>Fine tune (cents) <input id="samplerFineTune" type="number" min="-100" max="100" step="1" value="${sampler.fineTune ?? 0}"></label>
     </div>
-    <p id="pitchStatus" class="hint">${sampler.detected ? `Detected root: ${sampler.detected}${sampler.confidence ? ` · confidence ${(sampler.confidence*100).toFixed(0)}%` : ''} · adjust by ear if needed.` : 'Pitch detection works best on clear, sustained single notes; chords and percussion may need manual tuning.'}</p>` : `<p class="hint">Drum Rack notes trigger their assigned pads; use the step sequencer or place/edit notes here.</p>`;
+    <p id="pitchStatus" class="hint">${sampler.detected ? `Detected root: ${sampler.detected}${sampler.confidence ? ` · confidence ${(sampler.confidence*100).toFixed(0)}%` : ''} · adjust by ear if needed.` : 'Pitch detection works best on clear, sustained single notes; chords and percussion may need manual tuning.'}</p></section>` : `<p class="hint">Drum Rack notes trigger their assigned pads; use the step sequencer or place/edit notes here.</p>`;
   return `<section class="studio sampler-studio">
     <div class="section-title"><button id="backArrange">← Arrangement</button><h2>${escapeHTML(track.name)} · Sampler / Piano Roll</h2>
       <p>${sampler ? 'Sample-based instrument. Piano-roll notes trigger actual sample playback; MIDI devices or files are not required.' : 'Drum Rack pad notes trigger assigned samples; the piano roll and step sequencer edit the same pattern.'}</p></div>
@@ -104,7 +108,8 @@ export function renderSamplerHTML(track, assets, buffers, grid) {
   </section>`;
 }
 
-export function wireSamplerUI(root, {track, tracks, buffers, engine, save, notify, grid, setGrid, back, playhead=()=>0, secondsPerBeat=.5}) {
+export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, save, notify, preview,openSample,grid, setGrid, back, playhead=()=>0, secondsPerBeat=.5,position=seconds=>seconds}) {
+  const patternBeats=track.pattern?.lengthBeats||64;
   const sampler = track.sampler;
   const notes = track.pattern?.notes || [];
   const buffer = () => sampler && buffers.get(sampler.asset);
@@ -118,17 +123,19 @@ export function wireSamplerUI(root, {track, tracks, buffers, engine, save, notif
   root.querySelector('#redoNotes').onclick = () => {if(editor.redo()){track.pattern={notes};save();setGrid(grid)}};
   root.querySelector('#deleteNote').onclick = () => {if(editor.removeSelected()){track.pattern={notes};save();setGrid(grid)}};
   root.querySelector('#copyNotes').onclick = () => editor.copy();
-  root.querySelector('#pasteNotes').onclick = () => {if(editor.paste(playhead()/secondsPerBeat,grid)){track.pattern={notes};save();setGrid(grid)}};
-  root.querySelector('#duplicateNotes').onclick = () => {if(editor.duplicate(grid)){track.pattern={notes};save();setGrid(grid)}};
-  root.querySelector('#quantizeNotes').onclick = () => {if(editor.quantize(grid)){track.pattern={notes};save();setGrid(grid)}};
+  root.querySelector('#pasteNotes').onclick = () => {if(editor.paste(playhead()/secondsPerBeat,grid,patternBeats)){track.pattern={notes};save();setGrid(grid)}};
+  root.querySelector('#duplicateNotes').onclick = () => {if(editor.duplicate(grid,patternBeats)){track.pattern={notes};save();setGrid(grid)}};
+  root.querySelector('#quantizeNotes').onclick = () => {if(editor.quantize(grid,patternBeats)){track.pattern={notes};save();setGrid(grid)}};
   root.querySelector('#noteVelocity').oninput = event => {if(editor.setVelocity(+event.target.value)){track.pattern={notes};save()}};
-  if (sampler) root.querySelector('#samplerAsset').onchange = event => {
-    const selected = buffers.get(event.target.value);
-    if (!selected) return notify('That sample is not loaded. Reimport it before using it in the sampler.');
-    sampler.asset=event.target.value;sampler.start=0;sampler.end=selected.duration;
-    const pitch=detectPitch(selected);if(pitch){sampler.rootNote=pitch.midi;sampler.detected=pitch.name;sampler.confidence=pitch.confidence}
-    save();setGrid(grid);
-  };
+  if(sampler){
+    const assign=id=>{assignSamplerSource(sampler,id,buffers.get(id));save();setGrid(grid)};
+    root.querySelector('#samplerAsset').onchange=event=>{try{assign(event.target.value)}catch(error){notify(error.message)}};
+    root.querySelector('#chooseSamplerSample').onclick=()=>showSamplePicker({assets,buffers,preview,onSelect:assign,notify});
+    root.querySelector('#clearSamplerSample').onclick=()=>assign(null);
+    root.querySelector('#previewSamplerSample').onclick=()=>engine.previewNote(track,buffers,sampler.rootNote,.75,tracks).catch(error=>notify(error.message));
+    root.querySelector('#editSamplerSample').onclick=()=>openSample(sampler.asset);
+    bindSampleDrop(root.querySelector('.sample-source'),assign,notify);
+  }
   if (sampler) root.querySelector('#rootKey').onchange = event => {sampler.rootNote=Math.max(24,Math.min(96,Number(event.target.value)||60));save()};
   if (sampler) root.querySelector('#detectKey').onclick = () => {
     const selected=buffer(),pitch=selected&&detectPitch(selected,sampler.start||0,sampler.end||selected.duration);
@@ -143,8 +150,8 @@ export function wireSamplerUI(root, {track, tracks, buffers, engine, save, notif
     input.onchange=event=>{sampler[key]=key==='mode'?event.target.value:Math.max(minimum,Math.min(maximum,Number(event.target.value)||0));save()};
   }
   if (sampler) {
-    root.querySelector('#samplerStart').onchange=event=>{sampler.start=Math.max(0,Math.min(Math.max(0,buffer().duration-.001),Number(event.target.value)||0));save()};
-    root.querySelector('#samplerEnd').onchange=event=>{sampler.end=Math.max(sampler.start+.001,Math.min(buffer().duration,Number(event.target.value)||buffer().duration));save()};
+    root.querySelector('#samplerStart').onchange=event=>{if(!buffer())return notify('Choose a sample first.');sampler.start=Math.max(0,Math.min(Math.max(0,buffer().duration-.001),Number(event.target.value)||0));save()};
+    root.querySelector('#samplerEnd').onchange=event=>{if(!buffer())return notify('Choose a sample first.');sampler.end=Math.max(sampler.start+.001,Math.min(buffer().duration,Number(event.target.value)||buffer().duration));save()};
   }
   track.fx ||= {filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25};
   root.querySelector('#filterType').value=track.fx.filterType;
@@ -202,9 +209,9 @@ export function wireSamplerUI(root, {track, tracks, buffers, engine, save, notif
   world.addEventListener('click',event=>{
     if(event.target.closest('.piano-note')){const id=event.target.closest('.piano-note').dataset.noteId;if(!event.ctrlKey&&!event.metaKey&&!event.shiftKey)editor.select([id]);drawSelection();return}
     const lane=event.target.closest('.piano-lane');if(!lane)return;
-    const durationBeats=Math.max(grid||.0625,+root.querySelector('#noteLength').value);
+    const durationBeats=Math.min(patternBeats,Math.max(grid||.0625,+root.querySelector('#noteLength').value));
     const beat=Math.min(patternBeats-durationBeats,snapBeats(pianoBeatAtClientX(event.clientX,lane.getBoundingClientRect().left,worldBeatWidth),grid)),midi=+lane.dataset.midi;
-    const note=editor.add({beat,midi,durationBeats,velocity:.85},patternBeats);
+    const note=editor.add({beat,midi,durationBeats,velocity:Number(root.querySelector('#noteVelocity').value)},patternBeats);
     track.pattern={notes};save();setGrid(grid);engine.previewNote(track,buffers,note.midi,.25,tracks).catch(error=>notify(`Preview failed: ${error.message}`));
   });
   function noteElementStyle(id,note) {
@@ -221,11 +228,11 @@ export function wireSamplerUI(root, {track, tracks, buffers, engine, save, notif
     if(event.target.matches('input,select'))return;
     if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();if(event.shiftKey?editor.redo():editor.undo()){track.pattern={notes};save();setGrid(grid)}}
     else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='c'){event.preventDefault();editor.copy()}
-    else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='v'){event.preventDefault();if(editor.paste(playhead()/secondsPerBeat,grid)){track.pattern={notes};save();setGrid(grid)}}
+    else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='v'){event.preventDefault();if(editor.paste(playhead()/secondsPerBeat,grid,patternBeats)){track.pattern={notes};save();setGrid(grid)}}
     else if(event.key==='Delete'||event.key==='Backspace'){if(editor.removeSelected()){track.pattern={notes};save();setGrid(grid)}}
-    else if(event.key.toLowerCase()==='d'){if(editor.duplicate(grid)){track.pattern={notes};save();setGrid(grid)}}
+    else if(event.key.toLowerCase()==='d'){if(editor.duplicate(grid,patternBeats)){track.pattern={notes};save();setGrid(grid)}}
   });
   root.tabIndex=0;
-  attachCursor(engine,root,secondsPerBeat);
+  attachCursor(engine,root,secondsPerBeat,position);
   root.querySelector('#backArrange').onclick=()=>{if(activePianoRoot===root)activePianoRoot=null;back()};
 }

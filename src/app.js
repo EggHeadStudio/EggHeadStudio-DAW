@@ -3,9 +3,11 @@ import {detectPitch,snapBeats} from './music.js';
 import {renderSamplerHTML,wireSamplerUI} from './sampler-ui.js';
 import {renderDrumRackHTML,wireDrumRackUI} from './drum-rack-ui.js';
 import {SampleEditor,renderSampleStudioHTML,wireSampleStudio,drawSampleStudioWave,stopSampleStudioPreview} from './sample-editor.js';
-import {ArrangementHistory,duplicateClip,moveClipTo,splitClipAtTime} from './arrangement.js';
+import {ArrangementHistory,copyTimeRange,pasteTimeRange,duplicateClip,moveClipTo,splitClipAtTime} from './arrangement.js';
+import {createInstrumentClip,isInstrumentClip,instrumentType,makePatternIndependent,migrateInstrumentArrangement,patternForClip} from './instrument-clips.js';
+import {selectedPatternContext,setPatternLength} from './pattern-editor.js';
 import {TimelineScale,formatTransportTime,timelineBeatsAtClientX as timelineBeatsAtScale,timelineContentOrigin,timelinePixelsAtClientX} from './timeline.js';
-import {createEmptyProject,createProjectTrack,deleteProjectTrack,DEFAULT_MASTER_SETTINGS,normalizeArrangementLoop,parseProject,planProjectReset,serializeProject} from './project-state.js';
+import {createEmptyProject,createProjectTrack,deleteProjectTrack,DEFAULT_MASTER_SETTINGS,normalizeArrangementLoop,normalizeProjectSchema,parseProject,planProjectReset,serializeProject} from './project-state.js';
 import {createEmptySampleSession,resolveRecordingChunks,shouldConfirmSampleDiscard} from './sample-lifecycle.js';
 import {DEFAULT_MASTERING_SETTINGS,MASTERING_PRESETS,analyzeMasterBufferAsync,masteringEqResponse,normalizeMasteringSettings} from './mastering.js';
 import {loudnessMatchGainDb,stereoMonitorMatrix} from './mastering-dsp.js';
@@ -15,23 +17,32 @@ import {createPortableProjectArchive,getProjectAssetIds,openPortableProjectArchi
 import {addId3v23Metadata,addWavInfoMetadata,normalizeReleaseMetadata,validateReleaseMetadata} from './release-metadata.js';
 import {mountArrangementWorkspace} from './arrangement-workspace.js';
 import {showTrackSetup} from './track-ui.js';
+import {RecordingStudio} from './recording-studio.js';
 const arrangementWorkspaceState={selection:null,insertionBeat:0,selectMode:false,follow:false,browserOpen:true,mixerOpen:true,devicesOpen:true};
 let arrangementWorkspace=null;
 const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={id:uid(),schemaVersion:1,name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,releaseMetadata:{},exportSettings:normalizeExportSettings(),tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null,exportController=null,exportRun=null,releaseZipController=null,releaseArtworkBlob=null,releaseArtworkSourceBlob=null,releaseArtworkUrl=null;
 let portableImportController=null;
 const portableBufferDigests=new WeakMap();
 const dbp=new Promise((resolve,reject)=>{const r=indexedDB.open('pulse-studio-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('assets');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
+const recordingStudio=new RecordingStudio({engine,getProject:()=>project,assets,buffers,save,notify,
+ storeAsset:async(id,file,buffer)=>{await dbSet(id,file);buffers.set(id,buffer);assets.set(id,{id,name:file.name,path:file.name,size:file.size,duration:buffer.duration})},
+ createTrack:()=>{const track=createProjectTrack({name:`Recording ${project.tracks.length+1}`,color:'#db8a70'},uid());project.tracks.push(track);save();return track},
+ openSample:openInstrumentSample,
+ openArrangement:(trackId,clipId)=>{selectedTrack=project.tracks.findIndex(track=>track.id===trackId);selectedClip=clipId;view='arrange';render()},
+ onBusy:busy=>{for(const element of document.querySelectorAll('header button,header input,nav button'))element.disabled=busy;const stop=$('#stop');if(stop)stop.disabled=false}
+});
+window.addEventListener('beforeunload',event=>{if(recordingStudio.busy){event.preventDefault();event.returnValue='A recording or buffered take is not saved.'}});
 async function dbSet(k,v){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets','readwrite');t.objectStore('assets').put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}async function dbGet(k){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets');const r=t.objectStore('assets').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 async function dbSetMany(entries){const db=await dbp;return new Promise((resolve,reject)=>{const tx=db.transaction('assets','readwrite'),store=tx.objectStore('assets');for(const[key,value]of entries)value===null?store.delete(key):store.put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Asset cache transaction was aborted.'))})}
 function notify(s){$('#toast').textContent=s;$('#toast').classList.add('show');setTimeout(()=>$('#toast')?.classList.remove('show'),3500)}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function save(markDirty=true){project.id ||= uid();project.schemaVersion=1;project.modifiedAt=new Date().toISOString();project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.masterSettings={...engine.masterSettings};project.mastering=normalizeMasteringSettings(engine.masteringSettings);if(engine.playing){engine.syncTracks(project.tracks,project.bpm);engine.updatePlayback(project,buffers)}localStorage.setItem('pulse-project',serializeProject(project));if(markDirty)projectDirty=true;const state=$('#projectSaveState');if(state)state.textContent=projectDirty?'Unsaved changes':'Saved locally'}
+function save(markDirty=true){project.id ||= uid();normalizeProjectSchema(project);project.modifiedAt=new Date().toISOString();project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.masterSettings={...engine.masterSettings};project.mastering=normalizeMasteringSettings(engine.masteringSettings);if(engine.playing){const playback=recordingStudio.busy?recordingStudio.playbackProject():project;engine.syncTracks(playback.tracks,project.bpm);engine.updatePlayback(playback,buffers)}localStorage.setItem('pulse-project',serializeProject(project));if(markDirty)projectDirty=true;const state=$('#projectSaveState');if(state)state.textContent=projectDirty?'Unsaved changes':'Saved locally'}
 function barSeconds(){return 240/project.bpm}
 function beatsWidth(){return 156*zoom}
 function timelineScale(){return new TimelineScale(project.bpm,beatsWidth()/4)}
 function timelineBeatsAtClientX(clientX){return timelineBeatsAtScale(clientX,$('#ruler'),$('.arrangement'),timelineScale())}
 function timelineTimeAtClientX(clientX,grid=0){return Math.max(0,snapBeats(timelineBeatsAtClientX(clientX),grid)*60/project.bpm)}
-function clipWidth(c){return Math.max(1,timelineScale().timeToPixels(clipDurationSeconds(c)))}
+function clipWidth(c){return Math.max(1,timelineScale().timeToPixels(clipDurationSeconds(c,project.bpm)))}
 function setArrangementZoom(value,anchorClientX){const arrangement=$('.arrangement'),ruler=$('#ruler');if(!arrangement||!ruler){zoom=value;render();return}const anchor=anchorClientX??arrangement.getBoundingClientRect().left+arrangement.clientWidth/2,anchorTime=Math.max(0,timelineScale().pixelsToTime(timelinePixelsAtClientX(anchor,ruler,arrangement)));zoom=Math.max(.4,Math.min(4,value));render();const nextArrangement=$('.arrangement'),nextRuler=$('#ruler');if(nextArrangement&&nextRuler){const timelineScreenX=anchor-nextRuler.getBoundingClientRect().left;nextArrangement.scrollLeft=Math.max(0,timelineScale().timeToPixels(anchorTime)-timelineScreenX)}}
 function shell(){app.innerHTML=`<header><div class="brand"><span class="logo">◉</span><b>EggHeadStudio</b><span>DAW</span></div><input id="projectName" value="${esc(project.name)}" aria-label="Project name"><div class="transport"><button id="toStart" title="Back to start" aria-label="Back to start">⏮</button><button id="play" class="primary" title="Play Arrangement" aria-label="Play Arrangement">▶</button><button id="stop" title="Stop Playback" aria-label="Stop Playback">■</button><span class="clock" id="clock">1.1.1</span><label>BPM <input id="bpm" type="number" min="40" max="240" value="${project.bpm}" aria-label="Project tempo in BPM"></label><button id="loop" class="${project.loop?'active':''}" aria-label="Toggle arrangement loop">↻ Loop</button></div><div class="actions"><button id="newProject" title="Create an Empty Project" aria-label="New Project">New Project</button><button id="saveProject" title="Save project metadata locally">Save Locally</button><button id="saveEhs" title="Download the complete portable .ehs project">Save .EHS</button><button id="openProject" title="Open a legacy JSON project">Open JSON</button><button id="openEhs" title="Open a portable .ehs project">Open .EHS</button><button id="exportMix" title="Open Export Studio">Export Audio</button><span id="projectSaveState" role="status">${projectDirty?'Unsaved changes':'Saved locally'}</span></div></header><nav><button data-view="arrange" class="selected">▥ Arrangement</button><button data-view="sample">◉ Sample Studio</button><button data-view="master">▤ Mastering</button><button data-view="export">⇩ Export Studio</button><span class="grow"></span><span id="status">Local-first · Browser audio</span></nav><main id="main"></main><footer><span>EggHeadStudio DAW • Prototype v0.1</span><span id="footerInfo">Ready</span></footer><div id="toast" role="status"></div><input id="importProject" type="file" accept="application/json,.json" hidden><input id="importEhs" type="file" accept=".ehs,application/vnd.eggheadstudio.project+zip,application/zip" hidden><input id="artworkFile" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" hidden><input id="importFiles" type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a" multiple hidden><input id="importFolder" type="file" webkitdirectory directory multiple hidden><dialog id="newProjectDialog" class="new-project-dialog" aria-labelledby="newProjectTitle"><h2 id="newProjectTitle">Start a New Project?</h2><p id="newProjectMessage">Your project has unsaved changes. Save a JSON copy before creating an empty project, discard changes, or cancel.</p><div class="new-project-actions"><button id="saveAndNew">Save Current Project</button><button id="discardAndNew" class="accent">Discard Changes</button><button id="cancelNewProject">Cancel</button></div></dialog>`;wireShell();render()}
 document.addEventListener('change',event=>{if(event.target?.id==='snapGrid'){snapGrid=+event.target.value;$$('.lane').forEach(lane=>lane.style.backgroundSize=`${beatsWidth()*(snapGrid||.0625)/4}px 100%`)}});
@@ -100,6 +111,7 @@ async function importPortableProject(file){
   }
   for(const track of archive.project.tracks){
    for(const clip of track.clips||[]){
+    if(isInstrumentClip(clip))continue;
     const buffer=stagedBuffers.get(idRemap.get(String(clip.asset))||String(clip.asset));
     if(!buffer||clip.end>buffer.duration+1/buffer.sampleRate)throw new Error(`Clip "${clip.id||clip.asset}" extends beyond its packaged audio.`);
    }
@@ -109,8 +121,8 @@ async function importPortableProject(file){
     if(!buffer||start<0||end>buffer.duration+1/buffer.sampleRate||start>=end)throw new Error(`Sampler track "${track.name||track.id}" has an invalid sample range.`);
    }
   }
-  const restored={...archive.project,tracks:archive.project.tracks.map(track=>({...track,clips:(track.clips||[]).map(clip=>({...clip,asset:clip.asset?idRemap.get(String(clip.asset))||clip.asset:clip.asset})),sampler:track.sampler?{...track.sampler,asset:track.sampler.asset?idRemap.get(String(track.sampler.asset))||track.sampler.asset:track.sampler.asset}:track.sampler,drumRack:track.drumRack?{...track.drumRack,pads:(track.drumRack.pads||[]).map(pad=>({...pad,asset:pad.asset?idRemap.get(String(pad.asset))||pad.asset:pad.asset}))}:track.drumRack}))};
-  restored.schemaVersion=1;restored.id ||= uid();restored.releaseMetadata=normalizeReleaseMetadata(restored.releaseMetadata,restored);
+  const restored=normalizeProjectData({...archive.project,tracks:archive.project.tracks.map(track=>({...track,clips:(track.clips||[]).map(clip=>({...clip,...(clip.asset?{asset:idRemap.get(String(clip.asset))||clip.asset}:{})})),sampler:track.sampler?{...track.sampler,asset:track.sampler.asset?idRemap.get(String(track.sampler.asset))||track.sampler.asset:track.sampler.asset}:track.sampler,drumRack:track.drumRack?{...track.drumRack,pads:(track.drumRack.pads||[]).map(pad=>({...pad,asset:pad.asset?idRemap.get(String(pad.asset))||pad.asset:pad.asset}))}:track.drumRack}))});
+  restored.id ||= uid();restored.releaseMetadata=normalizeReleaseMetadata(restored.releaseMetadata,restored);
   const artKeys={current:`${restored.id}:artwork`,source:`${restored.id}:artwork-source`};
   if(archive.artworkFile)restored.releaseArtwork={...(restored.releaseArtwork||{}),key:artKeys.current,sourceKey:artKeys.source};
   writes.push([artKeys.current,archive.artworkFile],[artKeys.source,archive.artworkSourceFile]);
@@ -128,7 +140,7 @@ async function importPortableProject(file){
   await dbSetMany(writes);
   if(archive.presetFiles.size)try{localStorage.setItem('pulse-master-presets',JSON.stringify(portablePresets))}catch(error){notify(`Project opened, but custom presets could not be saved locally: ${error.message}`)}
   engine.stop(true);engine.setMaster({...DEFAULT_MASTER_SETTINGS,...restored.masterSettings});engine.setMastering(restored.mastering||DEFAULT_MASTERING_SETTINGS);
-  resetArrangementEditing();project=restored;normalizeProject();for(const[id,buffer]of stagedBuffers)buffers.set(id,buffer);for(const[id,asset]of stagedAssets)assets.set(id,asset);
+  resetArrangementEditing();project=restored;for(const[id,buffer]of stagedBuffers)buffers.set(id,buffer);for(const[id,asset]of stagedAssets)assets.set(id,asset);
   releaseArtworkBlob=archive.artworkFile;releaseArtworkSourceBlob=archive.artworkSourceFile;
   if(releaseArtworkUrl)URL.revokeObjectURL(releaseArtworkUrl);releaseArtworkUrl=releaseArtworkBlob?URL.createObjectURL(releaseArtworkBlob):null;
   projectDirty=false;selectedTrack=0;selectedClip=null;playhead=0;masteringPreview=null;view='arrange';save(false);shell();
@@ -162,6 +174,7 @@ function openNewProjectDialog(){
  $('#cancelNewProject').onclick=()=>dialog.close();
 }
 function wireShell(){
+ const recordingNavigation=document.createElement('button');recordingNavigation.dataset.view='recording';recordingNavigation.textContent='Recording Studio';document.querySelector('nav [data-view="sample"]').after(recordingNavigation);
  $('#clock').setAttribute('aria-label','Musical position (bar.beat.subdivision)');
  $('#clock').insertAdjacentHTML('afterend','<output id="elapsedTime" class="elapsed-time" aria-label="Arrangement time (minutes:seconds.milliseconds)" title="Arrangement position · minutes:seconds.milliseconds">00:00.000</output>');
  $('#elapsedTime').textContent=formatTransportTime(engine.position());
@@ -170,14 +183,14 @@ function wireShell(){
  $('#loop').onclick=()=>{checkpointArrangement();project.loop=!project.loop;save();$('#loop').classList.toggle('active',project.loop);if(view==='arrange')render()};
  $('#newProject').onclick=openNewProjectDialog;
  $('#play').onclick=async()=>{if(engine.playing){playhead=engine.position();engine.stop();$('#play').textContent='▶'}else{try{await engine.play(project,buffers,playhead);$('#play').textContent='Ⅱ'}catch(e){notify(e.message)} }};
- $('#stop').onclick=()=>{engine.stop();playhead=engine.offset;$('#play').textContent='▶';tick(playhead)};
+ $('#stop').onclick=()=>{if(recordingStudio.busy){if(recordingStudio.state==='requesting')recordingStudio.cancel();else recordingStudio.finish();return}engine.stop();playhead=engine.offset;$('#play').textContent='▶';tick(playhead)};
  $('#toStart').onclick=()=>{engine.stop(true);playhead=0;tick(0);$('#play').textContent='▶'};
  $('#saveProject').onclick=()=>saveProjectFile();
  $('#saveEhs').onclick=savePortableProject;
  $('#openEhs').onclick=()=>$('#importEhs').click();
  $('#importEhs').onchange=async event=>{const file=event.target.files?.[0];if(file)await importPortableProject(file);event.target.value=''};
  $('#openProject').onclick=()=>$('#importProject').click();
- $('#importProject').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;if(projectDirty&&!window.confirm('The current project has unsaved changes. Open this JSON project anyway?')){e.target.value='';return}try{const p=parseProject(await file.text());engine.stop();resetArrangementEditing();project=p;normalizeProject();engine.setMaster({...DEFAULT_MASTER_SETTINGS,...p.masterSettings});engine.setMastering(p.mastering||DEFAULT_MASTERING_SETTINGS);await restoreAssets();save(false);projectDirty=false;shell();notify('JSON project loaded; samples not present in the local library may need relinking.')}catch(err){notify(err.message)}finally{e.target.value=''}};
+ $('#importProject').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;if(projectDirty&&!window.confirm('The current project has unsaved changes. Open this JSON project anyway?')){e.target.value='';return}try{const p=normalizeProjectData(parseProject(await file.text()));engine.stop();resetArrangementEditing();project=p;engine.setMaster({...DEFAULT_MASTER_SETTINGS,...p.masterSettings});engine.setMastering(p.mastering||DEFAULT_MASTERING_SETTINGS);await restoreAssets();save(false);projectDirty=false;shell();notify('JSON project loaded; samples not present in the local library may need relinking.')}catch(err){notify(err.message)}finally{e.target.value=''}};
  $('#exportMix').onclick=()=>openExportStudio();
  $$('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;render()});
  $('#importFiles').onchange=e=>importFiles([...e.target.files]);
@@ -190,30 +203,73 @@ const $$=s=>[...document.querySelectorAll(s)];
 async function addAsset(file){const id=uid(),ctx=await engine.init(),buffer=await ctx.decodeAudioData(await file.arrayBuffer());assets.set(id,{id,name:file.name,path:file.webkitRelativePath||file.name,size:file.size,duration:buffer.duration});buffers.set(id,buffer);await dbSet(id,file);return id}
 async function importFiles(files){let ok=0;for(const f of files){if(!/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(f.name)&&!f.type.startsWith('audio/'))continue;try{await addAsset(f);ok++}catch(e){console.warn(f.name,e)}}render();notify(`Imported ${ok} audio files. Files cached locally.`)}
 async function restoreAssets(){const ids=new Set(project.tracks.flatMap(t=>[...t.clips.map(c=>c.asset),t.sampler?.asset,...(t.drumRack?.pads||[]).map(p=>p.asset)].filter(Boolean)));for(const id of ids){if(buffers.has(id))continue;const f=await dbGet(id);if(f){try{const b=await(await engine.init()).decodeAudioData(await f.arrayBuffer());buffers.set(id,b);assets.set(id,{id,name:f.name||'Sample',duration:b.duration,path:f.name})}catch{}}}}
-function normalizeProject(){normalizeArrangementLoop(project);project.id ||= uid();project.schemaVersion=1;project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.bpm=Math.max(40,Math.min(240,Number(project.bpm)||120));project.patternBeats=64;project.exportSettings=normalizeExportSettings(project.exportSettings);for(const track of project.tracks){track.clips ||= [];track.pattern ||= {notes:[]};track.pattern.notes ||= [];if(!track.drumRack)continue;track.drumRack.steps=[16,32,64].includes(track.drumRack.steps)?track.drumRack.steps:16;track.drumRack.pads=(track.drumRack.pads||[]).slice(0,16);while(track.drumRack.pads.length<16){const index=track.drumRack.pads.length;track.drumRack.pads.push({name:`Pad ${index+1}`,note:36+index,asset:null,volume:1,pitch:0,pan:0,mute:false})}for(const [index,pad] of track.drumRack.pads.entries()){pad.name ||= `Pad ${index+1}`;pad.note=Number.isInteger(pad.note)?pad.note:36+index;pad.volume=Number.isFinite(pad.volume)?pad.volume:1;pad.pitch=Number.isFinite(pad.pitch)?pad.pitch:0;pad.pan=Number.isFinite(pad.pan)?pad.pan:0;pad.mute=Boolean(pad.mute)}}}
+function normalizeProject(){project=normalizeProjectData(project)}
+function normalizeProjectData(input){
+ const project=structuredClone(input);
+  normalizeArrangementLoop(project);project.id ||= uid();project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.bpm=Math.max(40,Math.min(240,Number(project.bpm)||120));project.patternBeats ||= 64;project.exportSettings=normalizeExportSettings(project.exportSettings);
+  for(const track of project.tracks){
+   track.clips ||= [];if(!track.patterns){track.pattern ||= {notes:[]};track.pattern.notes ||= []}
+   if(!track.drumRack)continue;
+   track.drumRack.steps=[16,32,64].includes(track.drumRack.steps)?track.drumRack.steps:16;track.drumRack.pads=(track.drumRack.pads||[]).slice(0,16);
+   while(track.drumRack.pads.length<16){const index=track.drumRack.pads.length;track.drumRack.pads.push({name:`Pad ${index+1}`,note:36+index,asset:null,volume:1,pitch:0,pan:0,mute:false})}
+   for(const [index,pad]of track.drumRack.pads.entries()){pad.name ||= `Pad ${index+1}`;pad.note=Number.isInteger(pad.note)?pad.note:36+index;pad.volume=Number.isFinite(pad.volume)?pad.volume:1;pad.pitch=Number.isFinite(pad.pitch)?pad.pitch:0;pad.pan=Number.isFinite(pad.pan)?pad.pan:0;pad.mute=Boolean(pad.mute)}
+  }
+  migrateInstrumentArrangement(project,uid);normalizeProjectSchema(project);
+ return project;
+}
 function checkpointArrangement(){arrangementHistory.checkpoint(project.tracks,project)}
 function commitArrangement(){save();render()}
-function splitSelectedClip(){if(!selectedClip)return notify('Select a clip to split.');const track=project.tracks.find(item=>item.clips.some(clip=>clip.id===selectedClip)),clip=track?.clips.find(item=>item.id===selectedClip);if(!clip)return;const start=clip.bar*barSeconds(),end=start+clipDurationSeconds(clip);if(playhead<=start||playhead>=end)return notify('Move the playhead inside the selected clip to split it.');checkpointArrangement();const right=splitClipAtTime(project.tracks,track.id,selectedClip,playhead,project.bpm,uid);if(!right)return notify('Could not split the selected clip.');selectedClip=right.id;commitArrangement()}
-function duplicateSelectedClip(){if(!selectedClip)return notify('Select a clip to duplicate.');const track=project.tracks.find(item=>item.clips.some(clip=>clip.id===selectedClip));if(!track)return;checkpointArrangement();const copy=duplicateClip(project.tracks,track.id,selectedClip,project.bpm,uid);if(!copy){arrangementHistory.undo(project.tracks);return notify('Could not duplicate the selected clip.')}selectedClip=copy.id;commitArrangement()}
+function splitSelectedClip(){if(!selectedClip)return notify('Select a clip to split.');const track=project.tracks.find(item=>item.clips.some(clip=>clip.id===selectedClip)),clip=track?.clips.find(item=>item.id===selectedClip);if(!clip)return;const start=clip.bar*barSeconds(),end=start+clipDurationSeconds(clip,project.bpm);if(playhead<=start||playhead>=end)return notify('Move the playhead inside the selected clip to split it.');checkpointArrangement();const right=splitClipAtTime(project.tracks,track.id,selectedClip,playhead,project.bpm,uid);if(!right)return notify('Could not split the selected clip.');selectedClip=right.id;commitArrangement()}
+function duplicateSelectedClip(shared=false){if(!selectedClip)return notify('Select a clip to duplicate.');const track=project.tracks.find(item=>item.clips.some(clip=>clip.id===selectedClip));if(!track)return;checkpointArrangement();const copy=duplicateClip(project.tracks,track.id,selectedClip,project.bpm,uid,shared===true);if(!copy){arrangementHistory.undo(project.tracks);return notify('Could not duplicate the selected clip.')}selectedClip=copy.id;commitArrangement()}
 function deleteSelectedClip(){if(!selectedClip)return;checkpointArrangement();for(const track of project.tracks)track.clips=track.clips.filter(clip=>clip.id!==selectedClip);selectedClip=null;commitArrangement()}
-function copySelectedClip(){const clip=project.tracks.flatMap(track=>track.clips).find(item=>item.id===selectedClip);if(!clip)return notify('Select a clip to copy.');arrangementClipboard={...clip,id:uid()};notify('Clip copied.')}
-function pasteClip(){if(!arrangementClipboard)return notify('Copy a clip before pasting.');const track=project.tracks[selectedTrack];if(!track)return;if(track.sampler||track.drumRack)return notify('Paste audio clips onto an audio track.');checkpointArrangement();const clip={...arrangementClipboard,id:uid(),bar:Math.max(0,snapBeats(arrangementWorkspaceState.insertionBeat,snapGrid)/4)};track.clips.push(clip);selectedClip=clip.id;commitArrangement()}
+function copySelectedClip(){const index=project.tracks.findIndex(track=>track.clips.some(clip=>clip.id===selectedClip)),clip=project.tracks[index]?.clips.find(clip=>clip.id===selectedClip);if(!clip)return notify('Select a clip to copy.');const start=clip.bar*4;arrangementWorkspaceState.clipboard=copyTimeRange(project.tracks,{startBeat:start,endBeat:start+clipDurationSeconds(clip,project.bpm)*project.bpm/60,firstTrack:index,lastTrack:index},project.bpm);arrangementWorkspaceState.clipboard.entries=arrangementWorkspaceState.clipboard.entries.filter(entry=>entry.clip.id===clip.id);arrangementClipboard=arrangementWorkspaceState.clipboard;notify('Clip copied.')}
+function pasteClip(){const clipboard=arrangementWorkspaceState.clipboard||arrangementClipboard;if(!clipboard)return notify('Copy a clip before pasting.');try{pasteTimeRange(project.tracks,clipboard,arrangementWorkspaceState.insertionBeat,selectedTrack,uid,true);checkpointArrangement();const copies=pasteTimeRange(project.tracks,clipboard,arrangementWorkspaceState.insertionBeat,selectedTrack,uid);selectedClip=copies[0]?.id;commitArrangement()}catch(error){notify(error.message)}}
+function openInstrumentClip(id=selectedClip,index=selectedTrack){
+ const track=project.tracks[index];if(!track?.sampler&&!track?.drumRack)return notify('Select an instrument track first.');
+ const clip=track.clips.find(clip=>clip.id===id&&isInstrumentClip(clip))||track.clips.find(isInstrumentClip);
+ selectedTrack=index;selectedClip=clip?.id||null;view=track.drumRack?'rack':'keys';render();
+}
+function addPatternClip(index=selectedTrack,beat=arrangementWorkspaceState.insertionBeat,lengthBeats=16){
+ const track=project.tracks[index];if(!track?.sampler&&!track?.drumRack)return notify('Select a Sampler or Drum Rack track first.');
+ try{if(!Number.isFinite(lengthBeats)||lengthBeats<=0||lengthBeats>64)throw new Error('Pattern length must be greater than zero and at most 64 beats.');checkpointArrangement();const clip=createInstrumentClip(track,snapBeats(beat,snapGrid),uid,{name:`${track.name} ${track.patterns.length+1}`,lengthBeats});selectedTrack=index;selectedClip=clip.id;commitArrangement()}catch(error){notify(error.message)}
+}
+function choosePatternLength(index=selectedTrack){
+ const dialog=document.createElement('dialog');dialog.className='track-setup';
+ dialog.innerHTML='<form><h2>Create Pattern</h2><label>Length <select id="newPatternLength"><option value="4">1 bar (4 beats)</option><option value="8">2 bars (8 beats)</option><option value="16" selected>4 bars (16 beats)</option><option value="32">8 bars (32 beats)</option><option value="custom">Custom beats</option></select></label><label>Custom beats <input id="customPatternLength" type="number" min=".25" max="64" step=".25" value="16" disabled></label><p role="alert"></p><button type="button" data-cancel>Cancel</button><button type="submit">Create Pattern</button></form>';
+ const select=dialog.querySelector('select'),input=dialog.querySelector('input');
+ select.onchange=()=>input.disabled=select.value!=='custom';
+ dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();
+ dialog.querySelector('form').onsubmit=event=>{event.preventDefault();const length=select.value==='custom'?Number(input.value):Number(select.value);if(!Number.isFinite(length)||length<=0||length>64){dialog.querySelector('[role=alert]').textContent='Choose a length from 0.25 to 64 beats.';return}addPatternClip(index,arrangementWorkspaceState.insertionBeat,length);dialog.close()};
+ dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
+}
+function unlinkSelectedPattern(){
+ const track=project.tracks[selectedTrack],clip=track?.clips.find(clip=>clip.id===selectedClip);
+ if(!isInstrumentClip(clip))return;
+ checkpointArrangement();makePatternIndependent(track,clip,uid);save();render();
+}
 function undoArrangement(){if(arrangementHistory.undo(project.tracks,project)){selectedClip=null;commitArrangement()}}
 function redoArrangement(){if(arrangementHistory.redo(project.tracks,project)){selectedClip=null;commitArrangement()}}
 document.addEventListener('keydown',event=>{if(view!=='arrange'||event.target.matches('input,select,textarea,[contenteditable="true"]'))return;if(arrangementWorkspace?.handleKey(event))return;const mod=event.ctrlKey||event.metaKey,key=event.key.toLowerCase();if(mod&&key==='z'){event.preventDefault();event.shiftKey?redoArrangement():undoArrangement()}else if(mod&&key==='y'){event.preventDefault();redoArrangement()}else if(mod&&key==='c'){event.preventDefault();copySelectedClip()}else if(mod&&key==='v'){event.preventDefault();pasteClip()}else if(mod&&key==='d'){event.preventDefault();duplicateSelectedClip()}else if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();deleteSelectedClip()}else if(key==='s'){event.preventDefault();splitSelectedClip()}});
 function addArrangementControls(){
  const tools=$('.editor-tools');
  if(!tools)return;
- tools.insertAdjacentHTML('afterbegin',`<label class="snap-control">Snap <select id="snapGrid"><option value="4">1 bar</option><option value="2">1/2 bar</option><option value="1">1/4 note</option><option value="0.5">1/8 note</option><option value="0.25">1/16 note</option><option value="0.125">1/32 note</option><option value="0.0625">1/64 note</option><option value="0">Off</option></select></label><button id="openPiano">Piano Roll</button><button id="addSampler">＋ Sampler</button><button id="addRack">＋ Drum Rack</button><button id="splitClip">Split at playhead</button><button id="duplicateClip">Duplicate</button><button id="copyClip">Copy</button><button id="pasteClip">Paste</button><button id="undoArrangement" ${arrangementHistory.undoStack.length?'':'disabled'}>Undo</button><button id="redoArrangement" ${arrangementHistory.redoStack.length?'':'disabled'}>Redo</button>`);
+ tools.insertAdjacentHTML('afterbegin',`<label class="snap-control">Snap <select id="snapGrid"><option value="4">1 bar</option><option value="2">1/2 bar</option><option value="1">1/4 note</option><option value="0.5">1/8 note</option><option value="0.25">1/16 note</option><option value="0.125">1/32 note</option><option value="0.0625">1/64 note</option><option value="0">Off</option></select></label><button id="openPiano">Open Editor</button><button id="splitClip">Split at playhead</button><button id="duplicateClip">Duplicate</button><button id="copyClip">Copy</button><button id="pasteClip">Paste</button><button id="undoArrangement" ${arrangementHistory.undoStack.length?'':'disabled'}>Undo</button><button id="redoArrangement" ${arrangementHistory.redoStack.length?'':'disabled'}>Redo</button>`);
  $('#snapGrid').value=String(snapGrid);
  $('#snapGrid').onchange=event=>snapGrid=Number(event.target.value);
- $('#openPiano').onclick=()=>{if(project.tracks[selectedTrack]?.sampler||project.tracks[selectedTrack]?.drumRack){view='keys';render()}else notify('Select an instrument track first, or create a sampler or Drum Rack.')};
- $('#addSampler').onclick=()=>openTrackSetup('sampler');
-  $('#addRack').onclick=()=>openTrackSetup('drumRack');
+ tools.insertAdjacentHTML('beforeend','<button id="linkedDuplicate">Linked Duplicate</button><button id="unlinkPattern">Make Independent</button>');
+ $('#openPiano').textContent='Open Editor';$('#openPiano').onclick=()=>openInstrumentClip();
+ $('#linkedDuplicate').onclick=()=>duplicateSelectedClip(true);
+ $('#unlinkPattern').onclick=unlinkSelectedPattern;
+ const footer=document.createElement('div');footer.className='track-row add-track-row';
+ const add=$('#addTrack');add.textContent='+ Add Track';add.className='add-track-button';footer.append(add);$('.arrangement').append(footer);
   for(const [index,label]of $$('.track-label[data-track]').entries()){
    const button=document.createElement('button');button.textContent='Edit';button.dataset.trackSettings=String(index);button.title='Edit track name and color';button.setAttribute('aria-label',`Edit ${project.tracks[index].name} track settings`);
    button.onclick=event=>{event.stopPropagation();openTrackSetup('audio',project.tracks[index])};
    label.querySelector('.track-actions').append(button);
+   if(project.tracks[index].sampler||project.tracks[index].drumRack){
+    const pattern=document.createElement('button');pattern.textContent='+ Pattern';pattern.dataset.newPattern=String(index);pattern.onclick=event=>{event.stopPropagation();choosePatternLength(index)};label.append(pattern);
+    const edit=document.createElement('button');edit.textContent='Instrument';edit.dataset.openInstrument=String(index);edit.onclick=event=>{event.stopPropagation();openInstrumentClip(null,index)};label.append(edit);
+   }
   }
  $('#splitClip').onclick=splitSelectedClip;
  $('#duplicateClip').onclick=duplicateSelectedClip;
@@ -229,7 +285,7 @@ function addArrangementControls(){
   event.stopImmediatePropagation();
   const bar=Math.max(0,snapBeats(timelineBeatsAtClientX(event.clientX),snapGrid)/4),id=event.dataTransfer.getData('text/sample'),clipId=event.dataTransfer.getData('text/clip'),targetTrack=project.tracks[Number(lane.dataset.lane)];
   if(id){placeClip(id,Number(lane.dataset.lane),bar);return}
-  if(clipId&&targetTrack){checkpointArrangement();if(moveClipTo(project.tracks,clipId,targetTrack.id,bar)){selectedClip=clipId;commitArrangement()}}
+  if(clipId&&targetTrack){try{checkpointArrangement();if(moveClipTo(project.tracks,clipId,targetTrack.id,bar)){selectedClip=clipId;commitArrangement()}}catch(error){notify(error.message)}}
  },true);
 }
 function openTrackSetup(type='audio',track=null){
@@ -237,41 +293,92 @@ function openTrackSetup(type='audio',track=null){
   if(track){track.name=settings.name;track.color=settings.color;save();render();return}
   if(settings.type==='sampler'){createSamplerTrack(settings.assetId,settings);return}
   if(settings.type==='drumRack'){createDrumRack(settings.assetId,settings);return}
-  project.tracks.push(createProjectTrack(settings,uid()));selectedTrack=project.tracks.length-1;selectedClip=null;save();render();
+  project.tracks.push(createProjectTrack(settings,uid(),{instrumentClipModel:true}));normalizeProject();selectedTrack=project.tracks.length-1;selectedClip=null;save();render();
  }});
 }
 function createSamplerTrack(assetId,settings={}){
  const asset=assets.get(assetId),buffer=buffers.get(assetId);
- if(!asset||!buffer)return notify('Import and decode a sample before creating a sampler.');
- const pitch=detectPitch(buffer);
- project.tracks.push(createProjectTrack({name:`Sampler ${project.tracks.filter(track=>track.sampler).length+1}`,color:'#a58bdb',...settings,type:'sampler',assetId,duration:buffer.duration,pitch},uid()));
- selectedTrack=project.tracks.length-1;selectedClip=null;save();view='keys';render();
- notify(pitch?`Sample root detected: ${pitch.name} (${pitch.frequency.toFixed(1)} Hz; ${(pitch.confidence*100).toFixed(0)}% confidence).`:'Could not reliably detect pitch; set the root key manually.');
+ if(assetId&&(!asset||!buffer))return notify('Import and decode that sample before creating a sampler.');
+ const pitch=buffer&&detectPitch(buffer);
+ project.tracks.push(createProjectTrack({name:`Sampler ${project.tracks.filter(track=>track.sampler).length+1}`,color:'#a58bdb',...settings,type:'sampler',assetId,duration:buffer?.duration||0,pitch},uid(),{instrumentClipModel:true}));
+ normalizeProject();selectedTrack=project.tracks.length-1;selectedClip=null;save();view='keys';render();
+ notify(pitch?`Sample root detected: ${pitch.name}.`:assetId?'Set the root key manually.':'Empty Sampler created. Choose a sample inside Sample Source.');
 }
 function createDrumRack(assetId=null,settings={}){
- const track=createProjectTrack({name:`Drum Rack ${project.tracks.filter(track=>track.drumRack).length+1}`,color:'#db8a70',...settings,type:'drumRack',assetId},uid());
+ const track=createProjectTrack({name:`Drum Rack ${project.tracks.filter(track=>track.drumRack).length+1}`,color:'#db8a70',...settings,type:'drumRack',assetId},uid(),{instrumentClipModel:true});
  if(assetId)track.drumRack.pads[0].name=assets.get(assetId)?.name.replace(/\.[^.]+$/,'')||'Pad 1';
- project.tracks.push(track);selectedTrack=project.tracks.length-1;selectedClip=null;save();view='rack';render();
+ project.tracks.push(track);normalizeProject();selectedTrack=project.tracks.length-1;selectedClip=null;save();view='rack';render();
 }
 function renderKeys(){
- const track=project.tracks[selectedTrack];
+ const source=project.tracks[selectedTrack];
+ const track=source;
  if(!track?.sampler&&!track?.drumRack){$('#main').innerHTML='<section class="studio"><h2>Sampler / Piano Roll</h2><p>Select or create an instrument track from Arrangement.</p><button id="backArrange">Back to Arrangement</button></section>';$('#backArrange').onclick=()=>{view='arrange';render()};return}
  const previous=$('#pianoScroll'),scroll=previous?{left:previous.scrollLeft,top:previous.scrollTop}:null;
- $('#main').innerHTML=renderSamplerHTML(track,assets,buffers,snapGrid);
- wireSamplerUI($('#main'),{track,tracks:project.tracks,buffers,engine,save,notify,grid:snapGrid,setGrid:value=>{snapGrid=value;renderKeys()},playhead:()=>engine.position(),secondsPerBeat:60/project.bpm,back:()=>{view='arrange';render()}});
+ const context=instrumentEditorContext(source);
+ selectedClip=context.clip?.id||null;
+ $('#main').innerHTML=renderSamplerHTML(context.adapter,assets,buffers,snapGrid);
+ wireSamplerUI($('#main'),{track:context.adapter,tracks:project.tracks,assets,buffers,engine,save:()=>{context.commit();save()},notify,preview:previewAsset,openSample:openInstrumentSample,grid:snapGrid,setGrid:value=>{snapGrid=value;renderKeys()},playhead:()=>context.localBeat(engine.position(),project.bpm)*60/project.bpm,position:seconds=>context.localBeat(seconds,project.bpm)*60/project.bpm,secondsPerBeat:60/project.bpm,back:()=>{view='arrange';render()}});
+ mountPatternControls(context);
+ mountInstrumentDevices();
  if(scroll){$('#pianoScroll').scrollLeft=scroll.left;$('#pianoScroll').scrollTop=scroll.top}
 }
-function renderRack(){const track=project.tracks[selectedTrack];if(!track?.drumRack){view='arrange';render();return}$('#main').innerHTML=renderDrumRackHTML(track,assets);wireDrumRackUI($('#main'),{track,assets,buffers,engine,tracks:project.tracks,save,notify,back:()=>{view='arrange';render()},openPiano:()=>{view='keys';render()},refresh:renderRack})}
-function renderSamplerBlocks(){project.tracks.forEach((track,index)=>{if(!track.sampler&&!track.drumRack)return;const lane=$(`.lane[data-lane="${index}"]`);if(!lane)return;const block=document.createElement('button');block.className=`sampler-block ${track.drumRack?'rack-block':''}`;block.style.left='0';const rackBeats=Math.min(64,Math.max(4,Math.ceil(Math.max(0,...(track.pattern?.notes||[]).map(note=>(note.beat||0)+(note.durationBeats||0)))/4)*4));block.style.width=`${beatsWidth()*(track.drumRack?rackBeats/4:16)}px`;block.textContent=`${track.drumRack?'Drum Rack':'Sampler pattern'} · ${track.pattern?.notes?.length||0} notes`;block.title='Open this instrument pattern';block.onclick=event=>{event.stopPropagation();selectedTrack=index;view=track.drumRack?'rack':'keys';render()};lane.append(block)})}
+function renderRack(){
+ const source=project.tracks[selectedTrack];if(!source?.drumRack){view='arrange';render();return}
+ const context=instrumentEditorContext(source);
+ selectedClip=context.clip?.id||null;
+ $('#main').innerHTML=renderDrumRackHTML(context.adapter,assets);
+ wireDrumRackUI($('#main'),{track:context.adapter,assets,buffers,engine,tracks:project.tracks,save:()=>{context.commit();save()},notify,preview:previewAsset,back:()=>{view='arrange';render()},openPiano:()=>{view='keys';render()},refresh:renderRack});
+ mountPatternControls(context);
+ mountInstrumentDevices();
+}
+function instrumentEditorContext(track){
+ if(track.clips.some(isInstrumentClip))return selectedPatternContext(track,selectedClip);
+ return{adapter:{...track,pattern:{id:`${track.id}-empty-editor`,notes:[],lengthBeats:16}},clip:null,commit(){},localBeat:()=>0};
+}
+function mountInstrumentDevices(){
+ const section=document.createElement('section');section.className='instrument-devices';section.innerHTML=renderTrackEffects(project.tracks[selectedTrack]);$('#main .studio').append(section);wireTrackEffects();
+ const gain=document.createElement('label');gain.innerHTML=`Instrument / track gain <input id="instrumentTrackGain" type="range" min="0" max="1.5" step=".01" value="${project.tracks[selectedTrack].volume}">`;section.prepend(gain);$('#instrumentTrackGain').oninput=event=>{project.tracks[selectedTrack].volume=Number(event.target.value);engine.syncTracks(project.tracks,project.bpm);save()};
+ const browser=document.createElement('details');browser.className='instrument-browser';browser.innerHTML='<summary>Sample Browser — drag samples to the source or a pad</summary><input id="search" placeholder="Search samples…"><div id="sampleList"></div>';section.before(browser);drawList();$('#search').oninput=event=>drawList(event.target.value);
+}
+function openInstrumentSample(id){
+ const buffer=buffers.get(id);if(!buffer)return notify('Select a loaded sample first.');
+ resetSampleEditor(buffer,assets.get(id)?.name||'Sample.wav');view='sample';render();
+}
+function mountPatternControls(context){
+ if(!context.clip){
+  const panel=document.createElement('div');panel.className='pattern-controls';panel.innerHTML='<p>No Arrangement pattern yet. Assign samples and preview the instrument, then create a pattern.</p><button id="emptyPattern">+ Pattern</button>';$('#main .section-title').after(panel);$('#emptyPattern').onclick=()=>choosePatternLength();
+  for(const selector of ['.piano-toolbar','.piano-scroll','.drum-tools','.step-scroll']){const element=$(selector);if(element){element.hidden=true;element.inert=true}}
+  return;
+ }
+ const {pattern,clip,shared}=context,track=project.tracks[selectedTrack],panel=document.createElement('div');panel.className='pattern-controls';
+ panel.innerHTML=`<strong>Editing ${esc(pattern.name)}</strong><label>Pattern <select id="editorPattern">${track.clips.filter(isInstrumentClip).map(item=>`<option value="${esc(item.id)}" ${item.id===clip.id?'selected':''}>${esc(patternForClip(track,item).name)} @ bar ${item.bar+1}</option>`).join('')}</select></label><label>Name <input id="patternName" maxlength="80" value="${esc(pattern.name)}"></label><label>Length (beats) <input id="patternLength" type="number" min=".25" max="64" step=".25" value="${pattern.lengthBeats}"></label><span>${shared>1?`LINKED: ${shared} clips`:'Independent pattern'}</span><button id="editorUnlink" ${shared<2?'disabled':''}>Make Independent</button>`;
+ $('#main .section-title').after(panel);
+ $('#editorPattern').onchange=event=>{selectedClip=event.target.value;render()};
+ $('#patternName').onchange=event=>{const name=event.target.value.trim();if(!name){notify('Pattern name cannot be empty.');return}checkpointArrangement();pattern.name=name;save();render()};
+ $('#patternLength').onchange=event=>{try{const length=Number(event.target.value);const copy={...pattern};setPatternLength(copy,length);checkpointArrangement();const previous=pattern.lengthBeats;setPatternLength(pattern,length);if(clip.offsetBeats===0&&clip.durationBeats===previous){clip.durationBeats=length;delete clip.legacyTail}save();render()}catch(error){event.target.value=pattern.lengthBeats;notify(error.message)}};
+ $('#editorUnlink').onclick=unlinkSelectedPattern;
+}
+function renderSamplerBlocks(){
+ const elements=new Map($$('[data-clip]').map(element=>[element.dataset.clip,element]));
+ project.tracks.forEach((track,index)=>{
+  for(const clip of track.clips.filter(isInstrumentClip)){
+   const element=elements.get(clip.id),pattern=patternForClip(track,clip);if(!element||!pattern)continue;
+   element.classList.add('instrument-clip');element.querySelector('span').textContent=`${pattern.name}${clip.loop?' · LOOP':''}${track.clips.filter(item=>item.patternId===pattern.id).length>1?' · LINKED':''}`;
+   element.setAttribute('aria-label',`${pattern.name}, ${track.drumRack?'Drum Rack':'Sampler'} clip`);element.tabIndex=0;
+   element.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();openInstrumentClip(clip.id,index)}};
+  }
+ });
+}
 function render(){
  const scroll=$('.arrangement'),scrollLeft=scroll?.scrollLeft||0,scrollTop=scroll?.scrollTop||0;
  $$('[data-view]').forEach(b=>b.classList.toggle('selected',b.dataset.view===view));
  if(view==='arrange'){
   renderArrange();$$('.lane').forEach(lane=>lane.style.backgroundSize=`${beatsWidth()*(snapGrid||.0625)/4}px 100%`);renderSamplerBlocks();addArrangementControls();
-  arrangementWorkspace=mountArrangementWorkspace({root:$('#main'),project,buffers,state:arrangementWorkspaceState,scale:timelineScale(),grid:()=>snapGrid,selectedTrack,selectedClip,checkpoint:checkpointArrangement,commit:commitArrangement,save,notify,idFactory:uid,render,selectTrack:index=>{selectedTrack=index;render()},selectClip:(id,index)=>{selectedClip=id;selectedTrack=index;render()},seek:async seconds=>{const playing=engine.playing;if(playing)engine.stop();playhead=seconds;engine.offset=seconds;tick(seconds);if(playing)try{await engine.play(project,buffers,seconds)}catch(error){notify(error.message)}},playFrom:async beat=>{try{playhead=beat*60/project.bpm;await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}},copyClip:copySelectedClip,pasteClip,duplicateClip:duplicateSelectedClip,deleteClip:deleteSelectedClip});
+  arrangementWorkspace=mountArrangementWorkspace({root:$('#main'),project,buffers,state:arrangementWorkspaceState,scale:timelineScale(),grid:()=>snapGrid,selectedTrack,selectedClip,checkpoint:checkpointArrangement,commit:commitArrangement,save,notify,idFactory:uid,render,openClip:openInstrumentClip,createClip:addPatternClip,selectTrack:index=>{selectedTrack=index;render()},selectClip:(id,index)=>{selectedClip=id;selectedTrack=index;render()},seek:async seconds=>{const playing=engine.playing;if(playing)engine.stop();playhead=seconds;engine.offset=seconds;tick(seconds);if(playing)try{await engine.play(project,buffers,seconds)}catch(error){notify(error.message)}},playFrom:async beat=>{try{playhead=beat*60/project.bpm;await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}},copyClip:copySelectedClip,pasteClip,duplicateClip:duplicateSelectedClip,deleteClip:deleteSelectedClip});
   $('.arrangement').scrollLeft=scrollLeft;$('.arrangement').scrollTop=scrollTop;tick(playhead);
  }
  if(view==='sample')renderSampleBatch003();if(view==='master')renderMaster();if(view==='export')renderExport();if(view==='keys')renderKeys();if(view==='rack')renderRack();
+ if(view==='recording')recordingStudio.mount($('#main'));
 }
 function eqResponsePath(bands,sampleRate=48000,lowCut=20,highCut=20000){
  const width=420,height=120,minDb=-24,maxDb=24,points=[];
@@ -379,10 +486,15 @@ function wireTrackEffects(){
   input.nextElementSibling.value=Number(input.value).toFixed(input.step.includes('.')?2:0);refresh();
  });
 }
-function clipControls(){const c=project.tracks.flatMap(t=>t.clips).find(c=>c.id===selectedClip);if(!c)return '';const track=project.tracks.find(item=>item.clips.some(clip=>clip.id===selectedClip));return `<div class="clip-controls"><label>Start (s) <input id="clipStart" type="number" step=".01" min="0" value="${c.start.toFixed(2)}"></label><label>End (s) <input id="clipEnd" type="number" step=".01" min="0" value="${c.end.toFixed(2)}"></label><label>Speed <input id="clipRate" type="number" step=".05" min=".25" max="4" value="${c.rate||1}"></label><label>Gain <input id="clipGain" type="number" step=".1" min="0" max="3" value="${c.gain??1}"></label><label>Fade in (s) <input id="clipFadeIn" type="number" step=".01" min="0" value="${c.fadeIn||0}"></label><label>Fade out (s) <input id="clipFadeOut" type="number" step=".01" min="0" value="${c.fadeOut||0}"></label><label>Loop <input id="clipLoop" type="checkbox" ${c.loop?'checked':''}></label>${c.loop?`<label>Loop duration (s) <input id="clipDuration" type="number" step=".01" min=".01" value="${clipDurationSeconds(c).toFixed(2)}"></label>`:''}<label>Move to track <select id="clipTrack">${project.tracks.map(item=>`<option value="${esc(item.id)}" ${item.id===track?.id?'selected':''}>${esc(item.name)}</option>`).join('')}</select></label><label>Start bar <input id="clipBar" type="number" min="0" step=".0625" value="${c.bar}"></label><button id="moveClip">Move clip</button><button id="deleteClip">Delete clip</button></div>`}
+function clipControls(){
+ const c=project.tracks.flatMap(t=>t.clips).find(c=>c.id===selectedClip);if(!c)return '';
+ const track=project.tracks.find(item=>item.clips.some(clip=>clip.id===selectedClip));
+ const source=isInstrumentClip(c)?`<strong>${esc(patternForClip(track,c)?.name||'Pattern')}</strong><button id="openClipEditor">Open Editor</button><label>Duration (beats) <input id="instrumentDuration" type="number" min=".0625" step=".25" value="${c.durationBeats}"></label><label>Source offset (beats) <input id="instrumentOffset" type="number" min="0" step=".25" value="${c.offsetBeats}"></label>`:`<label>Start (s) <input id="clipStart" type="number" step=".01" min="0" value="${c.start.toFixed(2)}"></label><label>End (s) <input id="clipEnd" type="number" step=".01" min="0" value="${c.end.toFixed(2)}"></label><label>Speed <input id="clipRate" type="number" step=".05" min=".25" max="4" value="${c.rate||1}"></label><label>Fade in (s) <input id="clipFadeIn" type="number" step=".01" min="0" value="${c.fadeIn||0}"></label><label>Fade out (s) <input id="clipFadeOut" type="number" step=".01" min="0" value="${c.fadeOut||0}"></label>${c.loop?`<label>Loop duration (s) <input id="clipDuration" type="number" step=".01" min=".01" value="${clipDurationSeconds(c,project.bpm).toFixed(2)}"></label>`:''}`;
+ return `<div class="clip-controls">${source}<label>Gain <input id="clipGain" type="number" step=".1" min="0" max="3" value="${c.gain??1}"></label><label>Loop <input id="clipLoop" type="checkbox" ${c.loop?'checked':''}></label><label>Move to track <select id="clipTrack">${project.tracks.filter(item=>instrumentType(item)===instrumentType(track)).map(item=>`<option value="${esc(item.id)}" ${item.id===track.id?'selected':''}>${esc(item.name)}</option>`).join('')}</select></label><label>Start bar <input id="clipBar" type="number" min="0" step=".0625" value="${c.bar}"></label><button id="moveClip">Move clip</button><button id="deleteClip">Delete clip</button></div>`;
+}
 function drawList(filter=''){const el=$('#sampleList');if(!el)return;el.innerHTML=[...assets.values()].filter(a=>a.name.toLowerCase().includes(filter.toLowerCase())).map(a=>`<div class="sample-item" draggable="true" data-asset="${a.id}"><span title="${esc(a.path)}">♫ ${esc(a.name)}</span><button data-preview="${a.id}" title="Preview">▶</button><button data-add="${a.id}" title="Add to selected track">＋</button></div>`).join('')||'<div class="empty">No samples yet. Connect a folder or import files.</div>';$$('[data-preview]').forEach(b=>b.onclick=()=>previewAsset(b.dataset.preview));$$('[data-add]').forEach(b=>b.onclick=()=>placeClip(b.dataset.add,selectedTrack,Math.round(playhead/barSeconds())));$$('[data-asset]').forEach(e=>e.ondragstart=ev=>ev.dataTransfer.setData('text/sample',e.dataset.asset))}
 async function previewAsset(id){await engine.init();try{previewSource?.stop()}catch{}const b=buffers.get(id);if(!b)return notify('Missing sample');const s=engine.ctx.createBufferSource();s.buffer=b;s.connect(engine.ctx.destination);s.start();previewSource=s}
-function placeClip(asset,trackIndex,bar){const b=buffers.get(asset);if(!b)return notify('Sample not loaded');const clip={id:uid(),asset,bar:Math.max(0,bar),start:0,end:b.duration,rate:1,gain:1};checkpointArrangement();project.tracks[trackIndex].clips.push(clip);selectedTrack=trackIndex;selectedClip=clip.id;commitArrangement()}
+function placeClip(asset,trackIndex,bar){const b=buffers.get(asset);if(!b)return notify('Sample not loaded');if(!project.tracks[trackIndex]||instrumentType(project.tracks[trackIndex])!=='audio')return notify('Select an Audio track to place an audio clip. Assign instrument samples in the editor.');const clip={id:uid(),asset,bar:Math.max(0,bar),start:0,end:b.duration,rate:1,gain:1};checkpointArrangement();project.tracks[trackIndex].clips.push(clip);selectedTrack=trackIndex;selectedClip=clip.id;commitArrangement()}
 function wireArrange(){
  $$('[data-track]').forEach(row=>{const index=Number(row.dataset.track),actions=row.querySelector('.track-actions');actions?.insertAdjacentHTML('beforeend',`<button data-fx="${index}" title="Open Track Effects" aria-label="Open effects for ${esc(project.tracks[index].name)}">FX</button>`)});
  $$('[data-mute]').forEach(button=>{button.title='Mute Track — Silence this track';button.setAttribute('aria-label',`Mute ${project.tracks[Number(button.dataset.mute)].name}`);button.setAttribute('aria-pressed',String(project.tracks[Number(button.dataset.mute)].mute))});
@@ -401,15 +513,17 @@ function wireArrange(){
  const masterVolume=$('#masterVolume');masterVolume.oninput=()=>{engine.setMaster({volume:Number(masterVolume.value)});$('#masterVolumeValue').value=`${Math.round(Number(masterVolume.value)*100)}%`;save()};
  $$('[data-lane]').forEach(lane=>lane.ondragover=event=>event.preventDefault());
  const c=project.tracks.flatMap(track=>track.clips).find(clip=>clip.id===selectedClip);if(!c)return;
- for(const [selector,key]of [['#clipStart','start'],['#clipEnd','end'],['#clipRate','rate'],['#clipGain','gain'],['#clipFadeIn','fadeIn'],['#clipFadeOut','fadeOut']])$(selector).onchange=event=>{const value=Number(event.target.value);if(!Number.isFinite(value)||value<0||key==='rate'&&value<=0)return notify('Enter a valid non-negative clip value (speed must be positive).');checkpointArrangement();c[key]=value;if(key!=='gain'){delete c.envelopeOffset;delete c.envelopeDuration}if(key==='start'||key==='end')delete c.loopOffset;if(c.end<=c.start)c.end=c.start+.01;commitArrangement()};
- $('#clipLoop')?.addEventListener('change',event=>{checkpointArrangement();c.loop=event.target.checked;if(c.loop)c.duration=Math.max(.01,(c.end-c.start)/(c.rate||1)*4);else delete c.duration;commitArrangement()});
+ for(const [selector,key]of [['#clipStart','start'],['#clipEnd','end'],['#clipRate','rate'],['#clipGain','gain'],['#clipFadeIn','fadeIn'],['#clipFadeOut','fadeOut'],['#instrumentDuration','durationBeats'],['#instrumentOffset','offsetBeats']])$(selector)?.addEventListener('change',event=>{const value=Number(event.target.value);if(!Number.isFinite(value)||value<0||['rate','durationBeats'].includes(key)&&value<=0)return notify('Enter a valid non-negative clip value (speed/duration must be positive).');checkpointArrangement();c[key]=value;if(key!=='gain'){delete c.envelopeOffset;delete c.envelopeDuration}if(['durationBeats','offsetBeats'].includes(key))delete c.legacyTail;if(key==='start'||key==='end')delete c.loopOffset;if(!isInstrumentClip(c)&&c.end<=c.start)c.end=c.start+.01;commitArrangement()});
+ $('#openClipEditor')?.addEventListener('click',()=>openInstrumentClip());
+ $('#clipLoop')?.addEventListener('change',event=>{checkpointArrangement();c.loop=event.target.checked;if(isInstrumentClip(c))delete c.legacyTail;else{if(c.loop)c.duration=Math.max(.01,(c.end-c.start)/(c.rate||1)*4);else delete c.duration}commitArrangement()});
  $('#clipDuration')?.addEventListener('change',event=>{checkpointArrangement();c.duration=Math.max(.01,Number(event.target.value)||clipDurationSeconds(c));commitArrangement()});
- $('#moveClip').onclick=()=>{const bar=Number($('#clipBar').value),target=$('#clipTrack').value;if(!Number.isFinite(bar)||bar<0)return notify('Enter a non-negative clip bar position.');if(!project.tracks.some(track=>track.id===target))return notify('Choose a valid destination track.');checkpointArrangement();if(!moveClipTo(project.tracks,c.id,target,bar)){arrangementHistory.undo(project.tracks);return notify('Could not move this clip.')}selectedTrack=project.tracks.findIndex(track=>track.id===target);commitArrangement()};
+ $('#moveClip').onclick=()=>{const bar=Number($('#clipBar').value),target=$('#clipTrack').value;if(!Number.isFinite(bar)||bar<0)return notify('Enter a non-negative clip bar position.');if(!project.tracks.some(track=>track.id===target))return notify('Choose a valid destination track.');try{checkpointArrangement();if(!moveClipTo(project.tracks,c.id,target,bar)){arrangementHistory.undo(project.tracks);return notify('Could not move this clip.')}selectedTrack=project.tracks.findIndex(track=>track.id===target);commitArrangement()}catch(error){notify(error.message)}};
  $('#deleteClip').onclick=deleteSelectedClip;
 }
 async function connectFolder(){if('showDirectoryPicker'in window){try{folderHandle=await showDirectoryPicker({mode:'readwrite'});const files=[];async function walk(dir,prefix='',depth=0){if(depth>8)return;for await(const [name,h] of dir.entries()){if(h.kind==='directory')await walk(h,prefix+name+'/',depth+1);else if(/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(name)){const f=await h.getFile();files.push(f)}}}await walk(folderHandle);await importFiles(files);notify(`Connected ${folderHandle.name}; ${files.length} files. Save-back enabled when permitted.`)}catch(e){if(e.name!=='AbortError')notify(e.message)}}else{$('#importFolder').click();notify('Folder import fallback: direct folder write is not available in this browser.')}}
 function tick(t){const bar=t/barSeconds(),p=$('#playhead'),ruler=$('#ruler'),arrangement=$('.arrangement');if(p&&ruler&&arrangement){arrangementWorkspace?.ensureBeat(t*project.bpm/60+8);const x=timelineContentOrigin(ruler,arrangement)+timelineScale().timeToPixels(t);p.style.left=`${x}px`;p.setAttribute('aria-valuenow',String(t));p.setAttribute('aria-valuetext',`${t.toFixed(3)} seconds`);if(engine.playing&&arrangementWorkspaceState.follow&&x-arrangement.scrollLeft>arrangement.clientWidth-230)arrangement.scrollLeft=Math.max(0,x-arrangement.clientWidth/2)}const clock=$('#clock');if(clock)clock.textContent=`${Math.floor(bar)+1}.${Math.floor((bar%1)*4)+1}.1`;const elapsed=$('#elapsedTime'),text=formatTransportTime(t);if(elapsed&&elapsed.textContent!==text)elapsed.textContent=text}
 window.addEventListener('resize',()=>tick(playhead),{passive:true});
+matchMedia('(max-width:850px)').addEventListener('change',()=>{if(view==='arrange')render()});
 function renderSample(){$('#main').innerHTML=`<section class="studio"><div class="section-title"><h2>Sample Studio</h2><p>Record → edit → preview → save to your library.</p></div><div class="record-controls"><button id="record" class="accent">● Record Own</button><button id="finishRecord" disabled>■ Stop Recording</button><button id="loadSample">＋ Edit Existing Sample</button><span id="recordState">Microphone idle</span></div><div class="wave-panel"><canvas id="sampleWave" class="sample-wave"></canvas><div class="edit-grid"><label>Start (seconds)<input id="trimStart" type="number" min="0" step=".01" value="${edit.start}"></label><label>End (seconds)<input id="trimEnd" type="number" min="0" step=".01" value="${edit.end}"></label><label>Gain<input id="editGain" type="range" min="0" max="3" step=".05" value="${edit.gain}"></label><label>Fade In (s)<input id="fadeIn" type="number" min="0" max="10" step=".01" value="${edit.fadeIn}"></label><label>Fade Out (s)<input id="fadeOut" type="number" min="0" max="10" step=".01" value="${edit.fadeOut}"></label><label>Reverse<input id="reverse" type="checkbox" ${edit.reverse?'checked':''}></label></div><div class="record-controls"><button id="previewEdit">▶ Preview Edited</button><button id="normalize">Normalize Gain</button><button id="saveSample" class="primary">Save Sample</button><button id="makeSampler" ${savedSampleId?'':'disabled'}>Create Sampler</button><button id="makeRack" ${savedSampleId?'':'disabled'}>Create Drum Rack with Sample</button></div><label>Sample name <input id="sampleName" value="My_Kick_01.wav" placeholder="My_Kick_01.wav"></label><p class="hint">Sample edits are non-destructive until Save. Recording uses your browser microphone permission. Chrome/Edge can save directly to an authorized folder; other browsers download the WAV.</p></div></section>`;wireSample();requestAnimationFrame(drawSample)}
 function drawSample(){drawWave($('#sampleWave'),recordBuffer)}
 function wireSample(){ $('#record').onclick=async()=>{try{savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true;await engine.init();recordStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});chunks=[];recorder=new MediaRecorder(recordStream);recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=async()=>{recordBlob=new Blob(chunks,{type:recorder.mimeType});recordBuffer=await engine.ctx.decodeAudioData(await recordBlob.arrayBuffer());edit={start:0,end:recordBuffer.duration,gain:1,fadeIn:0,fadeOut:0,reverse:false};recordStream.getTracks().forEach(t=>t.stop());renderSample();notify('Recording captured. Edit and preview before saving.')};recorder.start();$('#record').disabled=true;$('#finishRecord').disabled=false;$('#recordState').textContent='● Recording…'}catch(e){notify(`Microphone unavailable: ${e.message}`)}};$('#finishRecord').onclick=()=>{if(recorder?.state==='recording')recorder.stop()};$('#loadSample').onclick=()=>{const f=document.createElement('input');f.type='file';f.accept='audio/*';f.onchange=async()=>{try{recordBuffer=await(await engine.init()).decodeAudioData(await f.files[0].arrayBuffer());savedSampleId=null;edit={start:0,end:recordBuffer.duration,gain:1,fadeIn:0,fadeOut:0,reverse:false};renderSample();$('#sampleName').value=f.files[0].name}catch(e){notify(e.message)}};f.click()};for(const [sel,k] of [['#trimStart','start'],['#trimEnd','end'],['#editGain','gain'],['#fadeIn','fadeIn'],['#fadeOut','fadeOut']])$(sel).oninput=e=>{edit[k]=+e.target.value;savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true};$('#reverse').onchange=e=>{edit.reverse=e.target.checked;savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true};$('#sampleName').oninput=()=>{savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true};$('#normalize').onclick=()=>{if(!recordBuffer)return notify('Record or load a sample first');let peak=0;for(let c=0;c<recordBuffer.numberOfChannels;c++)for(const x of recordBuffer.getChannelData(c))peak=Math.max(peak,Math.abs(x));edit.gain=peak?Math.min(3,.95/peak):1;$('#editGain').value=edit.gain;savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true;notify(`Gain set to ${edit.gain.toFixed(2)}×`)};$('#previewEdit').onclick=async()=>{if(!recordBuffer)return notify('No sample loaded');await engine.init();try{previewSource?.stop()}catch{}const b=processSample(engine.ctx,recordBuffer,edit),s=engine.ctx.createBufferSource();s.buffer=b;s.connect(engine.ctx.destination);s.start();previewSource=s};$('#saveSample').onclick=()=>saveSample().catch(error=>notify(`Sample save failed: ${error.message}`));$('#makeSampler').onclick=()=>savedSampleId&&createSamplerTrack(savedSampleId);$('#makeRack').onclick=()=>savedSampleId&&createDrumRack(savedSampleId)}
@@ -841,4 +955,8 @@ function saveMasterPreset(){
  const name=prompt('Name this mastering preset:');if(!name?.trim())return;
  try{const presets=JSON.parse(localStorage.getItem('pulse-master-presets')||'{}');project.mastering.preset=name.trim();presets[name.trim()]=normalizeMasteringSettings(project.mastering);localStorage.setItem('pulse-master-presets',JSON.stringify(presets));engine.setMastering(project.mastering);save();notify(`Saved mastering preset "${name.trim()}".`);renderMaster()}catch(error){notify(`Could not save mastering preset: ${error.message}`)}
 }
-async function startup(){try{const p=JSON.parse(localStorage.getItem('pulse-project'));if(p?.tracks&&p?.bpm)project=p}catch{}normalizeProject();project.mastering=normalizeMasteringSettings(project.mastering||DEFAULT_MASTERING_SETTINGS);engine.masterSettings={...engine.masterSettings,...project.masterSettings};engine.masteringSettings=normalizeMasteringSettings(project.mastering);shell();await restoreAssets();const keys=artworkKeys();releaseArtworkBlob=await dbGet(keys.current);releaseArtworkSourceBlob=await dbGet(keys.source);releaseArtworkUrl=releaseArtworkBlob?URL.createObjectURL(releaseArtworkBlob):null;if(view==='arrange')render();notify('Ready. Import a folder or record your first sample.')}startup();
+async function startup(){
+ let recoveryError=null;
+ try{const saved=localStorage.getItem('pulse-project');if(saved)project=normalizeProjectData(parseProject(saved));else normalizeProject()}catch(error){recoveryError=error;console.error('Project recovery failed; saved project retained.',error)}
+ project.mastering=normalizeMasteringSettings(project.mastering||DEFAULT_MASTERING_SETTINGS);engine.masterSettings={...engine.masterSettings,...project.masterSettings};engine.masteringSettings=normalizeMasteringSettings(project.mastering);shell();await restoreAssets();const keys=artworkKeys();releaseArtworkBlob=await dbGet(keys.current);releaseArtworkSourceBlob=await dbGet(keys.source);releaseArtworkUrl=releaseArtworkBlob?URL.createObjectURL(releaseArtworkBlob):null;if(view==='arrange')render();notify(recoveryError?`Saved project could not be restored: ${recoveryError.message}. Its stored data was not replaced.`:'Ready. Import a folder or record your first sample.');
+}startup();

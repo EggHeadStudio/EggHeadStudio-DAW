@@ -1,7 +1,9 @@
 import {AudioEngine,createTrackEffect,createTrackGraph,scheduleClipSource,toWav} from '../src/audio.js';
+import {migrateInstrumentArrangement} from '../src/instrument-clips.js';
 import {instrumentFixture,instrumentBuffers} from './instrument-fixture.js';
 
 // Run in a browser console: await (await import('./tests/instrument-browser-acceptance.js')).runInstrumentAcceptance()
+// Legacy migration audio equivalence: runLegacyMigrationAcceptance()
 export async function runInstrumentAcceptance(){
   const {project}=instrumentFixture(),sampleRate=44100,assetContext=new OfflineAudioContext(1,sampleRate,sampleRate),buffers=instrumentBuffers(assetContext),engine=new AudioEngine();
   engine.masterSettings.threshold=0;
@@ -63,6 +65,37 @@ export async function runInstrumentRoutingAcceptance(){
   const solo=await engine.render(project,buffers,{bypassMastering:true});
   if(rms(solo,.1,.8)!==0||rms(solo,2.15,2.4)<.01)throw new Error('Instrument clip solo routing failed.');
   return{baselineRms,duckedRms,duckRatio:duckedRms/baselineRms,masteringRatio:masteredRms/dryRms,mutedRms:rms(muted,0,8),soloBackingRms:rms(solo,.1,.8)};
+}
+
+export async function runLegacyMigrationAcceptance(){
+  const sampleRate=44100,context=new OfflineAudioContext(1,sampleRate,sampleRate),tone=context.createBuffer(1,sampleRate*8,sampleRate),data=tone.getChannelData(0);
+  for(let frame=0;frame<tone.length;frame++)data[frame]=.15*Math.sin(2*Math.PI*220*frame/sampleRate);
+  const buffers=new Map([['tone',tone]]);
+  const compare=async(notes,patternBeats)=>{
+    const project={name:'Legacy migration acceptance',bpm:120,patternBeats,tracks:[{
+      id:'legacy-sampler',name:'Legacy Sampler',volume:1,pan:0,clips:[],
+      sampler:{asset:'tone',rootNote:60,start:0,end:8,mode:'melodic',attack:.005,decay:.01,sustain:1,release:.03},
+      pattern:{notes}
+    }]};
+    const before=await new AudioEngine().render(structuredClone(project),buffers,{bypassMastering:true});
+    let serial=0;
+    migrateInstrumentArrangement(project,()=>`migration-${++serial}`);
+    const after=await new AudioEngine().render(project,buffers,{bypassMastering:true});
+    if(before.numberOfChannels!==after.numberOfChannels||before.length!==after.length)throw new Error('Legacy migration changed rendered channel count or duration.');
+    let maxSampleError=0,squaredError=0,sampleCount=0;
+    for(let channel=0;channel<before.numberOfChannels;channel++){
+      const original=before.getChannelData(channel),migrated=after.getChannelData(channel);
+      for(let frame=0;frame<original.length;frame++){
+        const error=Math.abs(original[frame]-migrated[frame]);
+        maxSampleError=Math.max(maxSampleError,error);squaredError+=error*error;sampleCount++;
+      }
+    }
+    if(maxSampleError!==0)throw new Error(`Legacy migration changed rendered audio (maximum sample error ${maxSampleError}).`);
+    return{patternBeats,noteCount:notes.length,durationSeconds:before.duration,maxSampleError,rmsSampleError:Math.sqrt(squaredError/sampleCount),legacyTail:project.tracks[0].clips[0].legacyTail};
+  };
+  const finalNote=await compare([{beat:14,midi:60,durationBeats:4,velocity:.8}],16);
+  const emptyPattern=await compare([],64);
+  return{finalNote,emptyPattern,maximumAllowedSampleError:0,sampleRate};
 }
 
 export async function investigateFractionalSlices(){

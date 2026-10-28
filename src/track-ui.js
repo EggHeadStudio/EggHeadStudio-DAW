@@ -11,9 +11,8 @@ export function showTrackSetup({track=null,type='audio',number=1,assets,buffers,
     <h2 id="trackSetupTitle">${track?'Edit track':'Add track'}</h2>
     <label>Name <input id="trackName" maxlength="80" required autocomplete="off"></label>
     <label>Color <input id="trackColor" type="color" required></label>
-    <label>Playback type <select id="trackType"><option value="audio">Audio</option><option value="sampler">Sampler</option><option value="drumRack">Drum Rack</option></select></label>
+    <label>Playback type <select id="trackType"><option value="audio">Audio Track</option><option value="sampler">Sampler Instrument</option><option value="drumRack">Drum Rack</option></select></label>
     <p id="trackTypeHint" class="hint"></p>
-    <label id="trackSampleLabel">Sample <select id="trackSample"></select></label>
     <p id="trackSetupError" role="alert"></p>
     <div class="track-setup-actions"><button type="button" id="cancelTrackSetup">Cancel</button><button type="submit" class="primary">${track?'Save changes':'Create track'}</button></div>
   </form>`;
@@ -31,13 +30,7 @@ export function showTrackSetup({track=null,type='audio',number=1,assets,buffers,
       if($('#trackColor').value===previous.color)$('#trackColor').value=selected.color;
     }
     previous=selected;
-    $('#trackSampleLabel').hidden=Boolean(track)||value==='audio';
-    const sample=$('#trackSample'),last=sample.value;
-    sample.replaceChildren(new Option(value==='sampler'?'Choose a loaded sample…':'Empty pads (assign samples later)',''));
-    for(const asset of assets.values())if(buffers.has(asset.id))sample.add(new Option(asset.name,asset.id));
-    if([...sample.options].some(option=>option.value===last))sample.value=last;
-    sample.required=!track&&value==='sampler';sample.disabled=Boolean(track)||value==='audio';
-    $('#trackTypeHint').textContent=track?'Playback type is fixed after creation to preserve clips, notes and instrument settings.':value==='sampler'?'Sample-based pitched instrument. Import a sample first; Bass and Synth can be used as names.':value==='drumRack'?'16 sample pads with a step sequencer. An optional sample initializes the pads.':'Audio clips placed on the Arrangement timeline.';
+    $('#trackTypeHint').textContent=track?'Playback type is fixed after creation to preserve clips, notes and instrument settings.':value==='sampler'?'An empty sample instrument. Choose its source inside the instrument editor, then add a pattern.':value==='drumRack'?'16 empty independent pads. Assign samples inside the Drum Rack, then add a pattern.':'Audio clips placed on the Arrangement timeline.';
   };
   $('#trackType').onchange=updateType;updateType();
   $('#cancelTrackSetup').onclick=()=>dialog.close();
@@ -48,7 +41,7 @@ export function showTrackSetup({track=null,type='audio',number=1,assets,buffers,
     const name=$('#trackName').value.trim();
     if(!name){$('#trackSetupError').textContent='Enter a track name.';$('#trackName').focus();return}
     try{
-      onSubmit({name,color:$('#trackColor').value,type:$('#trackType').value,assetId:$('#trackSample').value||null});
+      onSubmit({name,color:$('#trackColor').value,type:$('#trackType').value,assetId:null});
       dialog.close();
     }catch(error){$('#trackSetupError').textContent=error.message}
   };

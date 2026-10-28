@@ -82,7 +82,7 @@ export class PianoNoteEditor {
     this.checkpoint();
     for (const note of this.notes) {
       if (!this.selected.has(note.id)) continue;
-      note.beat = Math.min(patternBeats - note.durationBeats, snapBeats(note.beat, grid));
+      note.beat = Math.max(0,Math.min(patternBeats - Math.min(patternBeats,note.durationBeats), snapBeats(note.beat, grid)));
     }
     return true;
   }

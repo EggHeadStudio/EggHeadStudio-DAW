@@ -1,4 +1,12 @@
 .workspace [hidden]{display:none!important}
+.pattern-controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px;border:1px solid #536478;margin-bottom:12px}
+.pattern-controls label{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.pattern-controls input,.pattern-controls select{max-width:100%;min-height:40px}
+.pattern-controls strong{overflow-wrap:anywhere}
+.pattern-controls input[type=number]{width:90px}
+.pattern-controls select{max-width:240px}
+.workspace .instrument-clip:focus-visible{outline:2px solid #fff;outline-offset:-3px}
+.workspace .clip-handle{touch-action:none}
 .elapsed-time{font-variant-numeric:tabular-nums;white-space:nowrap;color:#c8d6e8;font-size:12px;min-width:76px}
 .track-setup{color:#e6e9f1;background:#202735;border:1px solid #536478;border-radius:10px;width:min(420px,calc(100% - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:20px}
 .track-setup::backdrop{background:#0009}
@@ -76,3 +84,44 @@
   .workspace .clip-handle{width:20px}
   .range-edge{width:20px}
 }
+.add-track-row{min-height:64px;align-items:center}
+.add-track-button{position:sticky;left:8px;min-height:44px;margin:8px}
+.sample-source,.selected-pad-editor,.instrument-devices{padding:14px;border:1px solid var(--border,#394052);border-radius:8px;margin:12px 0}
+.sample-source button,.selected-pad-editor button,.drum-pad button{min-height:44px}
+.sample-picker{width:min(560px,calc(100vw - 24px));max-height:85dvh}
+.sample-picker input{width:100%}
+.sample-picker-list{max-height:55dvh;overflow:auto}
+.sample-picker-list>div{display:flex;align-items:center;gap:8px;padding:8px 0}
+.sample-picker-list span{flex:1;min-width:0;overflow-wrap:anywhere}
+.instrument-browser{margin:12px 0}
+.selected-pad-editor{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.selected-pad-editor h3,.selected-pad-editor p{width:100%}
+.drum-rack-studio .drum-pad-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.drum-rack-studio .drum-pad{min-width:0;padding:6px}
+.drum-pad button{width:100%;overflow-wrap:anywhere}
+.drum-pad .pad-selected{outline:2px solid #e8b872;outline-offset:-2px}
+.track-label[data-track]{height:auto;min-height:120px}
+.track-row:has(.track-label[data-track]){min-height:120px}
+.recording-studio{max-width:1300px}
+.recording-controls,.recording-options{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:14px 0}
+.recording-controls button{min-height:52px;font-weight:bold}
+.recording-controls #studioRecord{min-width:120px}
+.recording-options label{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.recording-options input[type=number]{width:100px}
+.recording-wave-panel{padding:10px;background:#1d2430;border:1px solid #384253;border-radius:8px}
+#recordingWave{width:100%;height:140px;background:#121923}
+#recordingLevel{width:100%;height:20px}
+.recording-backing-row{display:flex;align-items:center;gap:12px;min-height:44px;overflow-wrap:anywhere}
+.recording-backing-row input[type=range]{width:120px;margin-left:auto}
+.recording-takes article{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px;border:1px solid #384253;border-radius:8px;margin:12px 0}
+.recording-takes label{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.recording-takes input[type=number]{width:90px}
+.recording-takes input:not([type]){max-width:200px}
+.recording-takes button{min-height:44px}
+.recording-timeline{position:relative;padding:6px;border:1px solid #384253}
+.recording-timeline-row{display:flex;gap:6px;height:40px}
+.recording-timeline-row>span{width:100px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis}
+.recording-timeline-row>div{flex:1;position:relative;background:#1b212e}
+.recording-timeline-row i{position:absolute;height:30px;top:3px;min-width:2px}
+#recordingTimelineCursor{position:absolute;top:0;bottom:0;width:2px;background:#e9aeb4;pointer-events:none}
+@media(max-width:480px){.recording-controls{position:sticky;top:0;z-index:5;background:#10131b;padding:8px 0}.recording-options{display:grid;grid-template-columns:1fr}.recording-takes article{padding:8px}.recording-takes button{flex:1 1 40%}}

@@ -20,7 +20,7 @@ export function migrateInstrumentArrangement(project,idFactory=()=>crypto.random
     if(instrumentType(track)==='audio'||Array.isArray(track.patterns))continue;
     const length=legacyPatternLength(track,project.patternBeats||16),legacy=track.pattern||{notes:[]};
     const pattern={id:idFactory(),name:`${track.name} pattern`,lengthBeats:length,notes:(legacy.notes||[]).map(note=>({...note,id:note.id||idFactory(),beat:note.beat??0,midi:note.midi??track.sampler?.rootNote??60,durationBeats:note.durationBeats||.25,velocity:note.velocity??.85}))};
-    const clip={id:idFactory(),kind:'instrument',patternId:pattern.id,bar:0,durationBeats:legacy.notes?.length?endBeats:length,offsetBeats:0,loop:true,gain:1};
+    const clip={id:idFactory(),kind:'instrument',patternId:pattern.id,bar:0,durationBeats:endBeats,offsetBeats:0,loop:true,gain:1,legacyTail:true};
     const next={...track,patterns:[pattern],clips:[...(track.clips||[]),clip]};
     validateInstrumentData(next);updates.push({track,next});
   }
@@ -48,7 +48,9 @@ export function makePatternIndependent(track,clip,idFactory){
 export function sliceInstrumentClip(clip,fromBeats,toBeats,id){
   const from=Math.max(0,fromBeats),to=Math.min(clip.durationBeats,toBeats);
   if(to<=from)return null;
-  return{...clip,id,bar:clip.bar+from/4,durationBeats:to-from,offsetBeats:(clip.offsetBeats||0)+from};
+  const sliced={...clip,id,bar:clip.bar+from/4,durationBeats:to-from,offsetBeats:(clip.offsetBeats||0)+from};
+  delete sliced.legacyTail;
+  return sliced;
 }
 
 export function resizeInstrumentClip(clip,edge,beat,pattern){
@@ -61,6 +63,7 @@ export function resizeInstrumentClip(clip,edge,beat,pattern){
     const next=Math.max(0,start-(clip.offsetBeats||0),Math.min(end-1/960,beat)),delta=next-start;
     clip.bar=next/4;clip.durationBeats=end-next;clip.offsetBeats=(clip.offsetBeats||0)+delta;
   }else throw new RangeError('Unknown instrument clip edge.');
+  delete clip.legacyTail;
   return clip;
 }
 
@@ -78,19 +81,19 @@ export function validateInstrumentData(track){
   if(!Array.isArray(track.patterns)||instrumentType(track)==='audio')throw new Error('Invalid instrument pattern collection.');
   const ids=new Set();
   for(const pattern of track.patterns){
-    if(!pattern||typeof pattern.id!=='string'||!pattern.id||ids.has(pattern.id)||typeof pattern.name!=='string'||!Number.isFinite(pattern.lengthBeats)||pattern.lengthBeats<=0||pattern.lengthBeats>64||!Array.isArray(pattern.notes))throw new Error('Invalid instrument pattern.');
+    if(!pattern||typeof pattern.id!=='string'||!pattern.id||pattern.id.length>128||ids.has(pattern.id)||typeof pattern.name!=='string'||pattern.name.length>120||!Number.isFinite(pattern.lengthBeats)||pattern.lengthBeats<=0||pattern.lengthBeats>64||!Array.isArray(pattern.notes))throw new Error('Invalid instrument pattern.');
     ids.add(pattern.id);
     const noteIds=new Set();
     for(const note of pattern.notes){
-      if(!note||typeof note.id!=='string'||!note.id||noteIds.has(note.id)||!Number.isFinite(note.beat)||note.beat<0||note.beat>=pattern.lengthBeats||!Number.isInteger(note.midi)||note.midi<0||note.midi>127||!Number.isFinite(note.durationBeats)||note.durationBeats<=0||!Number.isFinite(note.velocity)||note.velocity<0||note.velocity>1)throw new Error('Invalid instrument note.');
+      if(!note||typeof note.id!=='string'||!note.id||note.id.length>128||noteIds.has(note.id)||!Number.isFinite(note.beat)||note.beat<0||note.beat>=pattern.lengthBeats||!Number.isInteger(note.midi)||note.midi<0||note.midi>127||!Number.isFinite(note.durationBeats)||note.durationBeats<=0||!Number.isFinite(note.velocity)||note.velocity<0||note.velocity>1)throw new Error('Invalid instrument note.');
       noteIds.add(note.id);
     }
   }
   const clipIds=new Set();
   for(const clip of track.clips||[]){
-    if(typeof clip.id!=='string'||clipIds.has(clip.id))throw new Error('Invalid or duplicate instrument clip identity.');
+    if(typeof clip.id!=='string'||!clip.id||clip.id.length>128||clipIds.has(clip.id))throw new Error('Invalid or duplicate instrument clip identity.');
     clipIds.add(clip.id);
     if(!isInstrumentClip(clip))continue;
-    if(!ids.has(clip.patternId)||!Number.isFinite(clip.bar)||clip.bar<0||!Number.isFinite(clip.durationBeats)||clip.durationBeats<=0||!Number.isFinite(clip.offsetBeats)||clip.offsetBeats<0||typeof clip.loop!=='boolean'||clip.gain!==undefined&&(!Number.isFinite(clip.gain)||clip.gain<0))throw new Error('Invalid instrument clip or pattern reference.');
+    if(!ids.has(clip.patternId)||!Number.isFinite(clip.bar)||clip.bar<0||!Number.isFinite(clip.durationBeats)||clip.durationBeats<=0||!Number.isFinite(clip.offsetBeats)||clip.offsetBeats<0||typeof clip.loop!=='boolean'||clip.gain!==undefined&&(!Number.isFinite(clip.gain)||clip.gain<0)||clip.legacyTail!==undefined&&typeof clip.legacyTail!=='boolean')throw new Error('Invalid instrument clip or pattern reference.');
   }
 }

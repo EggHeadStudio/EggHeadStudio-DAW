@@ -31,7 +31,7 @@ export function* instrumentEvents(track,buffers,bpm,programBeats,fromBeat=0,toBe
       const first=clip.loop?Math.max(0,Math.floor((Math.max(start,fromBeat)-start+offset-note.beat-tail)/length)):0;
       const last=clip.loop?Math.ceil((Math.min(end,toBeat)-start+offset-note.beat)/length):1;
       for(let cycle=first;cycle<last;cycle++){
-        const at=start+cycle*length+note.beat-offset,until=clip.legacy?Infinity:end;
+        const at=start+cycle*length+note.beat-offset,until=clip.legacy||clip.legacyTail?Infinity:end;
         if(at>=end||at>=toBeat||at+tail<=Math.max(start,fromBeat)||at>=until)continue;
         yield{note,voice,sampler:track.sampler,at:at*secondsPerBeat,visibleFrom:Math.max(start,at)*secondsPerBeat,until:until*secondsPerBeat,gain:clip.gain??1,clipId:clip.id};
       }

@@ -1,13 +1,19 @@
 import {unzipSync,zipSync} from '../vendor/fflate/fflate.js';
 import {encodeWavAsync} from './export-dsp.js';
 import {validateReleaseMetadata} from './release-metadata.js';
+import {hasTypedInstrumentClips,INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION,LEGACY_PROJECT_SCHEMA_VERSION} from './project-state.js';
+import {isInstrumentClip,instrumentType,validateInstrumentData} from './instrument-clips.js';
 
 export const EHS_FORMAT_VERSION=1;
-export const PROJECT_SCHEMA_VERSION=1;
+export const PROJECT_SCHEMA_VERSION=INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION;
 export const MAX_EHS_ARCHIVE_BYTES=256*1024*1024;
 export const MAX_EHS_UNCOMPRESSED_BYTES=512*1024*1024;
 export const MAX_EHS_FILE_COUNT=4096;
 export const MAX_EHS_COMPRESSION_RATIO=200;
+export const MAX_EHS_TRACKS=256;
+export const MAX_EHS_CLIPS=100000;
+export const MAX_EHS_PATTERNS=100000;
+export const MAX_EHS_NOTES=1000000;
 const encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
 const CRC_TABLE=Uint32Array.from({length:256},(_,index)=>{let value=index;for(let bit=0;bit<8;bit++)value=(value&1)?0xedb88320^(value>>>1):value>>>1;return value>>>0});
 function crc32(bytes){let value=0xffffffff;for(const byte of bytes)value=CRC_TABLE[(value^byte)&0xff]^(value>>>8);return(value^0xffffffff)>>>0}
@@ -129,7 +135,8 @@ function manifestJson(value){
 }
 
 export async function createPortableProjectArchive(project,{assetFiles=new Map(),audioBuffers=new Map(),artworkFile=null,artworkSourceFile=null,presets={},signal,onProgress=()=>{},appVersion='0.1.0',now=new Date()}={}){
- validateProjectShape(project);
+ validateProjectShape(project,{allowTypedSchemaPromotion:true});
+ const projectSchemaVersion=hasTypedInstrumentClips(project)?INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION:LEGACY_PROJECT_SCHEMA_VERSION;
  const ids=referencedAssetIds(project),assetMap={},files={},contentPaths=new Map(),totalIds=ids.size;
  let completed=0,uncompressed=0;
  for(const id of ids){
@@ -154,7 +161,7 @@ export async function createPortableProjectArchive(project,{assetFiles=new Map()
  }
  if(project.tracks.some(track=>(track.clips||[]).some(clip=>clip.asset&&!assetMap[String(clip.asset)])))throw new Error('At least one arrangement clip references an asset that was not packaged.');
  if(project.releaseArtwork&&!artworkFile)throw new Error('Project artwork is referenced but its prepared image is missing from local storage.');
- const projectCopy={...project,schemaVersion:PROJECT_SCHEMA_VERSION};
+ const projectCopy={...project,schemaVersion:projectSchemaVersion};
  files['project.json']=manifestJson(projectCopy);uncompressed+=files['project.json'].byteLength;
  let artworkRecord=null;
  if(artworkFile){
@@ -183,8 +190,8 @@ export async function createPortableProjectArchive(project,{assetFiles=new Map()
  for(const[path,data]of Object.entries(files))fileManifest.push({path,size:data.byteLength,sha256:await sha256(data)});
  const createdAt=now.toISOString(),manifest={
   format:'EggHeadStudioProject',formatVersion:EHS_FORMAT_VERSION,applicationVersion:appVersion,
-  projectSchemaVersion:PROJECT_SCHEMA_VERSION,projectId:String(project.id||''),projectName:String(project.name||'Untitled Project'),
-  createdAt,lastModified:String(project.modifiedAt||createdAt),compatibility:{minimumApplicationVersion:appVersion},
+  projectSchemaVersion,projectId:String(project.id||''),projectName:String(project.name||'Untitled Project'),
+  createdAt,lastModified:String(project.modifiedAt||createdAt),compatibility:{minimumApplicationVersion:appVersion,...(projectSchemaVersion===INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION?{requiredFeatures:['instrumentClips']}:{})},
   assets:assetMap,artwork:artworkRecord,artworkSource:artworkSourceRecord,presets:presetManifest,
   files:fileManifest,
   limits:{payloadBytes:uncompressed,fileCount:Object.keys(files).length+1}
@@ -205,23 +212,42 @@ function parseJson(bytes,label){
  try{return JSON.parse(decoder.decode(bytes))}catch{throw new Error(`${label} is missing or contains invalid UTF-8/JSON.`)}
 }
 
-function validateProjectShape(project){
- if(!project||typeof project!=='object'||!Array.isArray(project.tracks)||project.tracks.length>256||!Number.isFinite(project.bpm)||project.bpm<1||project.bpm>999)throw new Error('Project data is invalid or exceeds track limits.');
- let clips=0,notes=0;
+function validateProjectShape(project,{allowTypedSchemaPromotion=false}={}){
+ if(!project||typeof project!=='object'||!Array.isArray(project.tracks)||project.tracks.length>MAX_EHS_TRACKS||!Number.isFinite(project.bpm)||project.bpm<1||project.bpm>999)throw new Error('Project data is invalid or exceeds track limits.');
+ let clips=0,patterns=0,notes=0;
  for(const track of project.tracks){
   if(!track||typeof track!=='object')throw new Error('Project contains an invalid track.');
   clips+=(track.clips||[]).length;notes+=(track.pattern?.notes||[]).length;
-  if(!Array.isArray(track.clips||[])||!Array.isArray(track.pattern?.notes||[])||!Array.isArray(track.drumRack?.pads||[]))throw new Error('Project contains invalid clip, note, or pad data.');
+  if(!Array.isArray(track.clips||[])||!Array.isArray(track.pattern?.notes||[])||!Array.isArray(track.drumRack?.pads||[])||track.patterns!==undefined&&!Array.isArray(track.patterns))throw new Error('Project contains invalid clip, note, pattern, or pad data.');
   if((track.drumRack?.pads||[]).length>16)throw new Error('Project contains more than 16 Drum Rack pads on a track.');
   for(const clip of track.clips||[]){
-   if(!clip||typeof clip.asset!=='string'||!Number.isFinite(clip.bar)||clip.bar<0||!Number.isFinite(clip.start)||clip.start<0||!Number.isFinite(clip.end)||clip.end<=clip.start||clip.rate!==undefined&&(!Number.isFinite(clip.rate)||clip.rate<=0||clip.rate>16)||clip.gain!==undefined&&!Number.isFinite(clip.gain))throw new Error('Project contains an invalid audio clip.');
+   if(!clip||typeof clip!=='object')throw new Error('Project contains an invalid clip.');
+   validateRecordingClip(clip);
+   if(isInstrumentClip(clip)){
+    if(instrumentType(track)==='audio')throw new Error('Instrument clips require a Sampler or Drum Rack track.');
+    if(clip.asset!==undefined||clip.start!==undefined||clip.end!==undefined)throw new Error('Instrument clips cannot contain audio-clip source fields.');
+   }else if(typeof clip.asset!=='string'||!clip.asset||!Number.isFinite(clip.bar)||clip.bar<0||!Number.isFinite(clip.start)||clip.start<0||!Number.isFinite(clip.end)||clip.end<=clip.start||clip.rate!==undefined&&(!Number.isFinite(clip.rate)||clip.rate<=0||clip.rate>16)||clip.gain!==undefined&&!Number.isFinite(clip.gain))throw new Error('Project contains an invalid audio clip.');
    for(const key of ['loopOffset','envelopeOffset','envelopeDuration'])if(clip[key]!==undefined&&(!Number.isFinite(clip[key])||clip[key]<0))throw new Error(`Project contains an invalid clip ${key}.`);
   }
+  if(track.patterns!==undefined){
+   patterns+=track.patterns.length;
+   for(const pattern of track.patterns){
+    if(!pattern||!Array.isArray(pattern.notes))throw new Error('Project contains an invalid instrument pattern.');
+    notes+=pattern.notes.length;
+   }
+   validateInstrumentData(track);
+  }else if((track.clips||[]).some(isInstrumentClip))validateInstrumentData(track);
+  for(const id of [track.sampler?.asset,...(track.drumRack?.pads||[]).map(pad=>pad?.asset)]){
+   if(id!==undefined&&id!==null&&(typeof id!=='string'||!id||id.length>128||!/^[A-Za-z0-9._-]+$/.test(id)))throw new Error('Project contains an invalid instrument asset reference.');
+  }
  }
- if(clips>100000||notes>1000000)throw new Error('Project exceeds clip or note safety limits.');
+ if(clips>MAX_EHS_CLIPS||patterns>MAX_EHS_PATTERNS||notes>MAX_EHS_NOTES)throw new Error('Project exceeds clip, pattern, or note safety limits.');
  if(typeof project.name!=='string'||project.name.length>2000)throw new Error('Project name is invalid.');
  if(project.id!==undefined&&(typeof project.id!=='string'||project.id.length>128))throw new Error('Project identifier is invalid.');
- if(project.schemaVersion!==undefined&&(!Number.isInteger(project.schemaVersion)||project.schemaVersion<0||project.schemaVersion>PROJECT_SCHEMA_VERSION))throw new Error(`Project schema ${project.schemaVersion} is invalid or newer than supported schema ${PROJECT_SCHEMA_VERSION}; the archive was not opened.`);
+ const typed=hasTypedInstrumentClips(project),schema=project.schemaVersion;
+ if(schema!==undefined&&(!Number.isInteger(schema)||schema<0||schema>PROJECT_SCHEMA_VERSION))throw new Error(`Project schema ${schema} is invalid or newer than supported schema ${PROJECT_SCHEMA_VERSION}; the archive was not opened.`);
+ if(typed&&schema!==INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION&&!allowTypedSchemaPromotion)throw new Error('Typed instrument clips require project schema 2.');
+ if(!typed&&schema===INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION)throw new Error('Project schema 2 requires typed instrument clips.');
  return project;
 }
 
@@ -262,6 +288,7 @@ export async function openPortableProjectArchive(input,{signal,onProgress=()=>{}
  const manifest=parseJson(extracted['manifest.json'],'manifest.json');
  if(manifest.format!=='EggHeadStudioProject'||manifest.formatVersion!==EHS_FORMAT_VERSION)throw new Error(`Unsupported EHS archive version "${manifest.formatVersion}".`);
  if(!Number.isInteger(manifest.projectSchemaVersion)||manifest.projectSchemaVersion<0||manifest.projectSchemaVersion>PROJECT_SCHEMA_VERSION)throw new Error(`Project schema ${manifest.projectSchemaVersion} is invalid or newer than supported schema ${PROJECT_SCHEMA_VERSION}; the archive was not opened.`);
+ if(manifest.projectSchemaVersion===INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION&&(!Array.isArray(manifest.compatibility?.requiredFeatures)||!manifest.compatibility.requiredFeatures.includes('instrumentClips')))throw new Error('Schema 2 archive is missing its required instrumentClips compatibility marker.');
  if(!manifest.assets||typeof manifest.assets!=='object'||Array.isArray(manifest.assets)||Object.keys(manifest.assets).length>MAX_EHS_FILE_COUNT)throw new Error('Archive asset manifest is invalid.');
  if(!Array.isArray(manifest.files))throw new Error('Archive file manifest is invalid.');
  if(!Array.isArray(manifest.presets||[])||manifest.presets.length>MAX_EHS_FILE_COUNT)throw new Error('Archive preset manifest is invalid.');
@@ -289,15 +316,18 @@ export async function openPortableProjectArchive(input,{signal,onProgress=()=>{}
  const payloadBytes=[...declaredFiles.values()].reduce((sum,record)=>sum+record.size,0);
  if(!manifest.limits||manifest.limits.payloadBytes!==payloadBytes||manifest.limits.fileCount!==entryMap.size)throw new Error('Archive limits summary does not match the payload.');
  const project=validateProjectShape(parseJson(extracted['project.json'],'project.json'));
+ const typedProject=hasTypedInstrumentClips(project);
+ if(typedProject!==(manifest.projectSchemaVersion===INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION)||typedProject&&project.schemaVersion!==INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION)throw new Error('Manifest project schema does not match project.json.');
+ if(!typedProject&&project.schemaVersion===INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION)throw new Error('Project schema 2 requires typed instrument clips.');
  if(manifest.projectId&&manifest.projectId!==project.id)throw new Error('Manifest project ID does not match project.json.');
- project.schemaVersion=PROJECT_SCHEMA_VERSION;
+ project.schemaVersion=typedProject?INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION:LEGACY_PROJECT_SCHEMA_VERSION;
  project.id ||= globalThis.crypto?.randomUUID?.()||`project-${Date.now()}-${Math.random().toString(16).slice(2)}`;
  if(project.releaseMetadata&&validateReleaseMetadata(project.releaseMetadata).length)throw new Error('Project release metadata is invalid.');
  const assetFiles=new Map(),assetMetadata=new Map(),audioBlobs=new Map(),assets=Object.entries(manifest.assets);
  let completed=0;
  for(const[id,record]of assets){
   if(signal?.aborted)throw signal.reason||new DOMException('Archive import cancelled.','AbortError');
-  if(!/^[A-Za-z0-9._-]{1,128}$/.test(id)||typeof record?.path!=='string'||!record.path.startsWith('assets/audio/')||!Number.isSafeInteger(record.size)||record.size<1||!/^[a-f0-9]{64}$/.test(record.sha256))throw new Error('Archive asset manifest contains an invalid record.');
+  if(!/^[A-Za-z0-9._-]{1,128}$/.test(id)||typeof record?.path!=='string'||!record.path.startsWith('assets/audio/')||!Number.isSafeInteger(record.size)||record.size<1||!/^[a-f0-9]{64}$/.test(record.sha256)||record.name!==undefined&&(typeof record.name!=='string'||record.name.length>255)||record.mime!==undefined&&(typeof record.mime!=='string'||record.mime.length>100)||record.sampleRate!==undefined&&(!Number.isFinite(record.sampleRate)||record.sampleRate<=0)||record.channels!==undefined&&(!Number.isInteger(record.channels)||record.channels<1||record.channels>64))throw new Error('Archive asset manifest contains an invalid record.');
   assertSafePath(record.path);
   const data=extracted[record.path];if(!data)throw new Error(`Archive is missing referenced asset ${record.path}.`);
   if(data.byteLength!==record.size)throw new Error(`Packaged audio size does not match for asset "${id}".`);
@@ -369,3 +399,4 @@ export function inspectZipEntries(input){
  const bytes=input instanceof Uint8Array?input:new Uint8Array(input);
  return zipCentralDirectory(bytes).map(({path,compressedSize,uncompressedSize,method})=>({path,compressedSize,uncompressedSize,method}));
 }
+import {validateRecordingClip} from './recording-model.js';
