@@ -1,8 +1,9 @@
 import {isTrackAudible} from './project-state.js';
-import {createMasteringGraph,DEFAULT_MASTERING_SETTINGS,normalizeMasteringSettings} from './mastering.js';
+import {createMasteringGraph,DEFAULT_MASTERING_SETTINGS,disposeProcessor,normalizeMasteringSettings} from './mastering.js';
 import {getWaveformRangePeaks} from './waveform.js';
 import {isInstrumentClip} from './instrument-clips.js';
 import {instrumentEvents,scheduleInstrumentEvent} from './instrument-playback.js';
+import {renderOfflineWindows} from './offline-scheduler.js';
 
 export const uid=()=>crypto.randomUUID();
 export function patternLengthBeats(track){
@@ -140,7 +141,7 @@ export function createTrackGraph(ctx,track,output,stableInput=null,bpm=120){
   for(const effect of fx.effects||[]){const instance=instances.get(effect.id);if(instance)setEffectValues(instance,effect,currentBpm)}
  };
  update(track);
- return{input,gain,sidechainPre,sidechainPost,sidechainConnections:[],pan,filter,legacyDelay,feedback,wet,dry,instances,update,readMeter(){leftMeter.getFloatTimeDomainData(leftSamples);rightMeter.getFloatTimeDomainData(rightSamples);let leftPeak=0,rightPeak=0,leftSquare=0,rightSquare=0;for(let i=0;i<leftSamples.length;i++){const left=leftSamples[i],right=rightSamples[i];leftPeak=Math.max(leftPeak,Math.abs(left));rightPeak=Math.max(rightPeak,Math.abs(right));leftSquare+=left*left;rightSquare+=right*right}const reductions={};for(const[id,instance]of instances)if(instance.type==='compressor'||instance.type==='limiter')reductions[id]=instance.externalSidechain?instance.reductionDb:Math.max(0,-Number(instance.node.reduction||0));return{leftPeak,rightPeak,leftRms:Math.sqrt(leftSquare/leftSamples.length),rightRms:Math.sqrt(rightSquare/leftSamples.length),reductions}},signature:trackGraphSignature(track),disconnectSidechains(){for(const connection of this.sidechainConnections){try{connection.source.disconnect(connection.send)}catch{}try{connection.send.disconnect()}catch{}}this.sidechainConnections.length=0},disconnect(){this.disconnectSidechains();for(const node of new Set(nodes)){if(node.port)node.onprocessorerror=null;try{node.disconnect()}catch{}}}};
+ return{input,gain,sidechainPre,sidechainPost,sidechainConnections:[],pan,filter,legacyDelay,feedback,wet,dry,instances,update,readMeter(){leftMeter.getFloatTimeDomainData(leftSamples);rightMeter.getFloatTimeDomainData(rightSamples);let leftPeak=0,rightPeak=0,leftSquare=0,rightSquare=0;for(let i=0;i<leftSamples.length;i++){const left=leftSamples[i],right=rightSamples[i];leftPeak=Math.max(leftPeak,Math.abs(left));rightPeak=Math.max(rightPeak,Math.abs(right));leftSquare+=left*left;rightSquare+=right*right}const reductions={};for(const[id,instance]of instances)if(instance.type==='compressor'||instance.type==='limiter')reductions[id]=instance.externalSidechain?instance.reductionDb:Math.max(0,-Number(instance.node.reduction||0));return{leftPeak,rightPeak,leftRms:Math.sqrt(leftSquare/leftSamples.length),rightRms:Math.sqrt(rightSquare/leftSamples.length),reductions}},signature:trackGraphSignature(track),disconnectSidechains(){for(const connection of this.sidechainConnections){try{connection.source.disconnect(connection.send)}catch{}try{connection.send.disconnect()}catch{}}this.sidechainConnections.length=0},disconnect(){this.disconnectSidechains();for(const node of new Set(nodes)){disposeProcessor(node);try{node.disconnect()}catch{}}}};
 }
 function trackGraphSignature(track){
  return(track.fx?.effects||[]).filter(effect=>effect.enabled).map(effect=>{
@@ -327,12 +328,28 @@ export class AudioEngine{
    }
   }
  }
- async render(project,buffers,{bypassMastering=false}={}){
+ async render(project,buffers,{bypassMastering=false,signal,onProgress}={}){
+  if(signal?.aborted)throw signal.reason||new DOMException('Offline rendering cancelled.','AbortError');
+  project=structuredClone(project);buffers=new Map(buffers);
+  const masterSettings={...this.masterSettings};
   const beat=60/project.bpm,bar=beat*4,patternBeats=project.patternBeats||16,{programSeconds:end,tailSeconds:tail}=estimateProjectRender(project,buffers);
   if(end>600)throw Error('Export is limited to 10 minutes in this prototype.');
   const sr=44100,masteringSettings=normalizeMasteringSettings(project.mastering||this.masteringSettings);
   const hasMasteringLimiter=!bypassMastering&&typeof globalThis.AudioWorkletNode==='function',latencyFrames=hasMasteringLimiter?Math.round(masteringSettings.limiter.lookaheadMs/1000*sr)+8:0,ctx=new OfflineAudioContext(2,Math.ceil((end+tail)*sr)+latencyFrames,sr),eq=ctx.createBiquadFilter(),comp=ctx.createDynamicsCompressor(),master=ctx.createGain();
   const hasSidechain=project.tracks.some(track=>(track.fx?.effects||[]).some(effect=>effect.enabled&&effect.type==='compressor'&&effect.params?.sidechain?.enabled));
+  const offlineTrackNodes=new Map(),voices=new Set();let masteringGraph=null,disposed=false;
+  const releaseVoices=(time=Infinity)=>{
+   for(const voice of voices)if(voice.endTime<=time){
+    voice.source.disconnect();for(const node of voice.nodes)node.disconnect();voices.delete(voice);
+   }
+  };
+  const dispose=()=>{
+   if(disposed)return;disposed=true;
+   releaseVoices();
+   for(const graph of offlineTrackNodes.values())graph.disconnect();
+   masteringGraph?.disconnect();eq.disconnect();comp.disconnect();master.disconnect();
+  };
+  try{
   if(hasSidechain){
    if(!ctx.audioWorklet||typeof globalThis.AudioWorkletNode!=='function')throw new Error('Offline sidechain rendering requires AudioWorklet support in this browser.');
    await ctx.audioWorklet.addModule(new URL('./sidechain-processor.js',import.meta.url));
@@ -342,11 +359,10 @@ export class AudioEngine{
    await ctx.audioWorklet.addModule(new URL('./mastering-processor.js',import.meta.url));
    ctx.masteringLimiterReady=true;
   }else if(!bypassMastering&&masteringSettings.limiter.enabled)throw this.masteringLimiterError||new Error('Offline mastering limiter rendering requires AudioWorklet support in this browser.');
-  eq.type='highshelf';eq.frequency.value=4500;eq.gain.value=this.masterSettings.eq;comp.threshold.value=this.masterSettings.threshold;comp.ratio.value=3;master.gain.value=Math.max(0,Number(this.masterSettings.volume??1))*Math.pow(10,this.masterSettings.makeup/20);eq.connect(comp).connect(master);
+  eq.type='highshelf';eq.frequency.value=4500;eq.gain.value=masterSettings.eq;comp.threshold.value=masterSettings.threshold;comp.ratio.value=3;master.gain.value=Math.max(0,Number(masterSettings.volume??1))*Math.pow(10,masterSettings.makeup/20);eq.connect(comp).connect(master);
   if(bypassMastering)master.connect(ctx.destination);
-  let masteringGraph=null;
   if(!bypassMastering){masteringGraph=createMasteringGraph(ctx,masteringSettings,ctx.destination);master.connect(masteringGraph.input)}
-  const offlineTrackNodes=new Map();let rejectProcessor;
+  let rejectProcessor;
   const processorFailure=new Promise((_,reject)=>{rejectProcessor=reject});
   if(masteringGraph)watchGraphProcessors(masteringGraph,rejectProcessor);
   for(const track of project.tracks){
@@ -354,19 +370,34 @@ export class AudioEngine{
    offlineTrackNodes.set(track.id,graph);
    watchGraphProcessors(graph,rejectProcessor);
    graph.update(track,project.tracks.some(item=>item.solo),project.bpm,isTrackAudible(track,project.tracks));
-   for(const clip of track.clips){const buffer=buffers.get(clip.asset);if(!buffer||clip.mute)continue;const source=ctx.createBufferSource(),clipGain=ctx.createGain(),when=clip.bar*bar,duration=clipDurationSeconds(clip);source.buffer=buffer;source.playbackRate.value=clip.rate||1;source.connect(clipGain).connect(graph.input);scheduleClipSource(ctx,source,clipGain,clip,when,0,duration)}
-   for(const event of instrumentEvents(track,buffers,project.bpm,end/beat,0,end/beat,patternBeats))scheduleInstrumentEvent(ctx,graph.input,event,0,end,0,true);
   }
   connectTrackSidechains(project.tracks,offlineTrackNodes,ctx);
-  let rendered;
-  try{rendered=await Promise.race([ctx.startRendering(),processorFailure])}
-  finally{
-   for(const graph of offlineTrackNodes.values())graph.disconnect();
-   masteringGraph?.disconnect();eq.disconnect();comp.disconnect();master.disconnect();
-  }
+  const schedule=(from,to)=>{
+   if(signal?.aborted)throw signal.reason||new DOMException('Offline rendering cancelled.','AbortError');
+   for(const track of project.tracks){
+    const graph=offlineTrackNodes.get(track.id);
+    for(const clip of track.clips){
+     const when=clip.bar*bar,buffer=buffers.get(clip.asset);
+     if(!buffer||clip.mute||when<from||when>=to)continue;
+     const source=ctx.createBufferSource(),clipGain=ctx.createGain(),duration=clipDurationSeconds(clip);
+     source.buffer=buffer;source.playbackRate.value=clip.rate||1;source.connect(clipGain).connect(graph.input);
+     const voice={source,nodes:[clipGain],endTime:when+duration};voices.add(voice);
+     scheduleClipSource(ctx,source,clipGain,clip,when,0,duration);
+    }
+    if(from>=end)continue;
+    for(const event of instrumentEvents(track,buffers,project.bpm,end/beat,from/beat,Math.min(end,to)/beat,patternBeats)){
+     const voice=scheduleInstrumentEvent(ctx,graph.input,event,from,Math.min(end,to),from,from===0);
+     if(voice)voices.add(voice);
+    }
+   }
+  };
+  const rendered=await renderOfflineWindows(ctx,{schedule,release:releaseVoices,dispose,signal,failure:processorFailure,onProgress});
   if(!masteringGraph?.latencyFrames)return rendered;
   const trimFrames=masteringGraph.latencyFrames,trimmed=ctx.createBuffer(rendered.numberOfChannels,rendered.length-trimFrames,rendered.sampleRate);
   for(let channel=0;channel<rendered.numberOfChannels;channel++)trimmed.getChannelData(channel).set(rendered.getChannelData(channel).subarray(trimFrames));
   return trimmed;
+  }finally{
+   dispose();
+  }
  }
 }

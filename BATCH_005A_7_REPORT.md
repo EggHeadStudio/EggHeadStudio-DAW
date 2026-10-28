@@ -1,9 +1,13 @@
 # Batch 005A.7 Report — UX Completion & Reliability (checkpoint)
 
 **BATCH 005A.7-UX: COMPLETE for the emulated-browser scope (see limitations).**
-**BATCH 005A.7: INCOMPLETE — recording browser acceptance, benchmarks, streaming .EHS, storage/scheduler fault injection not executed.**
+**Current reliability/performance status is superseded by [BATCH_005A_7C_REPORT.md](./BATCH_005A_7C_REPORT.md).** The sections below retain the original checkpoint evidence.
 
-Batch 005B is NOT recommended yet.
+Batch 005B readiness must be read from the 7C report, not this historical checkpoint.
+
+## Superseding 005A.7C closure
+
+The future-source offline graph bottleneck is fixed with bounded source scheduling in one continuous context. The medium/large exports now complete and decode as stereo WAV/MP3, preserving the DSP chain and settings. A stereo-imager polarity defect was separately corrected. Export snapshots, progress, boundary cancellation/native closure, processor retirement, deterministic static asset versioning, native crash/relaunch boundary checks and a two-minute dense scheduling stress run are covered in the new report. No redesign, commit, push or deployment was performed. Physical-device, cross-engine, independent standards and deployed-Pages checks remain explicit release/005B gates.
 
 ## Superseding 005A.7B reliability checkpoint
 

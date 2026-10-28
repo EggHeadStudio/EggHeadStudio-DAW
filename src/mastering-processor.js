@@ -9,6 +9,7 @@ class MasteringLimiterProcessor extends AudioWorkletProcessor{
   this.limiter=new LookaheadLimiter(sampleRate,channels,this.lookaheadMs/1000);
   this.settings={enabled:false,ceilingDbtp:-1,releaseSeconds:.1,...options.processorOptions?.settings,lookaheadMs:this.lookaheadMs};
   this.port.onmessage=event=>{
+   if(event.data?.type==='dispose'){this.disposed=true;return}
    if(event.data?.type==='settings'){
     const next=event.data.settings||{};
     if(Number.isFinite(next.lookaheadMs)&&next.lookaheadMs!==this.lookaheadMs){
@@ -24,6 +25,7 @@ class MasteringLimiterProcessor extends AudioWorkletProcessor{
   this.port.postMessage({type:'ready'});
  }
  process(inputs,outputs){
+  if(this.disposed)return false;
   const input=inputs[0],output=outputs[0];
   if(!output?.length)return true;
   if(!input?.length||!input[0]?.length){for(const channel of output)channel.fill(0);return true}
@@ -42,6 +44,7 @@ class MasteringMultibandProcessor extends AudioWorkletProcessor{
   this.processor=new MultibandCompressor(sampleRate,this.channels,this.settings);
   this.processor.onGainReduction=bands=>this.port.postMessage({type:'gain-reduction',bands});
   this.port.onmessage=event=>{
+   if(event.data?.type==='dispose'){this.disposed=true;return}
    if(event.data?.type==='settings'){
     this.settings=event.data.settings||{};
     this.processor.update(this.settings);
@@ -51,6 +54,7 @@ class MasteringMultibandProcessor extends AudioWorkletProcessor{
   this.port.postMessage({type:'ready'});
  }
  process(inputs,outputs){
+  if(this.disposed)return false;
   const input=inputs[0],output=outputs[0];
   if(!output?.length)return true;
   if(!input?.length||!input[0]?.length){for(const channel of output)channel.fill(0);return true}

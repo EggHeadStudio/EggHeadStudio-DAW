@@ -840,7 +840,7 @@ async function runReleasePackage(){
  try{
   const settings=normalizeExportSettings(project.exportSettings);
   setExportStatus('Rendering the arrangement once for selected release formats…');
-  await engine.init();const buffer=await engine.render(project,buffers,{bypassMastering:!settings.mastering});
+  await engine.init();const buffer=await engine.render(project,buffers,{bypassMastering:!settings.mastering,signal:controller.signal,onProgress:progress=>setExportStatus(`Rendering release audio · ${Math.round(progress*100)}%`,progress)});
   if(controller.signal.aborted)throw controller.signal.reason;
   const entries={},audioEntries=[];
   for(const format of selected){
@@ -882,8 +882,8 @@ async function runExport(){
   const releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project),metadataErrors=validateReleaseMetadata(releaseMetadata);
   if(metadataErrors.length)throw new Error(`Invalid release metadata: ${metadataErrors.join(' ')}`);
   await engine.init();
-  setExportStatus('Rendering arrangement offline… Rendering has no reliable browser percentage indicator.');
-  const buffer=await engine.render(project,buffers,{bypassMastering:!settings.mastering});
+  setExportStatus('Rendering arrangement offline…');
+  const buffer=await engine.render(project,buffers,{bypassMastering:!settings.mastering,signal:controller.signal,onProgress:progress=>setExportStatus(`Rendering arrangement · ${Math.round(progress*100)}%`,progress)});
   if(controller.signal.aborted)throw controller.signal.reason;
   const memory=estimateExportMemory(buffer.duration,settings,buffer.sampleRate);
   if(!memory.allowed)throw new RangeError(`This render needs an estimated ${Math.ceil(memory.estimatedPeakBytes/1024/1024)} MiB. Reduce output rate or project duration and export again.`);
@@ -912,7 +912,7 @@ async function runExport(){
   notify(`${settings.format.toUpperCase()} export verified and downloaded.`);
   if(view==='export')renderExport();
  }catch(error){
-  if(error?.name==='AbortError')setExportStatus('Export cancelled. Temporary encoding work was stopped; offline rendering, if underway, was allowed to finish before discard.');
+  if(error?.name==='AbortError')setExportStatus('Export cancelled. Offline processing stops at its next scheduling boundary; temporary audio graphs and encoding workers are released.');
   else{setExportStatus(`Export failed: ${error.message}`);notify(`Export failed: ${error.message}`)}
  }finally{
   exportController=null;

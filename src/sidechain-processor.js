@@ -8,6 +8,7 @@ export class FeedForwardCompressorProcessor extends ProcessorBase {
   this.detectorState=[{x:0,y:0},{x:0,y:0}];
   if(!this.port)this.port={onmessage:null,postMessage:()=>{}};
   this.port.onmessage=event=>{
+   if(event.data?.type==='dispose'){this.disposed=true;return}
    if(event.data?.type==='settings')this.settings={...this.settings,...event.data.settings};
   };
  }
@@ -20,6 +21,7 @@ export class FeedForwardCompressorProcessor extends ProcessorBase {
   return over>0?over*(1-1/ratio):0;
  }
  process(inputs,outputs){
+  if(this.disposed)return false;
   const program=inputs[0]||[],detector=inputs[1]||[],output=outputs[0]||[];
   if(!program.length||!output.length)return true;
   const frames=output[0].length,detectorGain=10**(this.settings.detectorGain/20),lowCut=Math.max(0,Number(this.settings.lowCut)||0),alpha=lowCut?Math.exp(-2*Math.PI*lowCut/this.sampleRate):0;

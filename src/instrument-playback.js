@@ -57,5 +57,5 @@ export function scheduleInstrumentEvent(ctx,input,event,from,to,contextStart,ini
     gain.gain.linearRampToValueAtTime(value(skip+remaining),when+remaining);
   }
   source.start(when,voice.start+(voice.looping?(skip*voice.rate)%voice.region:skip*voice.rate));source.stop(when+remaining);
-  return{source,nodes:[gain,pan]};
+  return{source,nodes:[gain,pan],endTime:when+remaining};
 }

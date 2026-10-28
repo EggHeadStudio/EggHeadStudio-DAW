@@ -94,3 +94,7 @@ Export cancellation stops the ZIP Worker (or checks between chunks in the no-Wor
 - Step notes may carry padId.
 - Pad cap raised from 16 to 32. Legacy 16-pad racks load unchanged; trailing untouched default pads are hidden, never deleted. Older app versions ignore the new fields and re-pad to 16.
 - The Piano Roll velocity lane edits the existing note `velocity` (0-1). It adds no archive/schema field; collapsed state, zoom and scroll remain editor state. The toolbar slider still supplies the default for newly created notes.
+
+## Batch 005A.7C runtime changes (no format change)
+
+Offline source windows, render progress/cancellation, processor disposal and deployment content versions add no project or archive field. Track effects and mastering settings retain their existing definitions; one continuous graph preserves their state across source-scheduling boundaries. Container v1, schema 1/2, embedded media, integrity/deduplication and archive limits are unchanged. The stereo-imager right-side polarity correction changes previously incorrect playback, not saved settings; older renderers can still produce their old duplicated-channel result from the same archive. The native interrupted-import test verifies rollback before asset-transaction commit, not atomicity across IndexedDB and localStorage or power-loss durability.

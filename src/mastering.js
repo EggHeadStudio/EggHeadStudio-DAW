@@ -104,6 +104,12 @@ function makeSaturationCurve(drive){
  return curve;
 }
 
+export function disposeProcessor(node){
+ if(!node.port)return;
+ node.onprocessorerror=null;node.port.onmessage=null;
+ node.port.postMessage({type:'dispose'});node.port.close?.();
+}
+
 export function createMasteringGraph(ctx,settings,destination){
  const current=normalizeMasteringSettings(settings),input=ctx.createGain(),inputTrim=ctx.createGain(),nodes=[inputTrim];
  input.connect(inputTrim);
@@ -118,10 +124,10 @@ export function createMasteringGraph(ctx,settings,destination){
  const saturationInput=ctx.createGain(),dry=ctx.createGain(),wet=ctx.createGain(),saturator=ctx.createWaveShaper(),satSum=ctx.createGain();
  saturationInput.connect(dry);saturationInput.connect(saturator);dry.connect(satSum);saturator.connect(wet);wet.connect(satSum);saturator.oversample='4x';nodes.push(saturationInput,dry,saturator,wet,satSum);
 
- const splitter=ctx.createChannelSplitter(2),merger=ctx.createChannelMerger(2),mid=ctx.createGain(),side=ctx.createGain(),sideInvert=ctx.createGain(),left=ctx.createGain(),right=ctx.createGain();
+ const splitter=ctx.createChannelSplitter(2),merger=ctx.createChannelMerger(2),mid=ctx.createGain(),side=ctx.createGain(),sideInvert=ctx.createGain(),rightSideInvert=ctx.createGain(),left=ctx.createGain(),right=ctx.createGain();
  splitter.connect(mid,0);splitter.connect(mid,1);splitter.connect(side,0);splitter.connect(sideInvert,1);
- mid.gain.value=.5;side.gain.value=.5;sideInvert.gain.value=-1;mid.connect(left);side.connect(left);mid.connect(right);sideInvert.connect(side);side.connect(right);side.gain.value=.5*current.imager.width;
- left.gain.value=1;right.gain.value=1;left.connect(merger,0,0);right.connect(merger,0,1);nodes.push(splitter,merger,mid,side,sideInvert,left,right);
+ mid.gain.value=.5;side.gain.value=.5;sideInvert.gain.value=-1;rightSideInvert.gain.value=-1;mid.connect(left);side.connect(left);mid.connect(right);sideInvert.connect(side);side.connect(rightSideInvert).connect(right);side.gain.value=.5*current.imager.width;
+ left.gain.value=1;right.gain.value=1;left.connect(merger,0,0);right.connect(merger,0,1);nodes.push(splitter,merger,mid,side,sideInvert,rightSideInvert,left,right);
 
  const multibandAvailable=Boolean(ctx.masteringLimiterReady&&ctx.audioWorklet&&typeof globalThis.AudioWorkletNode==='function');
  if(current.multiband.enabled&&!multibandAvailable)throw new Error('The mastering multiband processor requires AudioWorklet support in this browser.');
@@ -185,7 +191,7 @@ export function createMasteringGraph(ctx,settings,destination){
  multiband?.port.start?.();
  if(limiter)limiter.port.onmessage=event=>{if(event.data?.type==='gain-reduction')graph.gainReductionDb=Math.max(0,Number(event.data.db)||0)};
  if(multiband)multiband.port.onmessage=event=>{if(event.data?.type==='gain-reduction')graph.multibandGainReduction=event.data.bands||[0,0,0]};
- const graph={input,nodes,eqFilters,bands,limiter,multiband,inputTrim,preAnalyser,postAnalyser,gainReductionDb:0,multibandGainReduction:[0,0,0],get moduleOrder(){return [...connectedOrder]},get latencyFrames(){return latencyFrames},disconnect(){input.disconnect();for(const node of nodes){if(node.port)node.onprocessorerror=null;node.disconnect()}},update};
+ const graph={input,nodes,eqFilters,bands,limiter,multiband,inputTrim,preAnalyser,postAnalyser,gainReductionDb:0,multibandGainReduction:[0,0,0],get moduleOrder(){return [...connectedOrder]},get latencyFrames(){return latencyFrames},disconnect(){input.disconnect();for(const node of nodes){disposeProcessor(node);node.disconnect()}},update};
  return graph;
 }
 

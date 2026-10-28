@@ -329,7 +329,7 @@ Update this checklist only after relevant test evidence is recorded. A feature e
 
 ## 13. NEXT IMMEDIATE ACTION
 
-Continue from `BATCH_005A_7B_REPORT.md`, not from the earlier 119-test checkpoint. Synthetic recording, five-width instrument touch, archive cancellation/integrity, autosave quota/corrupt recovery and live/offline Worklet failure checks now have evidence. ZIP output is chunked but input collection/extraction remain buffered. Finish the long-export performance and native-memory/crash-recovery gates before signing off Batch 005A.7; do not implement the professional 005B redesign yet. Independent standards references, physical-device 005B work and deployment of an approved release remain explicit gates.
+Continue from `BATCH_005A_7C_REPORT.md`, not from the earlier checkpoints. Continuous-context bounded offline scheduling closes the demonstrated future-source graph bottleneck without resetting DSP state. The medium/large full-chain exports and independent WAV/MP3 decoding now have measured results; native crash/relaunch boundaries and extended scheduling stress have also been exercised. ZIP output is chunked but input collection/extraction remain buffered. Preserve the engine, instrument/recording models and project format when preparing 005B; the professional redesign itself was not implemented here. Independent standards references, physical-device/cross-engine acceptance and deployment of an approved release remain explicit gates.
 
 
 ## Batch 005A.7-UX — Instrument Workflow Cleanup
@@ -339,3 +339,9 @@ Drum Racks now start with one pad and grow with Add Pad (max 32); the Piano Roll
 The collapsible Piano Roll velocity lane shares note scroll/zoom, supports mouse/touch and selected-note relative changes, and writes the existing `note.velocity`. One drag is one Undo step. JSON/.EHS and actual instrument playback use that same field; the toolbar slider remains the default for new notes.
 
 Batch 005A.7B adds explicit storage-failure recovery, chunked ZIP output and Worklet fault handling without a new production feature or UI redesign. See its report for measured benchmarks, unresolved long-export blockers and the modular transport/device/DSP handoff to 005B.
+
+## Batch 005A.7C - Offline rendering closure
+
+The 12-track controlled context render improved from 546.25 s to 66.18 s; the 24-track/five-minute context render completed in 192.70 s. Retain the single continuous DSP graph and quantum-aligned source windows: do not replace them with independent audio chunks. Cancellation closes the native context after graph retirement and silent draining. The mastering right-side polarity repair is an intentional audio-integrity fix, not a quality reduction.
+
+Static deployment now has a deterministic content-versioned asset build and a Pages Actions workflow. Switch Pages source to Actions only when deploying an approved release; local source serving remains build-free. Version checking must never clear IndexedDB/local projects. The 005B handoff should preserve device/DSP boundaries, explicit fault notifications, snapshot export semantics, archive limits and the updated browser regression fixtures. Native memory samples include retained allocator/process overhead; keep low-memory physical-device budgets and non-Chromium verification as explicit 005B gates. See `BATCH_005A_7C_REPORT.md` for exact evidence and limitations.
