@@ -69,7 +69,7 @@ export class RecordingStudio{
       const id=input.dataset.backing??input.dataset.backingVolume,state=this.selection.get(id)||{enabled:true,volume:1};
       if(input.dataset.backing!==undefined)state.enabled=input.checked;else state.volume=Number(input.value);
       this.selection.set(id,state);
-      if(this.busy&&this.engine.playing)this.engine.syncTracks(this.playbackProject().tracks,project.bpm);
+      if(this.engine.playing)this.engine.syncTracks(this.playbackProject().tracks,project.bpm);
     });
     const find=id=>target.clips.find(clip=>clip.id===id);
     const bind=(attribute,action)=>root.querySelectorAll(`[${attribute}]`).forEach(input=>input.onchange=()=>{try{action(input,find(input.getAttribute(attribute)));this.save();this.mount(root)}catch(error){this.notify(error.message)}});

@@ -2,13 +2,20 @@ import {createTrackEffect} from './audio.js';
 import {describeControl,enhanceParameter} from './ui-controls.js';
 
 const units={threshold:'dB',makeup:'dB',gain:'dB',knee:'dB',attack:'s',release:'s',decay:'s',time:'ms',predelay:'ms',frequency:'Hz',lowCut:'Hz',highCut:'Hz'};
+export const EFFECT_CONTROLS={
+  compressor:[['threshold','Threshold (dB)',-60,0,1],['ratio','Ratio',1,20,.5],['attack','Attack (s)',.001,1,.001],['release','Release (s)',.01,2,.01],['knee','Knee (dB)',0,40,1],['makeup','Makeup (dB)',-24,24,.5]],
+  delay:[['time','Time (ms)',10,2000,10,'ms'],['feedback','Feedback',0,.85,.01],['mix','Wet',0,1,.01]],
+  reverb:[['decay','Decay (s)',.1,5,.1],['predelay','Pre-delay (ms)',0,250,1,'ms'],['mix','Wet',0,1,.01]],
+  saturation:[['drive','Drive',1,20,.1],['mix','Wet',0,1,.01]],limiter:[['threshold','Ceiling (dB)',-12,0,.1]],
+  utility:[['gain','Gain (dB)',-60,24,.5],['pan','Pan',-1,1,.01],['width','Stereo width',0,2,.01]]
+};
 export function effectParameterOptions(effect,input){
   const key=input.dataset.param,scale=Number(input.dataset.scale||1),defaults=createTrackEffect(effect.type).params;
   const reset=Number(defaults[key]??input.value)*scale;
   return{
     name:input.closest('label').firstChild.textContent.trim(),
     unit:units[key]||'',reset,
-    rotary:!['mix','width','threshold','knee'].includes(key),
+    rotary:key!=='pan',
     scale:['frequency','lowCut','highCut','attack','release','decay','time'].includes(key)&&Number(input.min)>0?'log':'linear',
     format:['mix','feedback'].includes(key)?'percent':key==='ratio'?'ratio':key==='pan'?'pan':'number'
   };
@@ -25,7 +32,8 @@ export function mountDeviceShell(article,{id,type,title,onPreset}){
   const fold=document.createElement('button');fold.className='device-fold';fold.textContent='Collapse';fold.setAttribute('aria-expanded','true');fold.setAttribute('aria-controls',body.id);
   fold.onclick=()=>{body.hidden=!body.hidden;fold.textContent=body.hidden?'Expand':'Collapse';fold.setAttribute('aria-expanded',String(!body.hidden));article.classList.toggle('device-collapsed',body.hidden)};
   const preset=document.createElement('button');preset.className='device-preset';preset.textContent='Presets';preset.setAttribute('aria-label',`${title} chain presets`);preset.onclick=onPreset;
-  header.append(preset,fold);article.append(body);
+  if(onPreset)header.append(preset);
+  header.append(fold);article.append(body);
   describeControl(fold,`Fold ${title} without changing its audio processing.`);
   const enabled=header.querySelector('[data-effect-enabled]');enabled.setAttribute('aria-label',`Enable ${title}`);
   const status=document.createElement('span');status.className='device-status';header.querySelector('label').append(status);

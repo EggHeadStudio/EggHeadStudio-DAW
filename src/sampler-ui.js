@@ -115,7 +115,7 @@ export function renderSamplerHTML(track, assets, buffers, grid) {
       <label>Cutoff <input id="filterCutoff" type="range" min="100" max="20000" step="50" value="${track.fx?.cutoff || 20000}"></label>
       <label>Resonance <input id="filterQ" type="range" min=".1" max="18" step=".1" value="${track.fx?.resonance || .7}"></label>
       <label>Delay mix <input id="delayMix" type="range" min="0" max=".8" step=".01" value="${track.fx?.delay || 0}"></label>
-      <label>Delay time <input id="delayTime" type="range" min=".05" max=".75" step=".01" value="${track.fx?.delayTime || .25}"></label>
+      <label>Delay time (ms) <input id="delayTime" type="range" min="50" max="750" step="10" value="${(track.fx?.delayTime || .25)*1000}"></label>
       <label>Feedback <input id="delayFeedback" type="range" min="0" max=".75" step=".01" value="${track.fx?.feedback || 0}"></label>
     </div>
     ${pianoMarkup(track,grid,editor)}
@@ -162,20 +162,28 @@ export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, sav
     const input=root.querySelector(`#${id}`);
     if(key==='mode')input.value=sampler.mode||'melodic';
     input.onchange=event=>{sampler[key]=key==='mode'?event.target.value:Math.max(minimum,Math.min(maximum,Number(event.target.value)||0));save()};
+    if(key!=='mode'){
+      input.type='range';
+      input.oninput=input.onchange;
+      const defaults={attack:.005,decay:.1,sustain:.8,release:.03,transpose:0,fineTune:0};
+      enhanceParameter(input,{name:`Sampler ${key}`,reset:defaults[key],rotary:true,unit:['attack','decay','release'].includes(key)?'s':key==='transpose'?'st':key==='fineTune'?'cents':'',format:key==='sustain'?'percent':'number'});
+    }
   }
   if (sampler) {
+    const hint=document.createElement('p');hint.className='hint';hint.textContent='Envelope, root key and tuning apply to newly triggered notes. Filter and track effects update active voices. Space plays/pauses the Arrangement, including this track’s clips.';
+    root.querySelector('.sample-source').append(hint);
     root.querySelector('#samplerStart').onchange=event=>{if(!buffer())return notify('Choose a sample first.');sampler.start=Math.max(0,Math.min(Math.max(0,buffer().duration-.001),Number(event.target.value)||0));save()};
     root.querySelector('#samplerEnd').onchange=event=>{if(!buffer())return notify('Choose a sample first.');sampler.end=Math.max(sampler.start+.001,Math.min(buffer().duration,Number(event.target.value)||buffer().duration));save()};
   }
   track.fx ||= {filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25};
   root.querySelector('#filterType').value=track.fx.filterType;
-  for(const [id,key] of [['filterCutoff','cutoff'],['filterQ','resonance'],['delayMix','delay'],['delayTime','delayTime'],['delayFeedback','feedback']])root.querySelector(`#${id}`).oninput=event=>{track.fx[key]=Number(event.target.value);engine.syncTracks(tracks);save()};
+  for(const [id,key] of [['filterCutoff','cutoff'],['filterQ','resonance'],['delayMix','delay'],['delayTime','delayTime'],['delayFeedback','feedback']])root.querySelector(`#${id}`).oninput=event=>{track.fx[key]=Number(event.target.value)/(id==='delayTime'?1000:1);engine.syncTracks(tracks);save()};
   root.querySelector('#filterType').onchange=event=>{track.fx.filterType=event.target.value;engine.syncTracks(tracks);save()};
   for(const [id,name,unit,reset,scale,format]of [
     ['filterCutoff','Cutoff','Hz',20000,'log','number'],['filterQ','Resonance','Q',.7,'log','number'],
-    ['delayMix','Delay mix','',0,'linear','percent'],['delayTime','Delay time','s',.25,'log','number'],
+    ['delayMix','Delay mix','',0,'linear','percent'],['delayTime','Delay time','ms',250,'log','number'],
     ['delayFeedback','Feedback','',.25,'linear','percent']
-  ])enhanceParameter(root.querySelector(`#${id}`),{name,unit,reset,scale,format,rotary:id!=='delayMix'});
+  ])enhanceParameter(root.querySelector(`#${id}`),{name,unit,reset,scale,format,rotary:true});
 
   const world=root.querySelector('#pianoWorld');
   let gesture=null;

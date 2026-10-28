@@ -1,4 +1,5 @@
 import {analyzeLoudness,analyzeStereo} from './mastering-dsp.js';
+import {masterEqFilters,unitToFrequency} from './eq-model.js';
 
 const MASTERING_MODULE_ORDER=['eq','saturation','imager','multiband'];
 const MULTIBAND_DEFAULTS={
@@ -146,11 +147,13 @@ export function createMasteringGraph(ctx,settings,destination){
   imager:{input:splitter,output:merger},
   multiband:multiband?{input:multiband,output:multiband}:null
  };
- let connectedOrder=[],connectedEdges=[];
+ let connectedOrder=[],connectedEdges=[],eqPre=inputTrim,eqActive=!current.chainBypass&&current.eq.enabled;
  const connectOrder=order=>{
   for(const[source,target]of connectedEdges)try{source.disconnect(target)}catch{}
   connectedEdges=[];
-  connectedOrder=order.filter(name=>modules[name]);
+  connectedOrder=order.filter(name=>modules[name]&&(name!=='eq'||eqActive));
+  const beforeEq=order.slice(0,order.indexOf('eq')).filter(name=>modules[name]);
+  eqPre=beforeEq.length?modules[beforeEq.at(-1)].output:inputTrim;
   const first=connectedOrder[0]?modules[connectedOrder[0]].input:outputGain;
   inputTrim.connect(first);connectedEdges.push([inputTrim,first]);
   for(let index=0;index<connectedOrder.length-1;index++){
@@ -165,14 +168,14 @@ export function createMasteringGraph(ctx,settings,destination){
  if(postAnalyser)postAnalyser.connect(destination);
 
  let latencyFrames=limiter?Math.round(current.limiter.lookaheadMs/1000*ctx.sampleRate)+8:0;
- let lastOrder=current.chainOrder.join('|');
+ let lastOrder=`${current.chainOrder.join('|')}:${eqActive}`;
  const update=nextSettings=>{
   const next=normalizeMasteringSettings(nextSettings);
   setParam(inputTrim.gain,10**(next.inputGainDb/20),ctx);
   const chainEnabled=!next.chainBypass;
-  setParam(highpass.frequency,chainEnabled&&next.eq.enabled?next.eq.lowCut:10,ctx);
-  setParam(lowpass.frequency,chainEnabled&&next.eq.enabled?next.eq.highCut:Math.min(22000,ctx.sampleRate/2),ctx);
-  bands.forEach((node,index)=>{const band=next.eq.bands[index];node.type=band.type;setParam(node.frequency,band.frequency,ctx);setParam(node.Q,band.q,ctx);setParam(node.gain,chainEnabled&&next.eq.enabled&&band.enabled?band.gain:0,ctx)});
+  eqActive=chainEnabled&&next.eq.enabled;
+  const filters=masterEqFilters(next,ctx.sampleRate);
+  eqFilters.forEach((node,index)=>{const band=filters[index];node.type=band.type;setParam(node.frequency,band.frequency,ctx);setParam(node.Q,band.q,ctx);setParam(node.gain,band.gain,ctx)});
   setParam(dry.gain,chainEnabled&&next.saturation.enabled?1-next.saturation.mix:1,ctx);
   setParam(wet.gain,chainEnabled&&next.saturation.enabled?next.saturation.mix:0,ctx);
   if(saturationDrive!==next.saturation.drive){saturator.curve=makeSaturationCurve(next.saturation.drive);saturationDrive=next.saturation.drive}
@@ -183,7 +186,7 @@ export function createMasteringGraph(ctx,settings,destination){
   latencyFrames=limiter?Math.round(next.limiter.lookaheadMs/1000*ctx.sampleRate)+8:0;
   limiter?.port.postMessage({type:'settings',settings:{enabled:next.limiter.enabled,ceilingDbtp:next.limiter.ceiling,releaseSeconds:next.limiter.release,lookaheadMs:next.limiter.lookaheadMs}});
   setParam(outputGain.gain,10**(next.outputGainDb/20),ctx);
-  const orderKey=next.chainOrder.join('|');
+  const orderKey=`${next.chainOrder.join('|')}:${eqActive}`;
   if(orderKey!==lastOrder){connectOrder(next.chainOrder);lastOrder=orderKey}
  };
  update(current);
@@ -191,18 +194,18 @@ export function createMasteringGraph(ctx,settings,destination){
  multiband?.port.start?.();
  if(limiter)limiter.port.onmessage=event=>{if(event.data?.type==='gain-reduction')graph.gainReductionDb=Math.max(0,Number(event.data.db)||0)};
  if(multiband)multiband.port.onmessage=event=>{if(event.data?.type==='gain-reduction')graph.multibandGainReduction=event.data.bands||[0,0,0]};
- const graph={input,nodes,eqFilters,bands,limiter,multiband,inputTrim,preAnalyser,postAnalyser,gainReductionDb:0,multibandGainReduction:[0,0,0],get moduleOrder(){return [...connectedOrder]},get latencyFrames(){return latencyFrames},disconnect(){input.disconnect();for(const node of nodes){disposeProcessor(node);node.disconnect()}},update};
+ const graph={input,nodes,eqFilters,bands,get eqTaps(){return{pre:eqPre,post:eqActive?lowpass:eqPre}},limiter,multiband,inputTrim,preAnalyser,postAnalyser,gainReductionDb:0,multibandGainReduction:[0,0,0],get moduleOrder(){return [...connectedOrder]},get latencyFrames(){return latencyFrames},disconnect(){input.disconnect();for(const node of nodes){disposeProcessor(node);node.disconnect()}},update};
  return graph;
 }
 
 export function masteringEqResponse(settings,sampleRate=48000,pointCount=160){
  const current=normalizeMasteringSettings(settings),points=[];
  for(let index=0;index<=pointCount;index++){
-  const frequency=20*1000**(index/pointCount),omega=2*Math.PI*frequency/sampleRate;
+  const frequency=unitToFrequency(index/pointCount,sampleRate);
   let response=0;
-  if(current.eq.enabled){
-   response+=filterDb('highpass',frequency,current.eq.lowCut,.707,sampleRate);
-   response+=filterDb('lowpass',frequency,current.eq.highCut,.707,sampleRate);
+  if(current.eq.enabled&&!current.chainBypass){
+   if(current.eq.lowCutEnabled!==false)response+=filterDb('highpass',frequency,current.eq.lowCut,.707,sampleRate);
+   if(current.eq.highCutEnabled!==false)response+=filterDb('lowpass',frequency,current.eq.highCut,.707,sampleRate);
    for(const band of current.eq.bands)if(band.enabled)response+=filterDb(band.type,frequency,band.frequency,band.q,sampleRate,band.gain);
   }
   points.push({frequency,db:response});
@@ -211,6 +214,8 @@ export function masteringEqResponse(settings,sampleRate=48000,pointCount=160){
 }
 
 function filterDb(type,frequency,cutoff,q,sampleRate,gain=0){
+ cutoff=Math.min(sampleRate/2,cutoff);
+ if(cutoff===sampleRate/2&&(type==='highpass'||type==='lowpass'))return type==='highpass'?-240:0;
  const w0=2*Math.PI*cutoff/sampleRate,cos=Math.cos(w0),sin=Math.sin(w0),alpha=sin/(2*q);
  let b0,b1,b2,a0,a1,a2;
  if(type==='highpass'){b0=(1+cos)/2;b1=-(1+cos);b2=b0;a0=1+alpha;a1=-2*cos;a2=1-alpha}

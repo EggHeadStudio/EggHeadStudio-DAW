@@ -1,9 +1,16 @@
 import {createTrackEffect,renderSampleEffectChain} from './audio.js';
 import {renderSampleProcessing} from './sample-dsp.js';
 import {clampFrame,frameToX,getWaveformPeaks,xToFrame} from './waveform.js';
+import {SamplePreview} from './sample-preview.js';
+import {enhanceParameter} from './ui-controls.js';
+import {EFFECT_CONTROLS,effectParameterOptions,mountDeviceShell,captureDeviceUi,restoreDeviceUi} from './device-ui.js';
+import {mountTrackEqs} from './eq-workspace.js';
 
 let activeSamplePreviewStop=()=>{};
-export function stopSampleStudioPreview(){activeSamplePreviewStop()}
+let activeSampleUiDispose=()=>{},activePreview=null,activeEditor=null,sampleTransport=null,sampleDeviceUi=null;
+export function stopSampleStudioPreview(){activeSamplePreviewStop();activeSampleUiDispose();activePreview=null;activeEditor=null;sampleTransport=null}
+export function toggleSampleStudioPreview(){return sampleTransport?.()}
+export function sampleStudioPreviewPlaying(){return activePreview?.state==='playing'}
 
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 const cloneRegions=regions=>regions.map(region=>({...region}));
@@ -214,8 +221,8 @@ export class SampleEditor {
     return true;
   }
 
-  render(context){
-    const output=context.createBuffer(this.buffer.numberOfChannels,Math.max(1,this.frameCount),this.buffer.sampleRate),gain=10**(this.gainDb/20);
+  render(context,{applyGain=true}={}){
+    const output=context.createBuffer(this.buffer.numberOfChannels,Math.max(1,this.frameCount),this.buffer.sampleRate),gain=applyGain?10**(this.gainDb/20):1;
     for(let channel=0;channel<output.numberOfChannels;channel++){
       const source=this.buffer.getChannelData(channel),target=output.getChannelData(channel);
       for(let frame=0;frame<this.frameCount;frame++){
@@ -228,10 +235,10 @@ export class SampleEditor {
     return output;
   }
 
-  renderSelection(context){
+  renderSelection(context,{applyGain=true}={}){
     const from=this.selection.start,to=this.selection.end;
     if(to<=from)throw new RangeError('Select a non-empty sample region before rendering.');
-    const length=to-from,output=context.createBuffer(this.buffer.numberOfChannels,length,this.buffer.sampleRate),gain=10**(this.gainDb/20);
+    const length=to-from,output=context.createBuffer(this.buffer.numberOfChannels,length,this.buffer.sampleRate),gain=applyGain?10**(this.gainDb/20):1;
     for(let channel=0;channel<output.numberOfChannels;channel++){
       const source=this.buffer.getChannelData(channel),target=output.getChannelData(channel);
       for(let frame=0;frame<length;frame++){
@@ -264,7 +271,7 @@ export function renderSampleStudioHTML(editor,filename='My_Sample.wav',saved=fal
   const duration=editor?editor.duration:0,length=editor?.frameCount||0,selection=editor?.selection||{start:0,end:0};
   const safeName=String(filename).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const effects=editor?.processing.effects||[];
-  const effectControls={eq:[['lowCut','High-pass (Hz)',20,20000,1],['highCut','Low-pass (Hz)',20,20000,1],['gain','EQ gain (dB)',-18,18,.5]],compressor:[['threshold','Threshold (dB)',-60,0,1],['ratio','Ratio',1,20,.5],['attack','Attack (s)',.001,1,.001],['release','Release (s)',.01,2,.01],['makeup','Makeup (dB)',-24,24,.5]],delay:[['time','Delay (ms)',10,2000,10,'ms'],['feedback','Feedback',0,.85,.01],['mix','Wet',0,1,.01]],reverb:[['decay','Decay (s)',.1,5,.1],['predelay','Pre-delay (ms)',0,250,1,'ms'],['mix','Wet',0,1,.01]],saturation:[['drive','Drive',1,20,.1],['mix','Wet',0,1,.01]],limiter:[['threshold','Ceiling (dB)',-12,0,.1]],utility:[['gain','Gain (dB)',-60,24,.5],['pan','Pan',-1,1,.01],['width','Stereo width',0,2,.01]]};
+  const effectControls=EFFECT_CONTROLS;
   const controlMarkup=(effect,index,key,label,min,max,step,scale)=>`<label>${label}<input type="range" min="${min}" max="${max}" step="${step}" value="${Number(effect.params[key]??0)*(scale==='ms'?1000:1)}" data-sample-fx-param="${index}" data-param="${key}" data-scale="${scale==='ms'?1000:1}"><output>${Number(effect.params[key]??0)*(scale==='ms'?1000:1)}</output></label>`;
   const effectMarkup=effects.map((effect,index)=>`<article class="sample-effect"><header><label><input type="checkbox" data-sample-fx-enabled="${index}" ${effect.enabled?'checked':''}> ${effect.type}</label><button data-sample-fx-up="${index}" ${index?'':'disabled'} aria-label="Move effect up">↑</button><button data-sample-fx-down="${index}" ${index===effects.length-1?'disabled':''} aria-label="Move effect down">↓</button><button data-sample-fx-remove="${index}" aria-label="Remove effect">×</button></header>${effect.type==='eq'?`${controlMarkup(effect,index,'lowCut','High-pass (Hz)',20,20000,1)}${controlMarkup(effect,index,'highCut','Low-pass (Hz)',20,20000,1)}${(effect.params.bands||[]).map((band,bandIndex)=>`<fieldset class="eq-band"><legend>Band ${bandIndex+1}</legend>${[['frequency','Hz',20,20000,1],['gain','dB',-24,24,.5],['q','Q',.1,18,.1]].map(([key,label,min,max,step])=>`<label>${label}<input type="range" min="${min}" max="${max}" step="${step}" value="${band[key]}" data-sample-fx-param="${index}" data-eq-band="${bandIndex}" data-param="${key}"><output>${Number(band[key]).toFixed(key==='frequency'?0:1)}</output></label>`).join('')}</fieldset>`).join('')}`:(effectControls[effect.type]||[]).map(([key,label,min,max,step,scale])=>controlMarkup(effect,index,key,label,min,max,step,scale)).join('')}</article>`).join('');
   const ruler=Array.from({length:11},(_,index)=>`<span style="left:${index*10}%">${(duration*index/10).toFixed(3)}s</span>`).join('');
@@ -328,15 +335,21 @@ export function drawSampleStudioWave(canvas,editor,cursorFrame=0){
   if(cursorElement&&cursorElement.style.display!=='none')cursorElement.style.left=`${cursorX}px`;
 }
 
-export function wireSampleStudio(root,{editor,engine,notify,onRecord,onStopRecord,onCancelRecord,onDiscardSample,onLoad,onSave,onEdit,onStructureChange=()=>{},onCreateSampler,onCreateRack,recording=false,recordingElapsed=0}){
+export function wireSampleStudio(root,{editor,engine,bpm=120,notify,onRecord,onStopRecord,onCancelRecord,onDiscardSample,onLoad,onSave,onEdit,onStructureChange=()=>{},onPlaybackChange=()=>{},onCreateSampler,onCreateRack,recording=false,recordingElapsed=0}){
+  activeSampleUiDispose();
+  if(activeEditor!==editor){activePreview?.stop();activePreview=null;activeEditor=editor;sampleDeviceUi=null}
   let dragging=false,selectionAnchor=0,zeroSnap=true,looping=false,cursorRaf=0,abOriginal=false,previewSource=null;
+  let disposed=false,request=0,eqViews=[],displayStart=0,displayLength=editor?.frameCount||0;
+  const savedDeviceUi=sampleDeviceUi;
+  const refreshStructure=()=>{sampleDeviceUi=captureDeviceUi(root);onStructureChange()};
+  activeSampleUiDispose=()=>{disposed=true;request++;cancelAnimationFrame(cursorRaf);eqViews.forEach(view=>view.dispose())};
   const canvas=root.querySelector('#sampleWave'),viewport=root.querySelector('#waveViewport'),cursor=root.querySelector('#sampleCursor');
   root.querySelector('#record').onclick=onRecord;root.querySelector('#finishRecord').onclick=onStopRecord;root.querySelector('#cancelRecord').onclick=onCancelRecord;root.querySelector('#loadSample').onclick=onLoad;root.querySelector('#discardSample').onclick=onDiscardSample;
   if(recording){root.querySelector('#record').disabled=true;root.querySelector('#finishRecord').disabled=false;root.querySelector('#cancelRecord').disabled=false;root.querySelector('#recordState').textContent=`● Recording · ${recordingElapsed.toFixed(1)} s`}
   if(!editor){root.querySelector('.sample-edit-grid').hidden=true;root.querySelector('.sample-processing').hidden=true;root.querySelector('.sample-fx').hidden=true;root.querySelector('.sample-tools').hidden=true;root.querySelector('.wave-ruler').hidden=true;canvas.style.width=`${Math.max(280,viewport.clientWidth)}px`;return}
   canvas.style.width=`${Math.max(280,viewport.clientWidth)*editor.view.zoom}px`;
   const updateHistory=()=>{root.querySelector('#sampleUndo').disabled=!editor.undoStack.length;root.querySelector('#sampleRedo').disabled=!editor.redoStack.length};
-  const markDirty=()=>{onEdit();root.querySelector('#makeSampler').disabled=true;root.querySelector('#makeRack').disabled=true;root.querySelector('#sampleSaveState').textContent='Unsaved edits';updateHistory()};
+  const markDirty=()=>{onEdit();try{activePreview?.update(editor.processing.effects,editor.gainDb)}catch(error){stopPreview();notify(`Live sample preview failed: ${error.message}. Your edits are preserved.`)}root.querySelector('#makeSampler').disabled=true;root.querySelector('#makeRack').disabled=true;root.querySelector('#sampleSaveState').textContent='Unsaved edits';updateHistory()};
   const refreshSelection=()=>{
     const duration=editor.duration,length=editor.frameCount,rate=editor.buffer.sampleRate;
     canvas.dataset.start=editor.selection.start;canvas.dataset.end=editor.selection.end;canvas.dataset.duration=duration;canvas.dataset.length=length;
@@ -346,7 +359,7 @@ export function wireSampleStudio(root,{editor,engine,notify,onRecord,onStopRecor
     root.querySelector('#startFine').value=editor.selection.start;root.querySelector('#endFine').value=editor.selection.end;
     root.querySelector('#startFine').max=length;root.querySelector('#endFine').max=length;
     root.querySelector('#fadeIn').value=(editor.fadeInFrames/rate).toFixed(3);root.querySelector('#fadeOut').value=(editor.fadeOutFrames/rate).toFixed(3);
-    root.querySelector('#editGain').value=editor.gainDb;root.querySelector('#gainDbValue').textContent=`${editor.gainDb.toFixed(1)} dB`;
+    root.querySelector('#editGain').value=editor.gainDb;root.querySelector('#gainDbValue').textContent=`${editor.gainDb.toFixed(1)} dB`;root.querySelector('#editGain').parameterControl?.sync();
     root.querySelector('#startMarker').style.left=`${frameToX(editor.selection.start,length,canvas.clientWidth)}px`;
     root.querySelector('#endMarker').style.left=`${frameToX(editor.selection.end,length,canvas.clientWidth)}px`;
     for(const [which,frame]of [['start',editor.selection.start],['end',editor.selection.end]]){
@@ -374,26 +387,37 @@ export function wireSampleStudio(root,{editor,engine,notify,onRecord,onStopRecor
     canvas.style.width=`${width}px`;viewport.scrollLeft=frameToX(anchorFrame,editor.frameCount,width)-anchorX;
     root.querySelector('#waveZoom').value=editor.view.zoom;refreshSelection();
   };
-  const setPlaybackState=(playing,label=playing?'Playing':'Stopped')=>{const state=root.querySelector('#samplePlaybackState');state.textContent=label;state.setAttribute('aria-label',playing?'Playing':'Stopped');root.querySelector('#playSelection').classList.toggle('active',playing);root.querySelector('#playEntire').classList.toggle('active',playing);root.querySelector('#loopPreview').setAttribute('aria-pressed',String(looping))};
-  const stopPreview=()=>{cancelAnimationFrame(cursorRaf);try{previewSource?.stop()}catch{}previewSource=null;cursor.style.display='none';looping=false;root.querySelector('#loopPreview').textContent='Loop Preview';setPlaybackState(false)};
+  const setPlaybackState=(playing,label=playing?'Playing':'Stopped')=>{const state=root.querySelector('#samplePlaybackState');state.textContent=label;state.setAttribute('aria-label',label);root.querySelector('#playSelection').classList.toggle('active',playing);root.querySelector('#playEntire').classList.toggle('active',playing);root.querySelector('#loopPreview').setAttribute('aria-pressed',String(looping));onPlaybackChange()};
+  const stopPreview=()=>{request++;cancelAnimationFrame(cursorRaf);activePreview?.stop();previewSource=null;cursor.style.display='none';looping=false;root.querySelector('#loopPreview').textContent='Loop Preview';setPlaybackState(false)};
   activeSamplePreviewStop=stopPreview;
-  const playBuffer=(buffer,{start=0,end=buffer.duration,loop=false,rate=1,displayStart=0,displayLength=editor.frameCount}={})=>{
-    stopPreview();looping=loop;const source=engine.ctx.createBufferSource();source.buffer=buffer;source.playbackRate.value=rate;source.loop=loop;
-    if(loop){source.loopStart=start;source.loopEnd=end}
-    source.connect(engine.ctx.destination);if(loop)source.start(0,start);else source.start(0,start,Math.max(.001,end-start));
-    previewSource=source;cursor.style.display='block';const started=engine.ctx.currentTime;setPlaybackState(true,loop?'Looping selection':'Playing selection');
-    const update=()=>{if(previewSource!==source)return;const elapsed=(engine.ctx.currentTime-started)*rate,played=loop?elapsed%(end-start):Math.min(end-start,elapsed),mapped=displayStart+played/Math.max(.001,end-start)*displayLength;cursor.style.left=`${frameToX(mapped,editor.frameCount,canvas.clientWidth)}px`;if(!loop&&elapsed>=end-start){stopPreview();return}cursorRaf=requestAnimationFrame(update)};
-    update();source.onended=()=>{if(previewSource===source)stopPreview()};
+  const animate=()=>{
+    cancelAnimationFrame(cursorRaf);
+    if(disposed||activePreview?.state!=='playing')return;
+    cursor.style.display='block';
+    const mapped=displayStart+activePreview.position/activePreview.buffer.duration*displayLength;
+    cursor.style.left=`${frameToX(mapped,editor.frameCount,canvas.clientWidth)}px`;
+    cursorRaf=requestAnimationFrame(animate);
+  };
+  const playBuffer=(buffer,{loop=false,original=false,start=0,length=editor.frameCount}={})=>{
+    if(activePreview?.context!==engine.ctx){activePreview?.stop();activePreview=new SamplePreview(engine.ctx,{bpm})}
+    activePreview.onEnded=()=>{if(!disposed)stopPreview()};
+    activePreview.play(buffer,{effects:editor.processing.effects,gainDb:editor.gainDb,loop,original});
+    displayStart=start;displayLength=length;activePreview.display={start,length};looping=loop;previewSource=activePreview.source;setPlaybackState(true,original?'Original (dry)':loop?'Looping live selection':'Playing live selection');animate();
   };
   const renderProcessed=async(selectionOnly=true)=>{
     let output=selectionOnly?editor.renderSelection(engine.ctx):editor.render(engine.ctx);
     output=renderSampleProcessing(engine.ctx,output,editor.processing);
-    return renderSampleEffectChain(output,editor.processing.effects,engine.bpm||120);
+    return renderSampleEffectChain(output,editor.processing.effects,bpm);
   };
   const selectionSeconds=()=>({start:editor.selection.start/editor.buffer.sampleRate,end:editor.selection.end/editor.buffer.sampleRate});
-  const checkpointOnInput=element=>{element.addEventListener('pointerdown',()=>editor.checkpoint());element.addEventListener('keydown',()=>editor.checkpoint())};
-  root.querySelector('#sampleUndo').onclick=()=>{stopPreview();if(editor.undo()){markDirty();refreshSelection();onStructureChange()}};
-  root.querySelector('#sampleRedo').onclick=()=>{stopPreview();if(editor.redo()){markDirty();refreshSelection();onStructureChange()}};
+  const checkpointOnInput=element=>{
+    let editing=false;
+    const begin=()=>{if(!editing){editor.checkpoint();editing=true}};
+    element.addEventListener('pointerdown',begin);element.addEventListener('input',begin);
+    element.addEventListener('change',()=>{editing=false});element.addEventListener('blur',()=>{editing=false});
+  };
+  root.querySelector('#sampleUndo').onclick=()=>{stopPreview();if(editor.undo()){markDirty();refreshSelection();refreshStructure()}};
+  root.querySelector('#sampleRedo').onclick=()=>{stopPreview();if(editor.redo()){markDirty();refreshSelection();refreshStructure()}};
   root.querySelector('#snapZero').onclick=event=>{zeroSnap=!zeroSnap;event.currentTarget.textContent=`Zero-crossing snap: ${zeroSnap?'on':'off'}`;event.currentTarget.setAttribute('aria-pressed',String(zeroSnap))};
   for(const [which,marker]of [['start',root.querySelector('#startMarker')],['end',root.querySelector('#endMarker')]]){
     marker.addEventListener('pointerdown',event=>{event.preventDefault();event.stopPropagation();marker.setPointerCapture(event.pointerId)});
@@ -425,21 +449,104 @@ export function wireSampleStudio(root,{editor,engine,notify,onRecord,onStopRecor
   root.querySelector('#splitSelection').onclick=()=>{if(editor.splitSelection()){markDirty();refreshSelection()}};
   root.querySelector('#reverseSample').onclick=()=>{editor.reverse();markDirty();refreshSelection()};
   root.querySelector('#removeSilence').onclick=()=>{if(editor.trimSilence(-60)){markDirty();refreshSelection()}else notify('No leading or trailing silence found above -60 dBFS.')};
-  root.querySelector('#editGain').onpointerdown=()=>editor.checkpoint();root.querySelector('#editGain').onkeydown=()=>editor.checkpoint();
+  checkpointOnInput(root.querySelector('#editGain'));
   root.querySelector('#editGain').oninput=event=>{editor.setGainDb(Number(event.target.value),false);markDirty();refreshSelection()};
   root.querySelector('#normalize').onclick=()=>{if(!editor.normalize(Number(root.querySelector('#normalizeTarget').value),editor.selection.start,editor.selection.end))return notify('Cannot normalize silence.');markDirty();refreshSelection()};
   for(const id of ['fadeIn','fadeOut'])root.querySelector(`#${id}`).onchange=event=>{const currentIn=editor.fadeInFrames/editor.buffer.sampleRate,currentOut=editor.fadeOutFrames/editor.buffer.sampleRate;editor.setFades(id==='fadeIn'?Math.max(0,Number(event.target.value)||0):currentIn,id==='fadeOut'?Math.max(0,Number(event.target.value)||0):currentOut);markDirty();refreshSelection()};
   for(const [id,key]of [['sampleSpeed','speed'],['samplePitch','pitchSemitones'],['sampleCents','pitchCents']]){const control=root.querySelector(`#${id}`);checkpointOnInput(control);control.oninput=event=>{const value=Number(event.target.value);editor.processing[key]=value;event.target.nextElementSibling.value=key==='speed'?`${value.toFixed(2)}×`:key==='pitchSemitones'?`${value} st`:`${value} cents`;markDirty()}}
   root.querySelector('#samplePitchMode').onchange=event=>{editor.checkpoint();editor.processing.mode=event.target.value;markDirty()};
-  root.querySelector('#addSampleEffect').onchange=event=>{if(!event.target.value)return;editor.checkpoint();editor.processing.effects.push(createTrackEffect(event.target.value,`sample-${Date.now()}`));markDirty();onStructureChange()};
+  root.querySelector('#addSampleEffect').onchange=event=>{if(!event.target.value)return;editor.checkpoint();editor.processing.effects.push(createTrackEffect(event.target.value,`sample-${Date.now()}`));markDirty();refreshStructure()};
   root.querySelectorAll('[data-sample-fx-enabled]').forEach(control=>control.onchange=()=>{editor.checkpoint();editor.processing.effects[Number(control.dataset.sampleFxEnabled)].enabled=control.checked;markDirty()});
   root.querySelectorAll('[data-sample-fx-param]').forEach(control=>{checkpointOnInput(control);control.oninput=()=>{const effect=editor.processing.effects[Number(control.dataset.sampleFxParam)],key=control.dataset.param,value=Number(control.value)/Number(control.dataset.scale||1);if(control.dataset.eqBand!==undefined)effect.params.bands[Number(control.dataset.eqBand)][key]=value;else effect.params[key]=value;control.nextElementSibling.value=Number(control.value).toFixed(control.step.includes('.')?2:0);markDirty()}});
-  root.querySelectorAll('[data-sample-fx-up],[data-sample-fx-down],[data-sample-fx-remove]').forEach(button=>button.onclick=()=>{editor.checkpoint();if(button.hasAttribute('data-sample-fx-remove'))editor.processing.effects.splice(Number(button.dataset.sampleFxRemove),1);else{const index=Number(button.dataset.sampleFxUp??button.dataset.sampleFxDown),next=index+(button.hasAttribute('data-sample-fx-up')?-1:1);[editor.processing.effects[index],editor.processing.effects[next]]=[editor.processing.effects[next],editor.processing.effects[index]]}markDirty();onStructureChange()});
-  const preview=async mode=>{try{await engine.init();const {start,end}=selectionSeconds();if(mode==='stop'){stopPreview();return}if(mode==='original'){const rate=editor.processing.mode==='repitch'?editor.processing.speed*2**((editor.processing.pitchSemitones+editor.processing.pitchCents/100)/12):1;playBuffer(editor.buffer,{start,end,rate,displayStart:editor.selection.start,displayLength:editor.selection.end-editor.selection.start});return}const output=await renderProcessed(mode!=='entire'),isLoop=mode==='loop';playBuffer(output,{loop:isLoop,displayStart:mode==='entire'?0:editor.selection.start,displayLength:mode==='entire'?editor.frameCount:editor.selection.end-editor.selection.start});root.querySelector('#samplePlaybackState').textContent=mode==='entire'?'Playing processed sample':isLoop?'Looping processed selection':'Playing processed selection'}catch(error){stopPreview();notify(`Sample processing failed: ${error.message}`)}};
+  root.querySelectorAll('[data-sample-fx-up],[data-sample-fx-down],[data-sample-fx-remove]').forEach(button=>button.onclick=()=>{editor.checkpoint();if(button.hasAttribute('data-sample-fx-remove'))editor.processing.effects.splice(Number(button.dataset.sampleFxRemove),1);else{const index=Number(button.dataset.sampleFxUp??button.dataset.sampleFxDown),next=index+(button.hasAttribute('data-sample-fx-up')?-1:1);[editor.processing.effects[index],editor.processing.effects[next]]=[editor.processing.effects[next],editor.processing.effects[index]]}markDirty();refreshStructure()});
+  const preview=async mode=>{
+    if(mode==='stop'){stopPreview();return}
+    const token=++request;
+    try{
+      await engine.init();if(disposed||token!==request)return;
+      const entire=mode==='entire',original=mode==='original';
+      let output;
+      if(original){
+        const {start,end}=selectionSeconds();
+        if(end<=start)throw new RangeError('Select a non-empty region.');
+        output=engine.ctx.createBuffer(editor.buffer.numberOfChannels,editor.selection.end-editor.selection.start,editor.buffer.sampleRate);
+        for(let channel=0;channel<output.numberOfChannels;channel++)output.copyToChannel(editor.buffer.getChannelData(channel).subarray(Math.round(start*editor.buffer.sampleRate),Math.round(end*editor.buffer.sampleRate)),channel);
+      }else output=renderSampleProcessing(engine.ctx,entire?editor.render(engine.ctx,{applyGain:false}):editor.renderSelection(engine.ctx,{applyGain:false}),editor.processing);
+      if(disposed||token!==request)return;
+      playBuffer(output,{loop:mode==='loop',original,start:entire?0:editor.selection.start,length:entire?editor.frameCount:editor.selection.end-editor.selection.start});
+    }catch(error){if(!disposed){stopPreview();notify(`Sample processing failed: ${error.message}`)}}
+  };
+  sampleTransport=async()=>{
+    if(recording){notify('Space does not control microphone recording. Use Finish Recording or Cancel Recording.');return}
+    if(activePreview?.state==='playing'){request++;activePreview.pause();cancelAnimationFrame(cursorRaf);setPlaybackState(false,'Paused');return}
+    if(activePreview?.state==='paused'){const current=activePreview;await engine.init();if(disposed||current!==activePreview)return;current.resume();setPlaybackState(true);animate();return}
+    await preview(abOriginal?'original':'selection');
+  };
   root.querySelector('#playSelection').onclick=()=>preview('selection');root.querySelector('#playEntire').onclick=()=>preview('entire');root.querySelector('#stopPreview').onclick=()=>preview('stop');root.querySelector('#loopPreview').onclick=()=>looping?stopPreview():preview('loop');
   root.querySelector('#previewAB').onclick=()=>{abOriginal=!abOriginal;root.querySelector('#previewAB').textContent=abOriginal?'B: processed':'A/B original';preview(abOriginal?'original':'selection')};
   root.querySelector('#saveSample').onclick=async()=>{try{await engine.init();const output=await renderProcessed(true);await onSave(output,root.querySelector('#sampleName').value)}catch(error){notify(`Sample save failed: ${error.message}`)}};
   root.querySelector('#makeSampler').onclick=onCreateSampler;root.querySelector('#makeRack').onclick=onCreateRack;
-  root.addEventListener('keydown',event=>{if(event.target.matches('input,select,textarea,button'))return;if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();root.querySelector(event.shiftKey?'#sampleRedo':'#sampleUndo').click()}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='y'){event.preventDefault();root.querySelector('#sampleRedo').click()}else if(event.code==='Space'){event.preventDefault();root.querySelector('#playSelection').click()}else if(event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('#splitSelection').click()}else if(event.key.toLowerCase()==='r'){event.preventDefault();root.querySelector('#reverseSample').click()}else if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();root.querySelector('#deleteSelection').click()}});
-  root.tabIndex=0;refreshSelection();updateHistory();
+  root.onkeydown=event=>{if(event.target.closest('input,select,textarea,button,[contenteditable="true"],[role=slider]'))return;if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();root.querySelector(event.shiftKey?'#sampleRedo':'#sampleUndo').click()}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='y'){event.preventDefault();root.querySelector('#sampleRedo').click()}else if(event.key.toLowerCase()==='s'){event.preventDefault();root.querySelector('#splitSelection').click()}else if(event.key.toLowerCase()==='r'){event.preventDefault();root.querySelector('#reverseSample').click()}else if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();root.querySelector('#deleteSelection').click()}};
+  for(const [id,name,unit,reset,scale]of [['editGain','Sample gain','dB',0,'linear'],['sampleSpeed','Speed','x',1,'log'],['samplePitch','Pitch','st',0,'linear'],['sampleCents','Fine tuning','cents',0,'linear']]){
+    const input=root.querySelector(`#${id}`);
+    enhanceParameter(input,{name,unit,reset,scale,rotary:true});
+  }
+  const rack=document.createElement('div');rack.className='device-chain-scroll sample-device-chain';
+  const sampleFx=root.querySelector('.sample-fx');sampleFx.append(rack);
+  Object.defineProperty(root.querySelector('.sample-studio'),'previewSession',{get:()=>activePreview});
+  for(const article of sampleFx.querySelectorAll('.sample-effect'))rack.append(article);
+  for(const [index,article]of [...rack.querySelectorAll('.sample-effect')].entries()){
+    const effect=editor.processing.effects[index];article.classList.add('effect-device');
+    for(const [from,to]of [['data-sample-fx-enabled','data-effect-enabled'],['data-sample-fx-up','data-effect-up'],['data-sample-fx-down','data-effect-down'],['data-sample-fx-remove','data-effect-remove']]){
+      const element=article.querySelector(`[${from}]`);element.setAttribute(to,element.getAttribute(from));
+    }
+    mountDeviceShell(article,{id:effect.id,type:effect.type,title:effect.type});
+    const body=article.querySelector('.device-body');
+    if(effect.type==='delay'||effect.type==='utility'){
+      const key=effect.type==='delay'?'sync':'invert',label=document.createElement('label'),toggle=document.createElement('input');
+      label.textContent=key==='sync'?'Tempo sync ':'Invert polarity ';toggle.type='checkbox';toggle.checked=Boolean(effect.params[key]);toggle.dataset.sampleToggle=key;label.append(toggle);body.append(label);
+      const syncTime=()=>{const time=article.querySelector('[data-param=time]');if(time){time.disabled=toggle.checked;time.parameterControl?.sync()}};
+      toggle.onchange=()=>{editor.checkpoint();effect.params[key]=toggle.checked;syncTime();markDirty()};
+      if(key==='sync'){
+        const label=document.createElement('label'),choice=document.createElement('select');label.textContent='Beat division ';
+        for(const [value,name]of [[.25,'1/16'],[.5,'1/8'],[.75,'1/8 dotted'],[1,'1/4'],[1.5,'1/4 dotted'],[2,'1/2'],[4,'1 bar']])choice.add(new Option(name,value));
+        choice.value=String(effect.params.division??1);choice.onchange=()=>{editor.checkpoint();effect.params.division=Number(choice.value);markDirty()};label.append(choice);body.append(label);
+      }
+    }
+    article.querySelector('[data-sample-fx-enabled]').addEventListener('change',()=>eqViews.forEach(view=>view.refresh()));
+    for(const input of article.querySelectorAll('[data-sample-fx-param]'))if(effect.type!=='eq')enhanceParameter(input,effectParameterOptions(effect,input));
+    if(effect.type==='delay'){const time=article.querySelector('[data-param=time]');time.disabled=Boolean(effect.params.sync);time.parameterControl.sync()}
+    if(['compressor','limiter'].includes(effect.type)){
+      const meter=document.createElement('output');meter.dataset.sampleReduction=effect.id;meter.textContent='0.0 dB gain reduction';article.querySelector('.device-body').append(meter);
+    }
+  }
+  let eqEditing=false;
+  const previewEngine={get ctx(){return engine.ctx},trackNodes:{get(){return activePreview?.graph}}};
+  eqViews=mountTrackEqs(rack,{id:'sample-preview',name:'Sample',fx:{effects:editor.processing.effects}},previewEngine,persist=>{
+    markDirty();if(persist)eqEditing=false;
+  },error=>notify(`Sample EQ failed: ${error.message}`),()=>{if(!eqEditing){editor.checkpoint();eqEditing=true}});
+  const message=document.createElement('p');message.className='hint sample-live-hint';message.textContent='Gain and device parameters are live. Region, reverse, fades, speed and pitch prepare a new buffer on Preview; Save always renders current edits once. Space pauses/resumes; Stop resets.';
+  root.querySelector('.sample-processing').append(message);
+  const meterTick=()=>{
+    if(disposed)return;
+    for(const output of rack.querySelectorAll('[data-sample-reduction]')){
+      const node=activePreview?.graph?.instances.get(output.dataset.sampleReduction)?.node;
+      const text=`${Math.max(0,-Number(node?.reduction||0)).toFixed(1)} dB gain reduction`;if(output.textContent!==text)output.textContent=text;
+    }
+    meterTimer=setTimeout(meterTick,100);
+  };
+  let meterTimer;meterTick();
+  const disposeUI=activeSampleUiDispose;activeSampleUiDispose=()=>{clearTimeout(meterTimer);root.onkeydown=null;disposeUI()};
+  if(activePreview&&activePreview.bpm!==bpm){
+    activePreview.bpm=bpm;
+    if(editor.processing.effects.some(effect=>effect.enabled&&effect.type==='delay'&&effect.params.sync))markDirty();
+  }
+  if(activePreview&&activeEditor===editor&&activePreview.state!=='stopped'){
+    activePreview.onEnded=()=>{if(!disposed)stopPreview()};
+    displayStart=activePreview.display?.start||0;displayLength=activePreview.display?.length||editor.frameCount;looping=activePreview.loop;
+    abOriginal=activePreview.original;root.querySelector('#previewAB').textContent=abOriginal?'B: processed':'A/B original';
+    if(activePreview.state==='playing'){setPlaybackState(true,'Playing live preview');animate()}
+    else setPlaybackState(false,'Paused');
+  }
+  root.tabIndex=0;refreshSelection();updateHistory();restoreDeviceUi(root,savedDeviceUi);
 }

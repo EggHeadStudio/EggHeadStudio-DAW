@@ -4,6 +4,7 @@ import {getWaveformRangePeaks} from './waveform.js';
 import {isInstrumentClip} from './instrument-clips.js';
 import {instrumentEvents,scheduleInstrumentEvent} from './instrument-playback.js';
 import {renderOfflineWindows} from './offline-scheduler.js';
+import {trackEqFilters} from './eq-model.js';
 
 export const uid=()=>crypto.randomUUID();
 export function patternLengthBeats(track){
@@ -37,11 +38,8 @@ function setEffectValues(instance,effect,bpm=120){
  const p=effect.params||{};
  const value=(key,fallback)=>Number.isFinite(Number(p[key]))?Number(p[key]):fallback;
  if(instance.type==='eq'){
-  const bands=Array.isArray(p.bands)?p.bands:[{frequency:p.frequency??1000,gain:p.gain??0,q:p.q??1},{frequency:500,gain:0,q:1},{frequency:2500,gain:0,q:1},{frequency:10000,gain:0,q:1}];
-  const maxFrequency=Math.min(20000,(instance.ctx?.sampleRate||40000)/2);
-  instance.lowCut.frequency.value=Math.min(maxFrequency,Math.max(20,value('lowCut',20)));
-  instance.highCut.frequency.value=Math.min(maxFrequency,Math.max(20,value('highCut',maxFrequency)));
-  instance.nodes.forEach((node,index)=>{const band=bands[index]||{};node.frequency.value=Math.max(20,Math.min(maxFrequency,Number.isFinite(Number(band.frequency))?Number(band.frequency):[120,500,2500,10000][index]));node.gain.value=Math.max(-24,Math.min(24,Number.isFinite(Number(band.gain))?Number(band.gain):0));node.Q.value=Math.max(.1,Math.min(18,Number.isFinite(Number(band.q))?Number(band.q):1))});
+  const filters=trackEqFilters(p,instance.ctx.sampleRate);
+  [instance.lowCut,...instance.nodes,instance.highCut].forEach((node,index)=>{const band=filters[index];node.type=band.type;node.frequency.value=band.frequency;node.gain.value=band.gain;node.Q.value=band.q});
  }else if(instance.type==='compressor'){
   const threshold=Math.max(-60,Math.min(0,value('threshold',-24)));
   const ratio=Math.max(1,Math.min(20,value('ratio',4)));
@@ -125,10 +123,11 @@ export function createTrackGraph(ctx,track,output,stableInput=null,bpm=120){
  nodes.push(meterSplitter,leftMeter,rightMeter,meterSink);
  const leftSamples=new Float32Array(leftMeter.fftSize),rightSamples=new Float32Array(rightMeter.fftSize);
  input.connect(gain);input.connect(sidechainPre);gain.connect(sidechainPost);gain.connect(pan).connect(filter);filter.connect(dry).connect(sum);filter.connect(legacyDelay).connect(wet).connect(sum);legacyDelay.connect(feedback).connect(legacyDelay);
- const chain=track.fx?.effects||[];let previous=sum;
+ const chain=track.fx?.effects||[],eqTaps=new Map(),effectOutputs=new Map();let previous=sum;
  for(const effect of chain){
   if(!effect.enabled)continue;
   const device=makeTrackEffect(ctx,effect,bpm);previous.connect(device.input);previous=device.output;instances.set(effect.id,device.instance);nodes.push(device.input,device.output,...Object.values(device.instance).flatMap(value=>Array.isArray(value)?value:[value]).filter(value=>value&&typeof value.disconnect==='function'));
+  effectOutputs.set(effect.id,device.output);
  }
  previous.connect(output);previous.connect(meterSplitter);meterSplitter.connect(leftMeter,0);meterSplitter.connect(rightMeter,1);
  const update=(current,hasSolo=false,currentBpm=bpm,audible=null)=>{
@@ -138,12 +137,18 @@ export function createTrackGraph(ctx,track,output,stableInput=null,bpm=120){
   pan.pan.value=Number(current.pan)||0;
   filter.type=fx.filterType||'lowpass';filter.frequency.value=Math.min((ctx.sampleRate||40000)/2,Math.max(20,Number(fx.cutoff)||20000));filter.Q.value=Number(fx.resonance)||.7;
   legacyDelay.delayTime.value=Number(fx.delayTime)||.25;feedback.gain.value=Math.max(0,Math.min(.75,Number(fx.feedback)||0));wet.gain.value=Math.max(0,Math.min(1,Number(fx.delay)||0));dry.gain.value=1;
-  for(const effect of fx.effects||[]){const instance=instances.get(effect.id);if(instance)setEffectValues(instance,effect,currentBpm)}
+  let predecessor=sum;eqTaps.clear();
+  for(const effect of fx.effects||[]){
+   const instance=instances.get(effect.id);if(instance)setEffectValues(instance,effect,currentBpm);
+   const next=effect.enabled?effectOutputs.get(effect.id):null;
+   if(effect.type==='eq')eqTaps.set(effect.id,{pre:predecessor,post:next||predecessor});
+   if(next)predecessor=next;
+  }
  };
  update(track);
- return{input,gain,sidechainPre,sidechainPost,sidechainConnections:[],pan,filter,legacyDelay,feedback,wet,dry,instances,update,readMeter(){leftMeter.getFloatTimeDomainData(leftSamples);rightMeter.getFloatTimeDomainData(rightSamples);let leftPeak=0,rightPeak=0,leftSquare=0,rightSquare=0;for(let i=0;i<leftSamples.length;i++){const left=leftSamples[i],right=rightSamples[i];leftPeak=Math.max(leftPeak,Math.abs(left));rightPeak=Math.max(rightPeak,Math.abs(right));leftSquare+=left*left;rightSquare+=right*right}const reductions={};for(const[id,instance]of instances)if(instance.type==='compressor'||instance.type==='limiter')reductions[id]=instance.externalSidechain?instance.reductionDb:Math.max(0,-Number(instance.node.reduction||0));return{leftPeak,rightPeak,leftRms:Math.sqrt(leftSquare/leftSamples.length),rightRms:Math.sqrt(rightSquare/leftSamples.length),reductions}},signature:trackGraphSignature(track),disconnectSidechains(){for(const connection of this.sidechainConnections){try{connection.source.disconnect(connection.send)}catch{}try{connection.send.disconnect()}catch{}}this.sidechainConnections.length=0},disconnect(){this.disconnectSidechains();for(const node of new Set(nodes)){disposeProcessor(node);try{node.disconnect()}catch{}}}};
+ return{input,gain,sidechainPre,sidechainPost,sidechainConnections:[],pan,filter,legacyDelay,feedback,wet,dry,instances,eqTaps,update,readMeter(){leftMeter.getFloatTimeDomainData(leftSamples);rightMeter.getFloatTimeDomainData(rightSamples);let leftPeak=0,rightPeak=0,leftSquare=0,rightSquare=0;for(let i=0;i<leftSamples.length;i++){const left=leftSamples[i],right=rightSamples[i];leftPeak=Math.max(leftPeak,Math.abs(left));rightPeak=Math.max(rightPeak,Math.abs(right));leftSquare+=left*left;rightSquare+=right*right}const reductions={};for(const[id,instance]of instances)if(instance.type==='compressor'||instance.type==='limiter')reductions[id]=instance.externalSidechain?instance.reductionDb:Math.max(0,-Number(instance.node.reduction||0));return{leftPeak,rightPeak,leftRms:Math.sqrt(leftSquare/leftSamples.length),rightRms:Math.sqrt(rightSquare/leftSamples.length),reductions}},signature:trackGraphSignature(track),disconnectSidechains(){for(const connection of this.sidechainConnections){try{connection.source.disconnect(connection.send)}catch{}try{connection.send.disconnect()}catch{}}this.sidechainConnections.length=0},disconnect(){this.disconnectSidechains();for(const node of new Set(nodes)){disposeProcessor(node);try{node.disconnect()}catch{}}}};
 }
-function trackGraphSignature(track){
+export function trackGraphSignature(track){
  return(track.fx?.effects||[]).filter(effect=>effect.enabled).map(effect=>{
   const sidechain=effect.type==='compressor'&&effect.params?.sidechain?.enabled?effect.params.sidechain:null;
   return`${effect.id}:${effect.type}${sidechain?`:${sidechain.sourceTrackId}:${sidechain.ghost?'ghost':sidechain.position||'pre'}`:''}`;
@@ -166,16 +171,27 @@ function connectTrackSidechains(tracks,trackNodes,ctx){
   }
  }
 }
+export function sampleEffectTailSeconds(effects,bpm=120){
+ return Math.max(0,...(effects||[]).filter(effect=>effect.enabled).map(effect=>effect.type==='reverb'?Math.max(.1,Number(effect.params?.decay)||1.5)*1.5:effect.type==='delay'?Math.min(20,delayTimeSeconds(effect.params,bpm)/(1-Math.min(.85,Number(effect.params?.feedback)||0))):0));
+}
+export function createSampleEffectGraph(context,track,destination,bpm=120){
+ if(track.fx.effects.some(effect=>effect.enabled))return createTrackGraph(context,track,destination,null,bpm);
+ // Empty/bypassed sample processing must match renderSampleEffectChain's raw path.
+ const input=context.createGain(),eqTaps=new Map();input.connect(destination);
+ const update=current=>{eqTaps.clear();for(const effect of current.fx.effects)if(effect.type==='eq')eqTaps.set(effect.id,{pre:input,post:input})};
+ update(track);
+ return{input,signature:trackGraphSignature(track),eqTaps,instances:new Map(),update,disconnect(){input.disconnect()}};
+}
 export async function renderSampleEffectChain(buffer,effects,bpm=120){
  const enabled=(effects||[]).filter(effect=>effect.enabled);
  if(!enabled.length)return buffer;
- const tail=Math.max(0,...enabled.map(effect=>effect.type==='reverb'?Math.max(.1,Number(effect.params?.decay)||1.5)*1.5:effect.type==='delay'?Math.min(20,delayTimeSeconds(effect.params,bpm)/(1-Math.min(.85,Number(effect.params?.feedback)||0))):0));
+ const tail=sampleEffectTailSeconds(enabled,bpm);
  const frames=Math.ceil((buffer.duration+tail)*buffer.sampleRate),Context=globalThis.OfflineAudioContext||globalThis.webkitOfflineAudioContext;
  if(!Context)throw new Error('Offline audio processing is not supported in this browser.');
  const context=new Context(2,frames,buffer.sampleRate),track={id:'sample-preview',volume:1,pan:0,mute:false,solo:false,fx:{effects:enabled}};
  const graph=createTrackGraph(context,track,context.destination,null,bpm),source=context.createBufferSource();
  source.buffer=buffer;source.connect(graph.input);source.start(0);
- return context.startRendering();
+ try{return await context.startRendering()}finally{source.disconnect();graph.disconnect()}
 }
 export function clipDurationSeconds(clip,bpm=120){if(isInstrumentClip(clip))return clip.durationBeats*60/bpm;const sourceDuration=Math.max(0,(clip.end-clip.start)/(clip.rate||1));return clip.loop?Math.max(0,Number(clip.duration)||sourceDuration):sourceDuration}
 export function scheduleClipSource(ctx,source,gain,clip,when,skip=0,duration=clipDurationSeconds(clip)){

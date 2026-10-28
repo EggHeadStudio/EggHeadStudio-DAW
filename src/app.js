@@ -3,14 +3,14 @@ import {detectPitch,snapBeats} from './music.js';
 import {renderSamplerHTML,wireSamplerUI} from './sampler-ui.js';
 import {renderDrumRackHTML,wireDrumRackUI} from './drum-rack-ui.js';
 import {normalizeDrumRack} from './drum-pads.js';
-import {SampleEditor,renderSampleStudioHTML,wireSampleStudio,drawSampleStudioWave,stopSampleStudioPreview} from './sample-editor.js';
+import {SampleEditor,renderSampleStudioHTML,wireSampleStudio,drawSampleStudioWave,stopSampleStudioPreview,toggleSampleStudioPreview,sampleStudioPreviewPlaying} from './sample-editor.js';
 import {ArrangementHistory,copyTimeRange,pasteTimeRange,duplicateClip,moveClipTo,splitClipAtTime} from './arrangement.js';
 import {createInstrumentClip,isInstrumentClip,instrumentType,makePatternIndependent,migrateInstrumentArrangement,patternForClip} from './instrument-clips.js';
 import {selectedPatternContext,setPatternLength} from './pattern-editor.js';
 import {TimelineScale,formatTransportTime,timelineBeatsAtClientX as timelineBeatsAtScale,timelineContentOrigin,timelinePixelsAtClientX} from './timeline.js';
 import {createEmptyProject,createProjectTrack,deleteProjectTrack,DEFAULT_MASTER_SETTINGS,normalizeArrangementLoop,normalizeProjectSchema,parseProject,planProjectReset,serializeProject} from './project-state.js';
 import {createEmptySampleSession,resolveRecordingChunks,shouldConfirmSampleDiscard} from './sample-lifecycle.js';
-import {DEFAULT_MASTERING_SETTINGS,MASTERING_PRESETS,analyzeMasterBufferAsync,masteringEqResponse,normalizeMasteringSettings} from './mastering.js';
+import {DEFAULT_MASTERING_SETTINGS,MASTERING_PRESETS,analyzeMasterBufferAsync,normalizeMasteringSettings,createMasteringGraph} from './mastering.js';
 import {loudnessMatchGainDb,stereoMonitorMatrix} from './mastering-dsp.js';
 import {encodeExport,exportMemoryWarning,estimateExportMemory,normalizeExportSettings} from './export.js';
 import {EXPORT_BITRATES,EXPORT_SAMPLE_RATES} from './export-dsp.js';
@@ -21,15 +21,21 @@ import {showTrackSetup} from './track-ui.js';
 import {RecordingStudio} from './recording-studio.js';
 import {saveProjectSnapshot} from './project-storage.js';
 import {mountProjectControls,mountArrangementChrome,enhanceDeviceChain} from './workspace-ui.js';
-import {captureDeviceUi,restoreDeviceUi} from './device-ui.js';
+import {EFFECT_CONTROLS,captureDeviceUi,restoreDeviceUi} from './device-ui.js';
+import {mountTransportShortcuts} from './transport-shortcuts.js';
 import {updateTrackMeters} from './meter-ui.js';
 import {organizeExportStudio,organizeInstrumentStudio,organizeMasteringStudio,organizeSampleStudio} from './studio-workflows.js';
+import {mountMasterEq,mountTrackEqs} from './eq-workspace.js';
+let eqEditors=[];
+function disposeEqEditors(){eqEditors.forEach(editor=>editor.dispose());eqEditors=[]}
+function refreshEqEditors(){eqEditors.forEach(editor=>editor.refresh())}
 const arrangementWorkspaceState={selection:null,insertionBeat:0,selectMode:false,follow:false,browserOpen:true,mixerOpen:true,devicesOpen:true};
 let arrangementWorkspace=null;
 const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={id:uid(),schemaVersion:1,name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,releaseMetadata:{},exportSettings:normalizeExportSettings(),tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null,exportController=null,exportRun=null,releaseZipController=null,releaseArtworkBlob=null,releaseArtworkSourceBlob=null,releaseArtworkUrl=null;
 let portableImportController=null;
 let portableExportController=null;
 let recoverySnapshot=null;
+let renderedWorkspace=null,transportPending=false;
 const portableBufferDigests=new WeakMap();
 const dbp=new Promise((resolve,reject)=>{const r=indexedDB.open('pulse-studio-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('assets');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
 const recordingStudio=new RecordingStudio({engine,getProject:()=>project,assets,buffers,save,notify,
@@ -40,6 +46,32 @@ const recordingStudio=new RecordingStudio({engine,getProject:()=>project,assets,
  onBusy:busy=>{for(const element of document.querySelectorAll('header button,header input,nav button'))element.disabled=busy;const stop=$('#stop');if(stop)stop.disabled=false}
 });
 engine.onError=error=>{notify(error.message);if($('#play'))$('#play').textContent='▶';if(recordingStudio.busy)recordingStudio.finish()};
+async function toggleWorkspacePlayback(){
+ if(transportPending)return;
+ if(recordingStudio.busy||recorder?.state==='recording'){notify('Space/Play does not control microphone recording. Use the recording Finish/Stop controls.');return}
+ transportPending=true;
+ try{
+  if(view==='sample'){await toggleSampleStudioPreview();return}
+  if(view==='master'){
+   if(masteringPlayback){masteringPausedOffset=masteringPosition();stopMasteringPlayback(false)}
+   else{await playMasteringBuffer(masteringPausedOffset);masteringPausedOffset=0}
+   return;
+  }
+  if(engine.playing){playhead=engine.position();engine.stop();$('#play').textContent='▶'}
+  else{await engine.play(view==='recording'?recordingStudio.playbackProject():project,buffers,playhead);$('#play').textContent='Ⅱ'}
+ }finally{transportPending=false;updateTransportButton()}
+}
+function updateTransportButton(){
+ const play=$('#play');if(!play)return;
+ const playing=view==='sample'?sampleStudioPreviewPlaying():view==='master'?Boolean(masteringPlayback):engine.playing;
+ const workspace=view==='sample'?'sample preview':view==='master'?'mastering preview':view==='recording'?'backing tracks':'Arrangement';
+ const text=playing?'Ⅱ':'▶',label=`${playing?'Pause':'Play'} ${workspace}`;
+ if(play.textContent!==text)play.textContent=text;
+ if(play.title!==label){play.title=label;play.setAttribute('aria-label',label)}
+}
+mountTransportShortcuts(document,{toggle:toggleWorkspacePlayback,blocked:()=>recordingStudio.busy||recorder?.state==='recording',
+ onBlocked:()=>notify('Space is disabled during microphone recording. Use Finish/Stop; the take is preserved.'),
+ onError:error=>notify(`Playback failed: ${error.message}`)});
 window.addEventListener('beforeunload',event=>{if(recordingStudio.busy){event.preventDefault();event.returnValue='A recording or buffered take is not saved.'}});
 async function dbSet(k,v){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets','readwrite');t.objectStore('assets').put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}async function dbGet(k){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets');const r=t.objectStore('assets').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 async function dbSetMany(entries){const db=await dbp;return new Promise((resolve,reject)=>{const tx=db.transaction('assets','readwrite'),store=tx.objectStore('assets');for(const[key,value]of entries)value===null?store.delete(key):store.put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Asset cache transaction was aborted.'))})}
@@ -47,6 +79,7 @@ function notify(s){$('#toast').textContent=s;$('#toast').classList.add('show');s
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function captureProjectSnapshot(markDirty=true){project.id ||= uid();normalizeProjectSchema(project);project.modifiedAt=new Date().toISOString();project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.masterSettings={...engine.masterSettings};project.mastering=normalizeMasteringSettings(engine.masteringSettings);if(engine.playing){const playback=recordingStudio.busy?recordingStudio.playbackProject():project;engine.syncTracks(playback.tracks,project.bpm);engine.updatePlayback(playback,buffers)}if(markDirty)projectDirty=true;return serializeProject(project)}
 function save(markDirty=true){
+ if(markDirty&&view!=='master'){masteringPreview=null;masteringPausedOffset=0}
  try{
   saveProjectSnapshot(localStorage,captureProjectSnapshot(markDirty),recoverySnapshot);recoverySnapshot=null;
   const state=$('#projectSaveState');if(state)state.textContent=projectDirty?'Unsaved changes':'Saved locally';
@@ -209,9 +242,9 @@ function wireShell(){
  $('#bpm').onchange=async e=>{const playing=engine.playing,beat=(playing?engine.position():playhead)*project.bpm/60;project.bpm=Math.max(40,Math.min(240,+e.target.value||120));playhead=beat*60/project.bpm;if(playing)engine.stop();engine.offset=playhead;engine.syncTracks(project.tracks,project.bpm);save();render();if(playing)try{await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}};
  $('#loop').onclick=()=>{checkpointArrangement();project.loop=!project.loop;save();$('#loop').classList.toggle('active',project.loop);if(view==='arrange')render()};
  $('#newProject').onclick=openNewProjectDialog;
- $('#play').onclick=async()=>{if(engine.playing){playhead=engine.position();engine.stop();$('#play').textContent='▶'}else{try{await engine.play(project,buffers,playhead);$('#play').textContent='Ⅱ'}catch(e){notify(e.message)} }};
- $('#stop').onclick=()=>{if(recordingStudio.busy){if(recordingStudio.state==='requesting')recordingStudio.cancel();else recordingStudio.finish();return}engine.stop();playhead=engine.offset;$('#play').textContent='▶';tick(playhead)};
- $('#toStart').onclick=()=>{engine.stop(true);playhead=0;tick(0);$('#play').textContent='▶'};
+ $('#play').onclick=()=>toggleWorkspacePlayback().catch(error=>notify(error.message));
+ $('#stop').onclick=()=>{if(recordingStudio.busy){if(recordingStudio.state==='requesting')recordingStudio.cancel();else recordingStudio.finish();return}if(view==='sample'){$('#stopPreview')?.click();return}if(view==='master'){stopMasteringPlayback();return}engine.stop();playhead=engine.offset;$('#play').textContent='▶';tick(playhead)};
+ $('#toStart').onclick=()=>{if(recordingStudio.busy||recorder?.state==='recording'){notify('Finish microphone recording before returning to start.');return}if(view==='sample'){$('#stopPreview')?.click();return}if(view==='master'){stopMasteringPlayback();return}engine.stop(true);playhead=0;tick(0);$('#play').textContent='▶'};
  $('#saveProject').onclick=()=>saveProjectFile();
  $('#saveEhs').onclick=savePortableProject;
  $('#openEhs').onclick=()=>$('#importEhs').click();
@@ -222,7 +255,7 @@ function wireShell(){
  $$('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;render()});
  $('#importFiles').onchange=e=>importFiles([...e.target.files]);
  $('#importFolder').onchange=e=>importFiles([...e.target.files]);
- engine.onTick=t=>{playhead=t;tick(t)};
+ engine.onTick=t=>{playhead=t;tick(t);updateTransportButton()};
  engine.onMeter=meters=>updateTrackMeters(app,meters);
  engine.onEnd=()=>$('#play').textContent='▶';
  mountProjectControls(app);
@@ -410,6 +443,14 @@ function renderSamplerBlocks(){
  });
 }
 function render(){
+ if(renderedWorkspace!==view){
+  stopLibraryPreview();
+  if(renderedWorkspace==='sample')stopSampleStudioPreview();
+  if(renderedWorkspace==='master')stopMasteringPlayback();
+  if(view==='sample'&&engine.playing){playhead=engine.position();engine.stop();$('#play').textContent='▶'}
+  renderedWorkspace=view;
+ }
+ disposeEqEditors();
  const deviceUi=view==='arrange'?captureDeviceUi($('#main')):null;
  const scroll=$('.arrangement'),scrollLeft=scroll?.scrollLeft||0,scrollTop=scroll?.scrollTop||0;
  $$('[data-view]').forEach(b=>{b.classList.toggle('selected',b.dataset.view===view);if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
@@ -422,6 +463,7 @@ function render(){
  }
  if(view==='sample')renderSampleBatch003();if(view==='master')renderMaster();if(view==='export')renderExport();if(view==='keys')renderKeys();if(view==='rack')renderRack();
  if(view==='recording')recordingStudio.mount($('#main'));
+ updateTransportButton();
 }
 function selectArrangementTrack(index){
  selectedTrack=index;
@@ -456,7 +498,7 @@ function eqResponsePath(bands,sampleRate=48000,lowCut=20,highCut=20000){
 function renderTrackEffects(track){
  if(!track)return'<div class="effect-chain"><strong>No track selected</strong><p class="hint">Add a track to open its independent effect chain.</p></div>';
  const labels={eq:'Parametric EQ',compressor:'Compressor',delay:'Delay',reverb:'Reverb',saturation:'Saturation',limiter:'Limiter',utility:'Utility'};
- const controls={compressor:[['threshold','Threshold (dB)',-60,0,1],['ratio','Ratio',1,20,.5],['attack','Attack (s)',.001,1,.001],['release','Release (s)',.01,2,.01],['knee','Knee (dB)',0,40,1],['makeup','Makeup (dB)',-24,24,.5]],delay:[['time','Time (ms)',10,2000,10,'ms'],['feedback','Feedback',0,.85,.01],['mix','Wet',0,1,.01]],reverb:[['decay','Decay (s)',.1,5,.1],['predelay','Pre-delay (ms)',0,250,1,'ms'],['mix','Wet',0,1,.01]],saturation:[['drive','Drive',1,20,.1],['mix','Wet',0,1,.01]],limiter:[['threshold','Ceiling (dB)',-12,0,.1]],utility:[['gain','Gain (dB)',-60,24,.5],['pan','Pan',-1,1,.01],['width','Stereo width',0,2,.01]]};
+ const controls=EFFECT_CONTROLS;
  const effects=track.fx?.effects||[];
  return `<div class="effect-chain"><div class="effect-chain-title"><strong>Track effects</strong><label>Add effect <select id="addTrackEffect"><option value="">Choose…</option>${Object.entries(labels).map(([type,label])=>`<option value="${type}">${label}</option>`).join('')}</select></label></div><div class="effect-presets"><label>Preset name <input id="effectPresetName" maxlength="60" placeholder="My chain"></label><button id="saveEffectPreset">Save preset</button><select id="effectPresetSelect" aria-label="Effect preset"><option value="">Choose preset…</option></select><button id="loadEffectPreset">Load preset</button></div>${effects.length?effects.map((effect,index)=>`<article class="effect-device"><header><label><input type="checkbox" data-effect-enabled="${index}" ${effect.enabled?'checked':''}> ${labels[effect.type]||esc(effect.type)}</label><div><button data-effect-up="${index}" ${index===0?'disabled':''} aria-label="Move effect up">↑</button><button data-effect-down="${index}" ${index===effects.length-1?'disabled':''} aria-label="Move effect down">↓</button><button data-effect-remove="${index}" aria-label="Remove effect">×</button></div></header>${effect.type==='eq'?`<svg class="eq-response" viewBox="0 0 420 120" role="img" aria-label="Equalizer frequency response"><path class="eq-zero" d="M0 60H420"/><path data-eq-response="${index}" d="${eqResponsePath(effect.params?.bands||[{frequency:effect.params?.frequency||1000,gain:effect.params?.gain||0,q:effect.params?.q||1},{frequency:500,gain:0,q:1},{frequency:2500,gain:0,q:1},{frequency:10000,gain:0,q:1}],engine.ctx?.sampleRate||48000,effect.params?.lowCut||20,effect.params?.highCut||20000)}"/></svg><label>Low-cut (Hz)<input type="range" min="20" max="20000" step="1" value="${effect.params?.lowCut??20}" data-effect-param="${index}" data-param="lowCut"><output>${Math.round(effect.params?.lowCut??20)}</output></label><label>High-cut (Hz)<input type="range" min="20" max="20000" step="1" value="${effect.params?.highCut??20000}" data-effect-param="${index}" data-param="highCut"><output>${Math.round(effect.params?.highCut??20000)}</output></label>${(effect.params?.bands||[{frequency:effect.params?.frequency??1000,gain:effect.params?.gain??0,q:effect.params?.q??1},{frequency:500,gain:0,q:1},{frequency:2500,gain:0,q:1},{frequency:10000,gain:0,q:1}]).map((band,bandIndex)=>`<fieldset class="eq-band"><legend>Band ${bandIndex+1}</legend>${[['frequency','Hz',20,20000,1],['gain','dB',-24,24,.5],['q','Q',.1,18,.1]].map(([key,label,min,max,step])=>`<label>${label}<input type="range" min="${min}" max="${max}" step="${step}" value="${band[key]}" data-effect-param="${index}" data-eq-band="${bandIndex}" data-param="${key}"><output>${Number(band[key]).toFixed(key==='frequency'?0:1)}</output></label>`).join('')}</fieldset>`).join('')}`:(controls[effect.type]||[]).map(([key,label,min,max,step,scale])=>`<label>${label}<input type="range" min="${min}" max="${max}" step="${step}" value="${Number(effect.params?.[key]??0)*(scale==='ms'?1000:1)}" data-scale="${scale==='ms'?'1000':'1'}" data-effect-param="${index}" data-param="${key}"><output>${Number(effect.params?.[key]??0)*(scale==='ms'?1000:1)}</output></label>`).join('')}${effect.type==='delay'?`<label>Tempo sync <input type="checkbox" data-effect-toggle="${index}" data-param="sync" ${effect.params?.sync?'checked':''}></label><label>Beat division <select data-effect-choice="${index}" data-param="division">${[[.25,'1/16'],[.5,'1/8'],[.75,'1/8 dotted'],[1,'1/4'],[1.5,'1/4 dotted'],[2,'1/2'],[4,'1 bar']].map(([value,label])=>`<option value="${value}" ${Number(effect.params?.division??1)===value?'selected':''}>${label}</option>`).join('')}</select></label>`:''}${effect.type==='utility'?`<label>Invert polarity <input type="checkbox" data-effect-toggle="${index}" data-param="invert" ${effect.params?.invert?'checked':''}></label>`:''}${effect.type==='compressor'?`<label class="reduction-meter">Gain reduction <output data-compressor-meter="${esc(effect.id)}" data-meter-track="${esc(track.id)}">0.0 dB</output></label>`:''}</article>`).join(''):'<p class="hint">Add an effect to process this track during playback and WAV export.</p>'}</div>`;
 }
@@ -500,7 +542,7 @@ function wireTrackEffects(){
   }
   article.append(section);
  }
- const refresh=()=>{engine.syncTracks(project.tracks,project.bpm);save()};
+ const refresh=()=>{engine.syncTracks(project.tracks,project.bpm);save();refreshEqEditors()};
  const readPresets=()=>{const value=JSON.parse(localStorage.getItem('egghead-effect-presets')||'[]');if(!Array.isArray(value))throw new Error('Stored effect presets are invalid.');return value};
  const populatePresets=()=>{const select=$('#effectPresetSelect'),presets=readPresets();select.replaceChildren(new Option('Choose preset…',''));presets.forEach((preset,index)=>select.add(new Option(preset.name,String(index))))};
  try{populatePresets()}catch(error){notify(`Could not load effect presets: ${error.message}`)}
@@ -534,6 +576,7 @@ function wireTrackEffects(){
   input.nextElementSibling.value=Number(input.value).toFixed(input.step.includes('.')?2:0);refresh();
  });
  enhanceDeviceChain($('#main'),track);
+ eqEditors.push(...mountTrackEqs($('#main'),track,engine,persist=>{engine.syncTracks(project.tracks,project.bpm);if(persist)save()},error=>notify(`EQ visualization failed: ${error.message}`)));
 }
 function clipControls(){
  const c=project.tracks.flatMap(t=>t.clips).find(c=>c.id===selectedClip);if(!c)return '';
@@ -542,7 +585,8 @@ function clipControls(){
  return `<div class="clip-controls">${source}<label>Gain <input id="clipGain" type="number" step=".1" min="0" max="3" value="${c.gain??1}"></label><label>Loop <input id="clipLoop" type="checkbox" ${c.loop?'checked':''}></label><label>Move to track <select id="clipTrack">${project.tracks.filter(item=>instrumentType(item)===instrumentType(track)).map(item=>`<option value="${esc(item.id)}" ${item.id===track.id?'selected':''}>${esc(item.name)}</option>`).join('')}</select></label><label>Start bar <input id="clipBar" type="number" min="0" step=".0625" value="${c.bar}"></label><button id="moveClip">Move clip</button><button id="deleteClip">Delete clip</button></div>`;
 }
 function drawList(filter=''){const el=$('#sampleList');if(!el)return;el.innerHTML=[...assets.values()].filter(a=>a.name.toLowerCase().includes(filter.toLowerCase())).map(a=>`<div class="sample-item" draggable="true" data-asset="${a.id}"><span title="${esc(a.path)}">♫ ${esc(a.name)}</span><button data-preview="${a.id}" title="Preview">▶</button><button data-add="${a.id}" title="Add to selected track">＋</button></div>`).join('')||'<div class="empty">No samples yet. Connect a folder or import files.</div>';$$('[data-preview]').forEach(b=>b.onclick=()=>previewAsset(b.dataset.preview));$$('[data-add]').forEach(b=>b.onclick=()=>placeClip(b.dataset.add,selectedTrack,Math.round(playhead/barSeconds())));$$('[data-asset]').forEach(e=>e.ondragstart=ev=>ev.dataTransfer.setData('text/sample',e.dataset.asset))}
-async function previewAsset(id){await engine.init();try{previewSource?.stop()}catch{}const b=buffers.get(id);if(!b)return notify('Missing sample');const s=engine.ctx.createBufferSource();s.buffer=b;s.connect(engine.ctx.destination);s.start();previewSource=s}
+function stopLibraryPreview(){const source=previewSource;previewSource=null;if(!source)return;source.onended=null;try{source.stop()}catch(error){if(error.name!=='InvalidStateError')throw error}source.disconnect()}
+async function previewAsset(id){await engine.init();stopLibraryPreview();const b=buffers.get(id);if(!b)return notify('Missing sample');const s=engine.ctx.createBufferSource();s.buffer=b;s.connect(engine.ctx.destination);s.onended=()=>{s.disconnect();if(previewSource===s)previewSource=null};s.start();previewSource=s}
 function placeClip(asset,trackIndex,bar){const b=buffers.get(asset);if(!b)return notify('Sample not loaded');if(!project.tracks[trackIndex]||instrumentType(project.tracks[trackIndex])!=='audio')return notify('Select an Audio track to place an audio clip. Assign instrument samples in the editor.');const clip={id:uid(),asset,bar:Math.max(0,bar),start:0,end:b.duration,rate:1,gain:1};checkpointArrangement();project.tracks[trackIndex].clips.push(clip);selectedTrack=trackIndex;selectedClip=clip.id;commitArrangement()}
 function wireArrange(){
  $$('[data-track]').forEach(row=>{const index=Number(row.dataset.track),actions=row.querySelector('.track-actions');actions?.insertAdjacentHTML('beforeend',`<button data-fx="${index}" title="Open Track Effects" aria-label="Open effects for ${esc(project.tracks[index].name)}">FX</button>`)});
@@ -578,7 +622,7 @@ function drawSample(){drawWave($('#sampleWave'),recordBuffer)}
 function wireSample(){ $('#record').onclick=async()=>{try{savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true;await engine.init();recordStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});chunks=[];recorder=new MediaRecorder(recordStream);recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=async()=>{recordBlob=new Blob(chunks,{type:recorder.mimeType});recordBuffer=await engine.ctx.decodeAudioData(await recordBlob.arrayBuffer());edit={start:0,end:recordBuffer.duration,gain:1,fadeIn:0,fadeOut:0,reverse:false};recordStream.getTracks().forEach(t=>t.stop());renderSample();notify('Recording captured. Edit and preview before saving.')};recorder.start();$('#record').disabled=true;$('#finishRecord').disabled=false;$('#recordState').textContent='● Recording…'}catch(e){notify(`Microphone unavailable: ${e.message}`)}};$('#finishRecord').onclick=()=>{if(recorder?.state==='recording')recorder.stop()};$('#loadSample').onclick=()=>{const f=document.createElement('input');f.type='file';f.accept='audio/*';f.onchange=async()=>{try{recordBuffer=await(await engine.init()).decodeAudioData(await f.files[0].arrayBuffer());savedSampleId=null;edit={start:0,end:recordBuffer.duration,gain:1,fadeIn:0,fadeOut:0,reverse:false};renderSample();$('#sampleName').value=f.files[0].name}catch(e){notify(e.message)}};f.click()};for(const [sel,k] of [['#trimStart','start'],['#trimEnd','end'],['#editGain','gain'],['#fadeIn','fadeIn'],['#fadeOut','fadeOut']])$(sel).oninput=e=>{edit[k]=+e.target.value;savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true};$('#reverse').onchange=e=>{edit.reverse=e.target.checked;savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true};$('#sampleName').oninput=()=>{savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true};$('#normalize').onclick=()=>{if(!recordBuffer)return notify('Record or load a sample first');let peak=0;for(let c=0;c<recordBuffer.numberOfChannels;c++)for(const x of recordBuffer.getChannelData(c))peak=Math.max(peak,Math.abs(x));edit.gain=peak?Math.min(3,.95/peak):1;$('#editGain').value=edit.gain;savedSampleId=null;$('#makeSampler').disabled=true;$('#makeRack').disabled=true;notify(`Gain set to ${edit.gain.toFixed(2)}×`)};$('#previewEdit').onclick=async()=>{if(!recordBuffer)return notify('No sample loaded');await engine.init();try{previewSource?.stop()}catch{}const b=processSample(engine.ctx,recordBuffer,edit),s=engine.ctx.createBufferSource();s.buffer=b;s.connect(engine.ctx.destination);s.start();previewSource=s};$('#saveSample').onclick=()=>saveSample().catch(error=>notify(`Sample save failed: ${error.message}`));$('#makeSampler').onclick=()=>savedSampleId&&createSamplerTrack(savedSampleId);$('#makeRack').onclick=()=>savedSampleId&&createDrumRack(savedSampleId)}
 async function nextFolderFileName(directory,name){const dot=name.lastIndexOf('.'),stem=dot>0?name.slice(0,dot):name,extension=dot>0?name.slice(dot):'';let candidate=name,index=2;while(true){try{await directory.getFileHandle(candidate);candidate=`${stem} (${index++})${extension}`}catch(error){if(error.name==='NotFoundError')return candidate;throw error}}}
 async function saveSample(){if(!recordBuffer)return notify('Record or load a sample first');if(edit.end<=edit.start)return notify('End must be greater than start');const b=processSample(await engine.init(),recordBuffer,edit),name=($('#sampleName').value.trim()||'Sample').replace(/\.wav$/i,'')+'.wav',blob=toWav(b),file=new File([blob],name,{type:'audio/wav'});savedSampleId=await addAsset(file);let savedName=null,folderError=null;if(folderHandle){try{savedName=await nextFolderFileName(folderHandle,name);const h=await folderHandle.getFileHandle(savedName,{create:true}),w=await h.createWritable();await w.write(blob);await w.close()}catch(error){folderError=error}}if(!savedName)download(blob,name);renderSample();notify(folderError?`Folder save failed (${folderError.message}); downloaded ${name}.`:`${name} ready in sample library${savedName?` and saved as ${savedName}`:' (downloaded)'}.`)}
-function renderSampleBatch003(){const filename=sampleFilename||'My_Sample.wav';$('#main').innerHTML=renderSampleStudioHTML(sampleEditor,filename,Boolean(savedSampleId));wireSampleStudio($('#main'),{editor:sampleEditor,engine,notify,onRecord:startSampleRecording,onStopRecord:()=>{if(recorder?.state==='recording')recorder.stop()},onCancelRecord:cancelSampleRecording,onDiscardSample:discardSampleStudio,onLoad:loadSampleForEditing,onSave:saveEditedSample,onEdit:()=>{savedSampleId=null},onStructureChange:renderSampleBatch003,onCreateSampler:()=>savedSampleId&&createSamplerTrack(savedSampleId),onCreateRack:()=>savedSampleId&&createDrumRack(savedSampleId),recording:recorder?.state==='recording',recordingElapsed:(performance.now()-recordingStartedAt)/1000});organizeSampleStudio($('#main'))}
+function renderSampleBatch003(){const filename=sampleFilename||'My_Sample.wav';$('#main').innerHTML=renderSampleStudioHTML(sampleEditor,filename,Boolean(savedSampleId));wireSampleStudio($('#main'),{editor:sampleEditor,engine,bpm:project.bpm,notify,onRecord:startSampleRecording,onStopRecord:()=>{if(recorder?.state==='recording')recorder.stop()},onCancelRecord:cancelSampleRecording,onDiscardSample:discardSampleStudio,onLoad:loadSampleForEditing,onSave:saveEditedSample,onEdit:()=>{savedSampleId=null},onStructureChange:renderSampleBatch003,onPlaybackChange:updateTransportButton,onCreateSampler:()=>savedSampleId&&createSamplerTrack(savedSampleId),onCreateRack:()=>savedSampleId&&createDrumRack(savedSampleId),recording:recorder?.state==='recording',recordingElapsed:(performance.now()-recordingStartedAt)/1000});organizeSampleStudio($('#main'))}
 let sampleFilename='My_Sample.wav';
 function resetSampleEditor(buffer,name){stopSampleStudioPreview();recordBuffer=buffer;sampleEditor=new SampleEditor(buffer);sampleFilename=name||'My_Sample.wav';savedSampleId=null;if(view==='sample'){renderSampleBatch003();requestAnimationFrame(()=>{const viewport=$('#waveViewport'),canvas=$('#sampleWave');if(viewport&&canvas){canvas.style.width=`${Math.max(280,viewport.clientWidth)*sampleEditor.view.zoom}px`;drawSampleStudioWave(canvas,sampleEditor)}})}}
 function drawRecordingWave(){if(!recorder||recorder.state!=='recording'||!recordingAnalyser)return;const canvas=$('#sampleWave'),ctx=canvas?.getContext('2d');if(!canvas||!ctx){recordingRaf=requestAnimationFrame(drawRecordingWave);return}const width=canvas.clientWidth,height=canvas.clientHeight,dpr=Math.min(devicePixelRatio||1,2),data=new Float32Array(recordingAnalyser.fftSize);recordingAnalyser.getFloatTimeDomainData(data);canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);ctx.strokeStyle='#79d5c1';ctx.lineWidth=1;let peak=0;ctx.beginPath();for(let i=0;i<data.length;i++){peak=Math.max(peak,Math.abs(data[i]));const x=i/(data.length-1)*width,y=height/2-data[i]*height*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.stroke();const level=peak?`${(20*Math.log10(peak)).toFixed(1)} dBFS`:'−∞ dBFS';$('#inputMeter').textContent=`Input ${level}`;$('#recordState').textContent=`● Recording · ${((performance.now()-recordingStartedAt)/1000).toFixed(1)} s`;recordingRaf=requestAnimationFrame(drawRecordingWave)}
@@ -590,10 +634,7 @@ async function startSampleRecording(){if(shouldConfirmSampleDiscard({hasBuffer:B
 function loadSampleForEditing(){if(shouldConfirmSampleDiscard({hasBuffer:Boolean(sampleEditor),saved:Boolean(savedSampleId)})&&!confirm('Discard the current unsaved sample and load another audio file?'))return;const token=recordingToken,input=document.createElement('input');input.type='file';input.accept='audio/*';input.onchange=async()=>{const file=input.files?.[0];if(!file)return;try{const buffer=await(await engine.init()).decodeAudioData(await file.arrayBuffer());if(token!==recordingToken)return;resetSampleEditor(buffer,file.name);notify(`${file.name} loaded for non-destructive editing.`)}catch(error){if(token===recordingToken)notify(`Sample decode failed: ${error.message}`)}};input.click()}
 async function saveEditedSample(buffer,name){if(!buffer||!buffer.length)throw Error('Edited sample contains no audio frames.');const token=recordingToken,filename=(name.trim()||'Sample').replace(/\.wav$/i,'')+'.wav',blob=toWav(buffer),file=new File([blob],filename,{type:'audio/wav'}),assetId=await addAsset(file);if(token===recordingToken)savedSampleId=assetId;let savedName=null,folderError=null;if(folderHandle){try{savedName=await nextFolderFileName(folderHandle,filename);const handle=await folderHandle.getFileHandle(savedName,{create:true}),writer=await handle.createWritable();await writer.write(blob);await writer.close()}catch(error){folderError=error}}if(!savedName)download(blob,filename);if(token===recordingToken){sampleFilename=filename;renderSampleBatch003()}notify(folderError?`Folder save failed (${folderError.message}); downloaded ${filename}.`:`${filename} saved to the sample library${savedName?` and folder as ${savedName}`:' and downloaded'}.`)}
 function masterEqSvg(settings){
- const width=600,height=200,points=masteringEqResponse(settings,engine.ctx?.sampleRate||48000),xFor=frequency=>Math.log(frequency/20)/Math.log(1000)*width,yFor=db=>height/2-Math.max(-18,Math.min(18,db))*height/36;
- const path=points.map((point,index)=>`${index?'L':'M'}${xFor(point.frequency).toFixed(1)},${yFor(point.db).toFixed(1)}`).join(' ');
- const bands=settings.eq.bands.map((band,index)=>`<circle data-eq-point="${index}" cx="${xFor(band.frequency).toFixed(1)}" cy="${yFor(settings.eq.enabled&&band.enabled?band.gain:0).toFixed(1)}" r="8" fill="${band.enabled?'#73d9c0':'#748193'}" stroke="#e9fff8" stroke-width="2"/>`).join('');
- return `<svg id="masterEqGraph" class="master-eq-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Master EQ response graph; drag a band point to change frequency and gain"><path class="master-eq-grid" d="M0 50H600M0 100H600M0 150H600M150 0V200M300 0V200M450 0V200"/><path class="master-eq-response" d="${path}"/>${bands}</svg>`;
+ return '<div id="masterEqGraph"></div>';
 }
 function masterBandControls(settings){
  return settings.eq.bands.map((band,index)=>`<fieldset class="master-band"><legend><label><input type="checkbox" data-master-band="${index}" data-band-enabled ${band.enabled?'checked':''}> Band ${index+1} · ${band.type==='lowshelf'?'Low shelf':band.type==='highshelf'?'High shelf':'Bell'}</label></legend><label>Frequency <input type="range" min="20" max="20000" step="1" value="${band.frequency}" data-master-band="${index}" data-band-param="frequency"><output>${Math.round(band.frequency)} Hz</output></label><label>Gain <input type="range" min="-18" max="18" step=".1" value="${band.gain}" data-master-band="${index}" data-band-param="gain"><output>${band.gain.toFixed(1)} dB</output></label><label>Q <input type="range" min=".1" max="12" step=".1" value="${band.q}" data-master-band="${index}" data-band-param="q"><output>${band.q.toFixed(1)}</output></label></fieldset>`).join('');
@@ -606,7 +647,7 @@ function drawMasterWaveform(buffer){
  const channels=Array.from({length:buffer.numberOfChannels},(_,index)=>buffer.getChannelData(index)),step=Math.max(1,Math.floor(buffer.length/width));
  for(let x=0;x<width;x++){let peak=0;for(let frame=x*step;frame<Math.min(buffer.length,(x+1)*step);frame++)for(const channel of channels)peak=Math.max(peak,Math.abs(channel[frame]||0));context.beginPath();context.moveTo(x,height/2-peak*height*.46);context.lineTo(x,height/2+peak*height*.46);context.stroke()}
 }
-function selectedMasterBuffer(){return masteringAB==='A'?masteringPreview?.original:masteringPreview?.mastered}
+function selectedMasterBuffer(){return masteringAB==='A'||masteringPreviewRevision!==masteringRevision?masteringPreview?.original:masteringPreview?.mastered}
 function masterMonitorMatrix(mode){
  return stereoMonitorMatrix(mode);
 }
@@ -657,22 +698,27 @@ function masteringPosition(){if(!masteringPlayback)return 0;return Math.min(mast
 function stopMasteringPlayback(reset=true){
  if(!masteringPlayback){if(reset){masteringPausedOffset=0;const cursor=$('#masterCursor');if(cursor)cursor.style.left='0'}return}
  const state=masteringPlayback;masteringPlayback=null;cancelAnimationFrame(state.raf);
+ updateTransportButton();
  try{state.gain.gain.cancelScheduledValues(engine.ctx.currentTime);state.gain.gain.setTargetAtTime(0,engine.ctx.currentTime,.004);state.source.stop(engine.ctx.currentTime+.025)}catch{}
+ state.cleanupTimer=setTimeout(state.cleanup,40);
  const play=$('#masterPlay');if(play)play.textContent='▶ Play';
  if(reset){masteringPausedOffset=0;const cursor=$('#masterCursor');if(cursor)cursor.style.left='0'}
 }
 async function playMasteringBuffer(offset=0){
- const buffer=selectedMasterBuffer();if(!buffer)return notify('Render the mix before preview playback.');
+ const buffer=masteringPreview?.original;if(!buffer)return notify('Render the mix before preview playback.');
+ if(engine.playing){playhead=engine.position();engine.stop();$('#play').textContent='▶'}
  await engine.init();stopMasteringPlayback(false);
  const ctx=engine.ctx,source=ctx.createBufferSource(),splitter=ctx.createChannelSplitter(2),merger=ctx.createChannelMerger(2),gain=ctx.createGain(),analyser=ctx.createAnalyser(),start=Math.min(Math.max(0,offset),Math.max(0,buffer.duration-.001)),now=ctx.currentTime;
  analyser.fftSize=4096;analyser.smoothingTimeConstant=.72;analyser.minDecibels=-90;analyser.maxDecibels=0;
  const monitorGains=Array.from({length:2},(_,output)=>Array.from({length:2},(_,input)=>ctx.createGain())),matrix=masterMonitorMatrix(masterMonitorMode);
  for(let output=0;output<2;output++)for(let input=0;input<2;input++){const node=monitorGains[output][input];node.gain.value=matrix[output][input];splitter.connect(node,input);node.connect(merger,0,output)}
- source.buffer=buffer;source.connect(splitter);merger.connect(gain);gain.connect(analyser).connect(ctx.destination);
- const activeAnalysis=masteringPreview?.[masteringAB==='A'?'originalAnalysis':'masteredAnalysis'],aLufs=masteringPreview?.originalAnalysis?.integratedLufs,bLufs=masteringPreview?.masteredAnalysis?.integratedLufs,matchDb=loudnessMatchGainDb(aLufs,bLufs,activeAnalysis?.integratedLufs,masterLevelMatch),matchGain=10**(matchDb/20);
+ const liveGraph=masteringAB==='B'?createMasteringGraph(ctx,project.mastering,splitter):null;
+ source.buffer=buffer;source.connect(liveGraph?.input||splitter);merger.connect(gain);gain.connect(analyser).connect(ctx.destination);
+ const activeAnalysis=masteringPreview?.[masteringAB==='A'?'originalAnalysis':'masteredAnalysis'],aLufs=masteringPreview?.originalAnalysis?.integratedLufs,bLufs=masteringPreview?.masteredAnalysis?.integratedLufs,matchDb=loudnessMatchGainDb(aLufs,bLufs,activeAnalysis?.integratedLufs,masterLevelMatch&&masteringPreviewRevision===masteringRevision),matchGain=10**(matchDb/20);
  gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(matchGain,now+.012);source.start(now,start);
- const state={source,gain,buffer,offset:start,startedAt:now,raf:0,analyser,spectrumData:new Float32Array(analyser.frequencyBinCount),monitorGains};masteringPlayback=state;$('#masterPlay').textContent='Ⅱ Pause';
- state.cleanup=()=>{for(const node of [source,splitter,merger,gain,analyser,...monitorGains.flat()])try{node.disconnect()}catch{}};
+ const state={source,gain,buffer,offset:start,startedAt:now,raf:0,analyser,spectrumData:new Float32Array(analyser.frequencyBinCount),monitorGains,graph:liveGraph};masteringPlayback=state;$('#masterPlay').textContent='Ⅱ Pause';
+ updateTransportButton();
+ state.cleanup=()=>{clearTimeout(state.cleanupTimer);if(state.disposed)return;state.disposed=true;liveGraph?.disconnect();for(const node of [source,splitter,merger,gain,analyser,...monitorGains.flat()])node.disconnect()};
  source.onended=()=>{state.cleanup();if(masteringPlayback===state)stopMasteringPlayback()};
  const animate=()=>{if(masteringPlayback!==state)return;const position=masteringPosition(),cursor=$('#masterCursor');if(cursor)cursor.style.left=`${position/buffer.duration*100}%`;drawMasterSpectrum(state);if(performance.now()-(state.lastMeterUpdate||0)>100){state.lastMeterUpdate=performance.now();updateMasterGainReductionMeters()}state.raf=requestAnimationFrame(animate)};animate();
 }
@@ -693,6 +739,8 @@ async function renderMasteringPreview(){
  finally{masteringAnalysisController=null;if(cancel)cancel.hidden=true;if(button)button.disabled=false}
 }
 function updateMasterAnalysis(){
+ if(masteringPreview)$('#masterCompareState').textContent=masteringAB==='A'?'A · Original mix':masteringPreviewRevision===masteringRevision?'B · Mastered mix':'B · Live settings (analysis pending)';
+ if(masteringPreviewRevision!==masteringRevision)return;
  const analysis=masteringPreview?.[masteringAB==='A'?'originalAnalysis':'masteredAnalysis'];if(!analysis)return;
  $('#masterRms').textContent=`${analysis.rmsDbfs.toFixed(1)} dBFS`;
  $('#masterPeak').textContent=`${analysis.samplePeak.toFixed(4)} (${(20*Math.log10(Math.max(1e-12,analysis.samplePeak))).toFixed(1)} dBFS)`;
@@ -720,7 +768,9 @@ function updateMasterAnalysis(){
  drawMasterLoudnessHistory(analysis.loudnessHistory);
 }
 function updateMasterGainReductionMeters(){
- const reductions=engine.masteringGraph?.multibandGainReduction||[0,0,0];
+ const graph=masteringPlayback?masteringPlayback.graph:engine.masteringGraph;
+ const reductions=graph?.multibandGainReduction||[0,0,0];
+ if($('#masterGainReduction'))$('#masterGainReduction').textContent=`${(graph?.gainReductionDb||0).toFixed(1)} dB`;
  const summary=$('#masterMultibandGR');
  if(summary)summary.textContent=reductions.map(value=>(Number(value)||0).toFixed(1)).join(' / ')+' dB';
  reductions.forEach((value,index)=>{
@@ -739,21 +789,20 @@ function drawMasterLoudnessHistory(history){
  values.forEach((point,index)=>{const barHeight=Math.max(1,(point.lufs-min)/range*(height-4));ctx.fillRect(index*barWidth,height-barHeight,Math.max(1,barWidth-1),barHeight)});
 }
 function refreshMasterEqGraph(){
- const graph=$('#masterEqGraph');if(!graph)return;
- const settings=normalizeMasteringSettings(project.mastering),width=600,height=200,points=masteringEqResponse(settings,engine.ctx?.sampleRate||48000),xFor=frequency=>Math.log(frequency/20)/Math.log(1000)*width,yFor=db=>height/2-Math.max(-18,Math.min(18,db))*height/36;
- graph.querySelector('.master-eq-response').setAttribute('d',points.map((point,index)=>`${index?'L':'M'}${xFor(point.frequency).toFixed(1)},${yFor(point.db).toFixed(1)}`).join(' '));
- settings.eq.bands.forEach((band,index)=>{const point=graph.querySelector(`[data-eq-point="${index}"]`);if(point){point.setAttribute('cx',xFor(band.frequency));point.setAttribute('cy',yFor(settings.eq.enabled&&band.enabled?band.gain:0))}});
+ refreshEqEditors();
 }
 function setMasteringControl(mutator,persist=false){
- const settings=normalizeMasteringSettings(project.mastering);mutator(settings);const next=normalizeMasteringSettings(settings);try{engine.setMastering(next)}catch(error){notify(`Mastering settings were not applied: ${error.message}`);if(view==='master')renderMaster();return}masteringAnalysisController?.abort(new DOMException('Mastering settings changed during analysis.','AbortError'));project.mastering=next;masteringRevision++;masteringPreview=null;stopMasteringPlayback();const status=$('#masterRenderStatus');if(status)status.textContent='Settings changed · render again to update preview and meters';for(const id of ['masterRms','masterPeak','masterIntegrated','masterShortTerm','masterMomentary','masterLra','masterTruePeak','masterGainReduction','masterBeforeAfter'])if($('#'+id))$('#'+id).textContent='—';$('#masterClipWarning').hidden=true;refreshMasterEqGraph();const target=$('.master-target');if(target)target.textContent=`Reference target: −14 LUFS (guidance only; no loudness normalization). Limiter ceiling: ${next.limiter.ceiling.toFixed(1)} dBTP.`;if(persist)save();
-}
-function drawMasterEqPoint(event){
- const svg=$('#masterEqGraph'),point=event.target.closest('[data-eq-point]');if(!svg||!point)return;
- const index=Number(point.dataset.eqPoint),rect=svg.getBoundingClientRect(),x=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),y=Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height));
- setMasteringControl(settings=>{settings.eq.bands[index].frequency=20*1000**x;settings.eq.bands[index].gain=Math.max(-18,Math.min(18,(.5-y)*36))});
- const frequency=$(`[data-master-band="${index}"][data-band-param="frequency"]`),gain=$(`[data-master-band="${index}"][data-band-param="gain"]`);
- if(frequency){frequency.value=String(Math.round(project.mastering.eq.bands[index].frequency));frequency.nextElementSibling.textContent=`${Math.round(project.mastering.eq.bands[index].frequency)} Hz`}
- if(gain){gain.value=String(project.mastering.eq.bands[index].gain);gain.nextElementSibling.textContent=`${project.mastering.eq.bands[index].gain.toFixed(1)} dB`}
+ const settings=normalizeMasteringSettings(project.mastering);mutator(settings);const next=normalizeMasteringSettings(settings);
+ try{masteringPlayback?.graph?.update(next);engine.setMastering(next)}catch(error){notify(`Mastering settings were not applied: ${error.message}`);if(view==='master')renderMaster();return}
+ masteringAnalysisController?.abort(new DOMException('Mastering settings changed during analysis.','AbortError'));project.mastering=next;masteringRevision++;masteringPreviewRevision=-1;
+ if(masteringPlayback)masteringPlayback.gain.gain.setTargetAtTime(1,engine.ctx.currentTime,.01);
+ if($('#masterLevelMatchStatus'))$('#masterLevelMatchStatus').textContent='Level matching pending updated render/analysis.';
+ const status=$('#masterRenderStatus');if(status)status.textContent='Settings are live during B preview. Render again for updated waveform, loudness analysis and A/B level matching.';
+ for(const id of ['masterRms','masterPeak','masterIntegrated','masterShortTerm','masterMomentary','masterLra','masterTruePeak','masterGainReduction','masterBeforeAfter','masterCorrelation','masterBalance','masterMonoLoss'])if($('#'+id))$('#'+id).textContent='—';
+ $('#masterPhaseWarning').hidden=true;
+ const history=$('#masterLoudnessHistory');if(history)history.getContext('2d').clearRect(0,0,history.width,history.height);
+ updateMasterAnalysis();
+ $('#masterClipWarning').hidden=true;refreshMasterEqGraph();const target=$('.master-target');if(target)target.textContent=`Reference target: −14 LUFS (guidance only; no loudness normalization). Limiter ceiling: ${next.limiter.ceiling.toFixed(1)} dBTP.`;if(persist)save();
 }
 function masterChainOrderHtml(settings){
  const names={eq:'Parametric EQ',saturation:'Saturation',imager:'Stereo width',multiband:'3-band compressor'};
@@ -949,6 +998,7 @@ async function runExport(){
  }
 }
 function renderMaster(){
+ disposeEqEditors();
  const workflowFocus=document.activeElement?.dataset.workflowMasterMove;
  const settings=normalizeMasteringSettings(project.mastering||engine.masteringSettings),customPresets=(()=>{try{return JSON.parse(localStorage.getItem('pulse-master-presets')||'{}')}catch(error){notify(`Could not read mastering presets: ${error.message}`);return{}}})();
  const presetOptions=[...Object.keys(MASTERING_PRESETS),...Object.keys(customPresets)].map(name=>`<option value="${esc(name)}" ${name===settings.preset?'selected':''}>${esc(name)}</option>`).join('');
@@ -970,12 +1020,12 @@ function renderMaster(){
  $('#masterMode').onchange=event=>{setMasteringControl(current=>current.mode=event.target.value,true);renderMaster()};
  $('#masterPreset').onchange=event=>applyMasterPreset(event.target.value);
  $('#saveMasterPreset').onclick=saveMasterPreset;
- $('#resetMaster').onclick=()=>{masteringAnalysisController?.abort(new DOMException('Mastering settings reset.','AbortError'));engine.setMastering(DEFAULT_MASTERING_SETTINGS);project.mastering=normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS);masteringRevision++;masteringPreview=null;save();renderMaster()};
+ $('#resetMaster').onclick=()=>{setMasteringControl(current=>Object.assign(current,normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)),true);renderMaster()};
  $('#renderMasterPreview').onclick=renderMasteringPreview;
  $('#masterCancelAnalysis').onclick=()=>masteringAnalysisController?.abort(new DOMException('Loudness analysis was cancelled.','AbortError'));
- $('#masterPlay').onclick=async()=>{if(masteringPlayback){masteringPausedOffset=masteringPosition();stopMasteringPlayback(false)}else{await playMasteringBuffer(masteringPausedOffset);masteringPausedOffset=0}};
+ $('#masterPlay').onclick=()=>toggleWorkspacePlayback().catch(error=>notify(`Master preview failed: ${error.message}`));
  $('#masterStop').onclick=()=>stopMasteringPlayback();
- $('#masterCompare').onclick=async()=>{const wasPlaying=Boolean(masteringPlayback),offset=wasPlaying?masteringPosition():masteringPausedOffset;masteringAB=masteringAB==='A'?'B':'A';if(masteringPreview){drawMasterWaveform(selectedMasterBuffer());updateMasterAnalysis();if(!wasPlaying&&masteringPausedOffset&&masteringPreview){const cursor=$('#masterCursor');if(cursor)cursor.style.left=`${masteringPausedOffset/selectedMasterBuffer().duration*100}%`}}if(wasPlaying)await playMasteringBuffer(offset)};
+ $('#masterCompare').onclick=async()=>{const wasPlaying=Boolean(masteringPlayback),offset=wasPlaying?masteringPosition():masteringPausedOffset;masteringAB=masteringAB==='A'?'B':'A';$('#masterSpectrumSource').value=masteringAB;if(masteringPreview){drawMasterWaveform(selectedMasterBuffer());updateMasterAnalysis();if(!wasPlaying&&masteringPausedOffset&&masteringPreview){const cursor=$('#masterCursor');if(cursor)cursor.style.left=`${masteringPausedOffset/selectedMasterBuffer().duration*100}%`}}if(wasPlaying)await playMasteringBuffer(offset)};
  $('#masterExport').textContent='Export Options';
  $('#masterExport').onclick=()=>openExportStudio({format:'wav',mastering:true});
  for(const [id,path]of [['masterEqEnabled','eq.enabled'],['masterSatEnabled','saturation.enabled'],['masterImagerEnabled','imager.enabled'],['masterMultibandEnabled','multiband.enabled'],['masterLimiterEnabled','limiter.enabled'],['masterChainBypass','chainBypass']])$('#'+id).onchange=event=>setMasteringControl(current=>setMasterPath(current,path,event.target.checked),true);
@@ -988,9 +1038,11 @@ function renderMaster(){
  $('#masterLevelMatch').onchange=async event=>{masterLevelMatch=event.target.checked;updateMasterAnalysis();if(masteringPlayback)await playMasteringBuffer(masteringPosition())};
  $$('[data-master-band][data-band-param]').forEach(input=>{const index=Number(input.dataset.masterBand),key=input.dataset.bandParam;input.oninput=()=>{setMasteringControl(current=>current.eq.bands[index][key]=+input.value);input.nextElementSibling.textContent=key==='frequency'?`${Math.round(+input.value)} Hz`:key==='gain'?`${(+input.value).toFixed(1)} dB`:(+input.value).toFixed(1)};input.onchange=()=>save()});
  $$('[data-band-enabled]').forEach(input=>input.onchange=()=>setMasteringControl(current=>current.eq.bands[Number(input.dataset.masterBand)].enabled=input.checked,true));
- const graph=$('#masterEqGraph');graph.addEventListener('pointerdown',event=>{if(!event.target.matches('[data-eq-point]'))return;graph.setPointerCapture(event.pointerId);drawMasterEqPoint(event)});graph.addEventListener('pointermove',event=>{if(graph.hasPointerCapture(event.pointerId))drawMasterEqPoint(event)});graph.addEventListener('pointerup',event=>{if(graph.hasPointerCapture(event.pointerId)){graph.releasePointerCapture(event.pointerId);save()}});
- if(masteringPreview&&masteringPreviewRevision===masteringRevision){drawMasterWaveform(selectedMasterBuffer());updateMasterAnalysis()}
+ if(masteringPreview){drawMasterWaveform(selectedMasterBuffer());updateMasterAnalysis();if(masteringPreviewRevision!==masteringRevision){$('#masterRenderStatus').textContent='Live settings updated. Render again for current waveform, analysis and level matching.';$('#masterLevelMatchStatus').textContent='Level matching pending updated render/analysis.'}}
+ if(masteringPlayback)$('#masterPlay').textContent='Ⅱ Pause';
  organizeMasteringStudio($('#main'),settings,workflowFocus);
+ Object.defineProperty($('.mastering-studio'),'auditionSession',{get:()=>masteringPlayback});
+ eqEditors.push(mountMasterEq($('#main'),engine,()=>normalizeMasteringSettings(project.mastering),setMasteringControl,error=>notify(`EQ visualization failed: ${error.message}`),()=>masteringPlayback?masteringPlayback.graph:engine.masteringGraph));
 }
 function setMasterPath(settings,path,value){const parts=path.split('.');let target=settings;for(const part of parts.slice(0,-1))target=target[part];target[parts.at(-1)]=value}
 function masterControlText(path,value){if(path==='eq.lowCut'||path==='eq.highCut'||path.startsWith('multiband.crossovers.'))return`${Math.round(value)} Hz`;if(path==='saturation.drive')return`${value.toFixed(1)}×`;if(path==='saturation.mix'||path==='imager.width')return`${Math.round(value*100)}%`;if(path==='limiter.ceiling')return`${value.toFixed(1)} dBTP`;if(path==='limiter.lookaheadMs')return`${value.toFixed(1)} ms`;if(path==='limiter.release')return`${Math.round(value*1000)} ms`;if(path.endsWith('.ratio'))return`${value.toFixed(1)}:1`;if(path.endsWith('.attack')||path.endsWith('.release'))return`${Math.round(value)} ms`;if(path.endsWith('.threshold')||path.endsWith('.knee')||path.endsWith('.makeup')||path.endsWith('.outputGain'))return`${value.toFixed(1)} dB`;return`${value.toFixed(1)} dB`}
@@ -1011,9 +1063,7 @@ function applyMasterPreset(name){
  const preset=MASTERING_PRESETS[name]||(()=>{try{return JSON.parse(localStorage.getItem('pulse-master-presets')||'{}')[name]}catch(error){notify(`Could not load mastering preset: ${error.message}`);return null}})();
  if(!preset)return notify(`Mastering preset "${name}" was not found.`);
  const next=normalizeMasteringSettings({...project.mastering,...preset,inputGainDb:preset.inputGainDb??0,preset:name});
- masteringAnalysisController?.abort(new DOMException('A mastering preset was applied.','AbortError'));
- try{engine.setMastering(next)}catch(error){notify(`Mastering preset was not applied: ${error.message}`);renderMaster();return}
- project.mastering=next;masteringRevision++;masteringPreview=null;save();renderMaster();
+ setMasteringControl(current=>Object.assign(current,next),true);renderMaster();
 }
 function saveMasterPreset(){
  const name=prompt('Name this mastering preset:');if(!name?.trim())return;

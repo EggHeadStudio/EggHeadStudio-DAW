@@ -124,7 +124,7 @@ export function organizeMasteringStudio(root,settings,focusKey){
     const path=input.dataset.masterParam,defaults=path.split('.').reduce((value,key)=>value?.[key],DEFAULT_MASTERING_SETTINGS);
     const milliseconds=/^multiband\.bands\.\d+\.(attack|release)$/.test(path),reset=Number(defaults)*(milliseconds?1000:1);
     const name=input.closest('label').firstChild.textContent.trim();
-    enhanceParameter(input,{name:`Master ${path}: ${name}`,reset,unit:milliseconds||path.endsWith('lookaheadMs')?'ms':path.endsWith('.release')?'s':path.startsWith('multiband.crossovers.')?'Hz':/Gain|threshold|ceiling|knee|makeup/.test(path)?'dB':'',scale:/(attack|release|crossovers)/.test(path)&&Number(input.min)>0?'log':'linear',format:path.endsWith('mix')||path.endsWith('width')?'percent':path.endsWith('ratio')?'ratio':'number'});
+    enhanceParameter(input,{name:`Master ${path}: ${name}`,reset,rotary:true,unit:milliseconds||path.endsWith('lookaheadMs')?'ms':path.endsWith('.release')?'s':path.startsWith('multiband.crossovers.')?'Hz':/Gain|threshold|ceiling|knee|makeup/.test(path)?'dB':'',scale:/(attack|release|crossovers)/.test(path)&&Number(input.min)>0?'log':'linear',format:path.endsWith('mix')||path.endsWith('width')?'percent':path.endsWith('ratio')?'ratio':'number'});
   }
   if(focusKey)[...root.querySelectorAll('[data-workflow-master-move]')].find(button=>button.dataset.workflowMasterMove===focusKey)?.focus();
 }

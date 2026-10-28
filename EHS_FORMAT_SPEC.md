@@ -55,6 +55,32 @@ Missing offsets default to zero; missing envelope duration uses the clip's norma
 
 Selection, clipboard, insertion marker and panel layout are transient workspace state, not portable project fields. Project loop start/end remain bar-based. The application supplies safe defaults for missing/invalid legacy loop fields without changing the general JSON parser's round-trip behavior.
 
+## Optional track EQ capabilities (additive, Batch 005B.4)
+
+Track EQ effect `params.bands` entries may include `type` (`peaking`, `lowshelf`
+or `highshelf`) and boolean `enabled`. Missing fields mean the legacy peaking
+type and enabled state. Optional boolean `params.lowCutEnabled` and
+`params.highCutEnabled` default to true. Existing frequency, gain and Q fields
+keep their meanings; disabling a band preserves its stored gain. Shelves ignore
+Q in native Web Audio; the stored Q is retained for switching back to a bell.
+Master EQ retains its existing normalized six-band/cut settings.
+
+These are preserved by JSON, chain presets and portable .EHS serialization.
+Container v1 and project schemas 1/2, PCM assets, integrity checks and archive
+limits are unchanged. Older renderers may ignore the additive fields and play
+them differently; no forward audio equivalence with older code is promised.
+Graph selection, FFT size/smoothing/hold, analyzer On/Off and drawing statistics
+are transient workspace state and are not written into the archive.
+
+Batch 005B.4B live sample/master audition graphs and Spacebar pause offsets are
+also transient; they add no project fields or container version. Sample Studio
+Save produces one processed float-WAV library asset using the existing asset
+format. That asset can be referenced by audio clips, Sampler and Drum Rack
+without serializing or applying its editor processing a second time. Unsaved
+sample editor history is not a portable project asset. Mastering audition uses
+the existing authoritative mastering settings; only those settings, not cached
+analysis or a separate live-preview model, belong in the project.
+
 ## Typed instrument clips (project schema 2)
 
 Project schema 2 supports `track.patterns` and Arrangement clips tagged `kind: "instrument"`. A pattern has a non-empty track-scoped ID, a name, `lengthBeats` from greater than zero through 64, and note events with unique IDs, beat positions, MIDI pitches (0–127), positive durations and velocities (0–1). An instrument clip references a pattern on the same track and stores its ID, bar position, positive `durationBeats`, non-negative `offsetBeats`, boolean loop state and optional non-negative gain. Instrument sample/pad configuration remains on the track. Audio clips retain their source asset and second-based fields. Sampler and Drum Rack asset references, audio clips, typed pattern references and note/clip/pattern limits are validated before an archive is accepted. Project safety limits remain 256 tracks, 100,000 clips, 100,000 patterns and 1,000,000 notes.

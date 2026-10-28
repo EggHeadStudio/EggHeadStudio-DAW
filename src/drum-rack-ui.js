@@ -72,6 +72,10 @@ export function wireDrumRackUI(root,{track,assets,buffers,engine,tracks,save,not
   root.querySelector('#previewPad').onclick=()=>trigger(selected);
   root.querySelectorAll('[data-pad-name]').forEach(input=>input.onchange=event=>{rack.pads[+event.target.dataset.padName].name=event.target.value.trim()||`Pad ${+event.target.dataset.padName+1}`;save();refresh()});
   for(const [attribute,key] of [['data-pad-volume','volume'],['data-pad-pitch','pitch'],['data-pad-pan','pan']])root.querySelectorAll(`[${attribute}]`).forEach(input=>input.oninput=event=>{rack.pads[+event.target.getAttribute(attribute)][key]=+event.target.value;save()});
+  for(const [attribute,name,reset,unit,format]of [['data-pad-volume','Pad gain',1,'','percent'],['data-pad-pitch','Pad pitch',0,'st','number'],['data-pad-pan','Pad pan',0,'','pan']]){
+    for(const input of root.querySelectorAll(`[${attribute}]`))enhanceParameter(input,{name,reset,unit,format,rotary:attribute!=='data-pad-pan'});
+  }
+  root.querySelector('.selected-pad-editor .hint').textContent+=' Pad gain, pan and pitch apply to new hits; track effects update active voices. Space plays/pauses the Arrangement.';
   root.querySelectorAll('[data-pad-mute]').forEach(input=>input.onchange=event=>{const pad=rack.pads[+event.target.dataset.padMute];pad.mute=event.target.checked;save();refresh()});
   root.querySelectorAll('[data-trigger]').forEach(button=>button.onclick=()=>{const index=Number(button.dataset.trigger);trigger(index);selectedPads.set(track.id,index);refresh()});
   function trigger(index) {
@@ -96,6 +100,7 @@ export function wireDrumRackUI(root,{track,assets,buffers,engine,tracks,save,not
 }
 import {assignPadSource,bindSampleDrop,resetPad,showSamplePicker} from './instrument-source.js';
 import {MAX_DRUM_PADS,addPad,padReferenceCount,removePad,visiblePads} from './drum-pads.js';
+import {enhanceParameter} from './ui-controls.js';
 
 function askPadRemoval(name,references){
   return new Promise(resolve=>{

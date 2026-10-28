@@ -53,7 +53,7 @@ and retain bypass/reorder/remove and a **Presets** disclosure. Master volume is
 in the right Mixer header. When the Mixer is collapsed, track-header M/S/FX/Edit
 shortcuts remain available.
 
-Utility gain/pan demonstrate functional rotary controls; width retains a linear
+Utility gain/width use functional rotary controls; pan remains a bipolar
 slider. Native range keyboard behavior, numeric entry, reset, vertical
 mouse/touch dragging, Shift-fine rotary adjustment and double-click/double-tap
 rotary reset all edit the existing DSP parameters. No new parameter or project
@@ -83,8 +83,8 @@ Arrangement shortcuts. No project/archive schema or audio-quality change.
 
 See the [design-system/API guide](./BATCH_005B_2_DESIGN_SYSTEM.md) and
 [exact acceptance report](./BATCH_005B_2_REPORT.md). Batch 005B.3 adds compact
-Mixer density below; dedicated phone layouts remain staged work. EQ retains its
-existing controls until the graphical-EQ batch. Chromium emulation is not
+Mixer density below; dedicated phone layouts remain staged work. The shared
+graphical EQ is described in Batch 005B.4 below. Chromium emulation is not
 physical-device or all-browser certification.
 
 ## Batch 005B.3 compact production workflows
@@ -117,15 +117,112 @@ Undo/Redo, synthetic recording, clean-origin instrument .EHS restoration and
 decoded WAV/MP3. No DSP, scheduler, recording placement or archive schema change.
 See the [workflow audit](./BATCH_005B_3_WORKFLOW_AUDIT.md) and
 [exact results/limitations](./BATCH_005B_3_UX_REPORT.md).
-Next: graphical EQ/spectrum in 005B.4; dedicated phone architecture and physical
-device acceptance remain 005B.5 work.
+Graphical EQ/spectrum follows in 005B.4 below; dedicated phone architecture and
+physical-device acceptance remain 005B.5 work.
+
+## Batch 005B.4 graphical EQ and real spectrum
+
+Track Devices and Mastering Studio now share one interactive EQ editor without
+sharing their settings. Track EQ retains four bands plus cuts; Master EQ retains
+six bands plus cuts. Select a point or filter in the selector, drag frequency/
+gain, or enter exact frequency/gain/Q with the existing numeric rotary controls.
+Shift enables fine dragging, focused points support keyboard arrows/Home/End,
+and wheel Q has a visible touch-friendly alternative. Type, individual enable
+and **Reset filter** edit the actual stored parameters. Cuts have no fake gain
+control; shelves have no fake Q control.
+
+The response is composed from native Biquad frequency responses, not decorative
+curves. Real mono FFT analysis has **Pre-EQ / Post-EQ**, On/Off, FFT size,
+smoothing and decaying peak hold. Left-axis EQ gain and right-axis FFT dBFS are
+different scales. Local taps follow the actual workspace graph. Batch 005B.4B
+also connects Sample Studio and live Mastering B auditions to their own local
+taps; an offline export has no live FFT. Mono FFT can
+cancel anti-phase stereo content; existing stereo meters remain independent.
+
+Track EQ gains optional bell/shelf and individual/cut enable fields, with legacy
+defaults preserved. Master EQ bypass now genuinely bypasses its cuts as well as
+its bands; this corrects residual filtering in the previous bypass path.
+Actual live and offline graph builders share the same descriptors. JSON/.EHS,
+presets, container v1 and project schemas 1/2 remain compatible; old renderers
+may ignore new optional track fields and play them differently.
+
+Batch 005B.4 reached **298/298 Node tests**, retaining all 283 previous tests.
+Native signal tests verify boost/cut/cuts, actual master taps under reordering,
+bypass and analyzer audio invariance. Five-width synthetic mouse/touch checks
+and empty-origin .EHS/WAV/MP3 verification are detailed in the
+[acceptance report](./BATCH_005B_4_REPORT.md) and
+[EQ architecture guide](./BATCH_005B_4_EQ_ARCHITECTURE.md).
+These are Windows Chromium results, not physical-device or all-engine
+certification. No new framework, dependency, service, recording/scheduler
+rewrite or Session View.
+
+## Batch 005B.4B shared effects and live workspace transport
+
+Sample Studio now runs its supported real-time parameters through the existing
+shared effect processors: gain, EQ/cuts/Q, compressor, delay, reverb, saturation,
+limiter and utility. Ordinary parameter changes retain the running source and
+effect graph. Order/add/remove/bypass can rewire devices without restarting the
+source, but may reset effect tails. Gain uses a short smoothing time; arbitrary
+topology/impulse changes are not guaranteed click-free.
+
+Sample devices share the Device Panel's controls, foldable shells, units and
+defaults. Sample EQ has the same native response, numeric/keyboard/touch editing
+and actual local Pre/Post FFT as track EQ. Native compressor/limiter reduction
+is real audio data. Delay sync/division and utility polarity are available.
+There is no nonfunctional sample preset button.
+Tempo-synchronized sample delay follows the project's BPM during preview and
+Save; changing tempo retains the live preview source and graph.
+
+Region/reverse/fades, crop/delete, normalize, speed/pitch and time stretching
+remain **prepared-buffer operations**: Preview prepares their new buffer.
+They are not falsely labelled continuous live edits. Save renders the original
+editor's current edits and effects once into a new float WAV; it does not bake
+the already-processed preview a second time. Original PCM/history remain intact.
+
+Mastering B auditions the prepared **unmastered** mix through one live mastering
+graph. EQ/dynamics/saturation/imaging/limiter/output settings and module order
+update that graph while listening. A bypasses mastering. Loudness, stereo
+analysis, waveform and level matching are cached offline measurements: edits
+invalidate them until **Render mix & preview** is run again. Other song edits
+invalidate the prepared mix. A/B switches preserve offset but recreate the
+audition source; continuous scalar edits do not.
+
+Sampler ADSR/tuning and Drum Rack pad gain/pitch now use compact shared knobs
+with precise numeric fields/reset; pan, waveform boundaries, faders, velocity
+and timeline ranges retain positional controls. Sampler legacy delay displays
+milliseconds while its state remains seconds. Envelope/root/tuning/pad settings
+affect **new voices**; existing track filter/device changes affect active voices.
+Recording's backing mix now updates during idle backing playback as well as
+recording, without printing monitoring/backing into dry captured PCM.
+
+One centralized **Space** handler routes to the active workspace:
+
+- Arrangement, Sampler, Drum Rack and Export: song Play/Pause, including the
+  independent instrument clips. No separate pattern-only transport is invented.
+- Sample Studio: current sample Play/Pause, preserving pause offset/loop phase.
+- Mastering: prepared mix audition Play/Pause; render first if none is prepared.
+- Recording: backing Play/Pause when idle. Busy microphone/calibration/unsaved
+  take states show a safety message and remain unchanged.
+
+Focused fields/native controls keep their own Space behavior. Handled background
+Space prevents page scrolling; repeats and overlapping starts are suppressed.
+Global Play text and accessibility labels follow the current workspace.
+Arrangement Stop retains song position; Return to Start resets it. Sample/
+Master Stop reset their own preview. Explicit recording Finish/Stop/Cancel
+controls remain separate from keyboard playback.
+
+The current full Node suite passes **310/310**, preserving the 298-test starting
+baseline. See the [effect inventory](./BATCH_005B_4B_EFFECT_AUDIT.md) and
+[execution / audio / portability report](./BATCH_005B_4B_REPORT.md) for precise
+browser evidence and limitations. Five-width synthetic touch is not
+physical-device verification or the complete 005B.5 mobile architecture.
 
 ## Implemented
 
 - Responsive dark UI with Arrangement, Sample Studio and Mastering views.
 - Sample import via files and folder selection; supported desktop browsers can grant a writable folder handle.
 - Audio decoding, previews, clips on tracks, drag/drop positioning, per-track gain/pan/mute/solo, BPM and playhead.
-- Sample Studio provides a stereo-aware waveform, horizontal zoom/scroll and frame-based selection with optional zero-cross snapping; crop/split/delete, silence trimming, fades, -60 to +120 dB gain, peak normalization, reverse, A/B, loop preview, and undo/redo. Microphone capture displays a live waveform and input level; speed, experimental pitch-preserving stretch/repitch and an ordered sample effect chain are processed into a new WAV on preview/save. Recording/imported source audio is kept unchanged; the saved WAV can be assigned to a Sampler or Drum Rack.
+- Sample Studio provides a stereo-aware waveform, horizontal zoom/scroll and frame-based selection with optional zero-cross snapping; crop/split/delete, silence trimming, fades, -60 to +120 dB gain, peak normalization, reverse, A/B, loop preview, and undo/redo. Microphone capture displays a live waveform and input level. Gain and supported ordered effects are live; region/fades/reverse and experimental pitch-preserving stretch/repitch prepare a buffer on Preview. Save computes current edits/effects once into a new WAV. Recording/imported source audio is kept unchanged; the saved WAV can be assigned to a Sampler or Drum Rack.
 - Sample-based sampler tracks with automatic root-pitch estimation and confidence, manual root-key adjustment, pitched/gated, one-shot and loop modes, sample start/end, ADSR controls, transpose/fine tuning, and a 16-bar piano roll. Notes are internal pitch/time/duration/velocity events, not MIDI files or external MIDI input.
 - The piano roll supports note creation, selection, moving/resizing, copy/paste/duplicate, quantize, undo/redo, velocity, zoom, keyboard preview, and snap from one bar down to 1/64 note or off.
 - Its collapsible velocity lane shares horizontal scrolling and time zoom with the notes. Drag one bar or a selected group vertically; one gesture is one Undo step. It edits the existing `note.velocity`, which affects playback and persists in JSON/.EHS. The toolbar velocity slider remains the default for new notes.
@@ -201,7 +298,7 @@ Sampler and Drum Rack tracks now start empty; the track dialog only chooses name
 
 ## Batch 005A.5 precise editing checkpoint
 
-Sample Studio now preserves exact Start frame 0 and exclusive End frame N with zero snapping enabled, including zoomed/scrolled mouse and synthetic-touch drags. Endpoint handles point inward without changing scroll geometry. Numeric/fine adjustments use integer frames; Space previews the selection when the waveform/workspace has keyboard focus. Faint marker backgrounds keep the waveform visible.
+Sample Studio now preserves exact Start frame 0 and exclusive End frame N with zero snapping enabled, including zoomed/scrolled mouse and synthetic-touch drags. Endpoint handles point inward without changing scroll geometry. Numeric/fine adjustments use integer frames; background Space now toggles sample Play/Pause through the centralized workspace router. Faint marker backgrounds keep the waveform visible.
 
 Arrangement adds a beat ruler, separate insertion marker, movable/resizable loop brace, Follow, grab-offset-correct clip snapping, source-aware audio trims, full-height waveforms and rectangular audio time selection across tracks. Range copy/paste/duplicate/cut/delete preserve partial clips, track spacing, empty gaps, loop phase and original fade positions without copying audio bytes. Overlapping clips remain separate audible layers. Undo includes loop edits and is cleared on project replacement. The aligned right mixer shares each track's scroll row; the collapsible bottom panel retains the selected track's effects. On touch screens, enable **Select Range** or **Edit Clips (touch)** to edit without turning ordinary scrolling into a drag.
 
@@ -213,7 +310,7 @@ Chromium checks covered mouse and synthetic touch, five viewport widths, process
 
 Playback now continues through silence until stopped. With Loop enabled, Play starts inside the selected range and repeats it even when the range is empty or extends past the last clip. A 150 ms audio-clock lookahead schedules exact loop boundaries instead of restarting playback from a UI timer; source voices are cut at the loop end and the ruler grows as non-loop playback advances.
 
-Track volume, pan, mute/solo and effect parameters update the live graph. Adding, bypassing, reordering or removing devices preserves the input already-playing sources use. Clip, pattern and instrument edits reschedule voices at the current position without requiring Stop/Play; ordinary mixer/effect changes do not restart voices. Structural changes can reset effect tails, and voice rescheduling is not guaranteed click-free. Sample Studio's separately bounced preview processing is unchanged. Offline/export duration remains content-based, not infinite.
+Track volume, pan, mute/solo and effect parameters update the live graph. Adding, bypassing, reordering or removing devices preserves the input already-playing sources use. Clip, pattern and instrument edits reschedule voices at the current position without requiring Stop/Play; ordinary mixer/effect changes do not restart voices. Structural changes can reset effect tails, and voice rescheduling is not guaranteed click-free. Sample Studio now has the separate live preview path described in Batch 005B.4B above. Offline/export duration remains content-based, not infinite.
 
 Piano Roll fixes remove double horizontal scrolling and double vertical note offsets; notes render in the clicked pitch lane and scroll position survives edits. Mouse drag and synthetic touch at 390 px were verified. Eleven new regressions bring the suite to **152/152**. Browser checks measured exactly 0.5-second scheduled loop intervals, non-silent rendered loop boundaries, and immediate live UI gain changes. Prolonged main-thread stalls/background throttling can still exceed lookahead; recovery replaces stale voices rather than doubling them. Physical-device timing and arbitrary waveform seam clicks are not certified.
 

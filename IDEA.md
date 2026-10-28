@@ -329,7 +329,7 @@ Update this checklist only after relevant test evidence is recorded. A feature e
 
 ## 13. NEXT IMMEDIATE ACTION
 
-Continue with 005B.4 from `BATCH_005B_3_UX_REPORT.md` and `BATCH_005B_3_WORKFLOW_AUDIT.md`; retain `BATCH_005B_2_DESIGN_SYSTEM.md` for controls/tokens and `BATCH_005A_7C_REPORT.md` for audio/reliability. Continuous-context bounded offline scheduling closes the demonstrated future-source graph bottleneck without resetting DSP state. The medium/large full-chain exports and independent WAV/MP3 decoding have measured results; native crash/relaunch boundaries and extended scheduling stress have also been exercised. ZIP output is chunked but input collection/extraction remain buffered. Compact Arrangement/Mixer and production workflow organization are implemented; graphical EQ and dedicated mobile architecture remain staged work. Independent standards references, physical-device/cross-engine acceptance and deployment of an approved release remain explicit gates.
+Continue toward 005B.5 from `BATCH_005B_4B_REPORT.md` and `BATCH_005B_4B_EFFECT_AUDIT.md`, retaining `BATCH_005B_4_EQ_ARCHITECTURE.md`, the 005B.3 workflow reports, `BATCH_005B_2_DESIGN_SYSTEM.md` for controls/tokens and `BATCH_005A_7C_REPORT.md` for audio/reliability. Continuous-context bounded offline scheduling closes the demonstrated future-source graph bottleneck without resetting DSP state. The medium/large full-chain exports and independent WAV/MP3 decoding have measured results; native crash/relaunch boundaries and extended scheduling stress have also been exercised. ZIP output is chunked but input collection/extraction remain buffered. Compact Arrangement/Mixer, production workflow organization, shared native-response graphical EQ/live FFT, live sample/master previews and centralized safe Space routing are implemented. Dedicated mobile architecture remains staged work. Independent standards references, physical-device/cross-engine acceptance and deployment of an approved release remain explicit gates.
 
 
 ## Batch 005A.7-UX — Instrument Workflow Cleanup
@@ -381,8 +381,8 @@ WAV/MP3 and -12 dB live/offline Utility attenuation. Tokens exceed the selected
 4.5:1 text/status contrast target; this is not a complete accessibility audit.
 See `BATCH_005B_2_REPORT.md` for exact evidence and `BATCH_005B_2_DESIGN_SYSTEM.md`
 for tokens/API/units. Compact density is completed in 005B.3 below; physical/
-cross-engine testing, graphical EQ (005B.4) and dedicated phone architecture
-(005B.5) remain staged.
+cross-engine testing and dedicated phone architecture (005B.5) remain staged;
+the graphical EQ is implemented in 005B.4 below.
 
 ## Batch 005B.3 - Compact production workspace workflows
 
@@ -410,5 +410,80 @@ Piano Roll keeps dragged nodes mounted through synthetic clicks.
 
 See `BATCH_005B_3_UX_REPORT.md` for exact measurements and limitations, and
 `BATCH_005B_3_WORKFLOW_AUDIT.md` for the before/after and official Live references.
-Next is 005B.4 graphical EQ/real spectrum, not new DSP or Session View. Physical
-devices, non-Chromium and the full 005B.5 phone architecture remain open gates.
+The graphical EQ/real spectrum is implemented in 005B.4 below, not new DSP or
+Session View. Physical devices, non-Chromium and the full 005B.5 phone
+architecture remain open gates.
+
+## Batch 005B.4 - Interactive EQ and actual FFT
+
+The shared SVG/Canvas editor now represents four track bands or six master
+bands plus cuts using native Biquad response, logarithmic valid-Nyquist
+coordinates and exact selected-band controls. Mouse/touch/cancel, keyboard,
+Shift-fine, wheel/visible Q, bell/shelf, enable and selected-default reset edit
+the existing authoritative settings. Track bell/shelf/enable capabilities are
+optional additive fields; JSON/.EHS container 1 and project schemas 1/2 remain
+unchanged. Master bypass intentionally fixes the old residual cut filtering.
+
+Lazy local Pre/Post branches measure actual live-engine audio; master taps
+follow reordered modules and exclude downstream output gain/final limiting.
+Mono FFT has configurable size/smoothing, decaying peak hold, On/Off, a separate
+dBFS axis and explicit resolution. It is not LUFS or complete stereo power;
+anti-phase content can cancel. 005B.4B adds local taps for live Sample Studio and
+Mastering B auditions; offline exports do not provide live taps. Never substitute final-output analysis under a Pre-EQ
+label. Existing actual compressor/limiter/multiband reduction meters remain.
+
+All 283 previous tests plus 15 additive Node tests pass (298/298). Native
+deterministic signal checks, five-width synthetic graphical interactions,
+live spectrum/lifecycle and empty-origin portable/export checks have measured
+results in `BATCH_005B_4_REPORT.md`. Retain the tap/probe/disposal contracts in
+`BATCH_005B_4_EQ_ARCHITECTURE.md` during 005B.5. Visualization timings are not
+audio-thread CPU or physical-phone budgets. Full phone workspace architecture,
+physical-device and non-Chromium acceptance remain explicit next-stage gates.
+
+## Batch 005B.4B - Shared effects, live previews and safe transport
+
+The measured 298-test baseline is preserved with 12 additive tests (310/310).
+Sample and track devices share scalar definitions, shells and units; sample
+EQ reuses the four-band native-response editor and actual local FFT. Mastering
+retains its six-band EQ and different multiband/limiter DSP, using the same
+interaction primitives rather than a second settings model.
+
+Sample gain/device edits update a running preview; ordinary edits retain its
+source and graph. Order/bypass/add/remove retain the source but can reset tails.
+Original A/B is dry. Save renders original editor data plus current processing
+once, not an already-baked preview. Region/fades/reverse/normalize/speed/pitch
+remain honest prepared-buffer operations on Preview, not continuous live DSP.
+Automatic crossfaded prepared-buffer replacement is not implemented.
+Synced sample delay follows authoritative project BPM in the existing preview
+graph and in Save, including tempo changes before song playback has initialized.
+
+Master B uses the prepared pre-master song through the shared live mastering
+graph. Cached waveform/loudness/stereo readings and level matching become stale
+after edits and require a new render; song edits invalidate the prepared source.
+Active meters/EQ taps refer to the real audition graph. A bypasses mastering;
+audition monitor modes/matching do not enter export.
+
+Shared compact rotary/numeric controls extend to sampler ADSR/tuning and drum
+pad gain/pitch, retaining pan/faders/regions/velocity as positional controls.
+New-voice settings are labelled as such. Sampler legacy delay displays ms but
+stores seconds. Recording backing monitoring mix updates during idle backing
+playback as well as capture; captured microphone PCM remains dry.
+
+One Space router chooses sample/master preview, idle recording backing, or
+Arrangement song playback (also in instrument and export workspaces). It
+excludes focused native/editable controls and duplicate starts, prevents
+handled page scroll and safely blocks busy recording/unsaved-take states.
+Explicit recording controls remain separate; no pattern-only transport or
+Session View is invented.
+
+The [effect audit](./BATCH_005B_4B_EFFECT_AUDIT.md) and
+[verification report](./BATCH_005B_4B_REPORT.md) contain the before/after
+inventory, numerical audio/portability evidence and cross-workspace checklist.
+Retain this review principle in future reports: Arrangement, Sample Studio,
+Sampler/Piano Roll, Drum Rack/Sequencer, Recording, Mastering and Export must
+all be considered for shared control/preview changes.
+
+005B.5 still owns dedicated mobile navigation/expanded editors and physical
+phone/cross-engine acceptance. Buffered long-sample preparation and topology/
+impulse changes must not be presented as seamless or cost-free. No mandatory
+backend, new dependency, archive-version change or audio-quality reduction.
