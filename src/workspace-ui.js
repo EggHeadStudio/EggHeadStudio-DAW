@@ -1,6 +1,7 @@
 import {describeControl,enhanceParameter} from './ui-controls.js';
 import {isInstrumentClip,patternForClip} from './instrument-clips.js';
 import {mountDeviceShell,enhanceEffectParameters} from './device-ui.js';
+import {COMPACT_TRACK_HEIGHT,mountDevicePanelLayout,mountTrackLayout,trackHeight} from './workspace-layout.js';
 
 export function createCommandDisclosure(label,className){
   const details=document.createElement('details');details.className=className;
@@ -40,7 +41,7 @@ export function syncArrangementActions(root,track,clip,range){
   const row=root.querySelector('.range-toolbar');if(row)row.hidden=!state.range;
 }
 
-export function mountArrangementChrome({root,project,selectedTrack,selectedClip,state,addTrack,addEffect,selectContext}){
+export function mountArrangementChrome({root,project,selectedTrack,selectedClip,state,addTrack,addEffect,selectContext,moveTrack}){
   const track=project.tracks[selectedTrack],clip=track?.clips.find(item=>item.id===selectedClip),tools=root.querySelector('.editor-tools');
   const edit=createCommandDisclosure('Edit','arrangement-edit-menu'),body=document.createElement('div');body.className='disclosure-body';
   for(const id of ['openPiano','splitClip','duplicateClip','copyClip','pasteClip','linkedDuplicate','unlinkPattern','clearRange','cutRange','deleteRange','setLoopRange','selectLoopRange','playInsertion']){
@@ -86,7 +87,8 @@ export function mountArrangementChrome({root,project,selectedTrack,selectedClip,
     const index=Number(strip.dataset.mixerTrack),name=strip===master?'Master':project.tracks[index].name;
     if(strip!==master)strip.style.setProperty('--track-color',project.tracks[index].color);
     const volume=strip.querySelector('[data-vol],#masterVolume');
-    enhanceParameter(volume,{name:`${name} volume`,reset:1,vertical:strip!==master,format:'percent'});
+    const vertical=strip!==master&&trackHeight(state,project.tracks[index].id)>COMPACT_TRACK_HEIGHT;
+    enhanceParameter(volume,{name:`${name} volume`,reset:1,vertical,format:'percent'});
     const pan=strip.querySelector('[data-pan]');
     if(pan)enhanceParameter(pan,{name:`${name} pan`,reset:0,format:'pan'});
     const meter=strip.querySelector('[data-meter]');
@@ -94,6 +96,8 @@ export function mountArrangementChrome({root,project,selectedTrack,selectedClip,
       const peak=document.createElement('output');peak.className='meter-peak';peak.value='-inf dBFS';peak.setAttribute('aria-label',`${name} sample peak`);meter.append(peak);
     }
   }
+  mountTrackLayout(root,project,state,moveTrack);
+  mountDevicePanelLayout(root,state);
   if(instrument&&chain){
     const card=document.createElement('article');card.className='instrument-device';
     const heading=document.createElement('h3');heading.textContent=track.drumRack?'Drum Rack':'Sampler';

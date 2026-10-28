@@ -72,6 +72,8 @@ export async function runDesignSystemAcceptance(page){
   await page.locator('#effectPresetSelect').selectOption('');await page.locator('#loadEffectPreset').click();
   check(JSON.stringify((await read()).tracks[0].fx.effects)===beforePreset&&await page.locator('#toast').textContent()==='Choose an effect preset to load.','Empty preset choice silently changed the chain.');
   await page.locator('.device-presets>summary').click();
+  const expandTrack=page.getByRole('button',{name:'Expand UX Lead track',exact:true});
+  if(await expandTrack.getAttribute('aria-expanded')==='false')await expandTrack.click();
   const volume=page.locator('[data-vol="0"]');await numeric('[data-vol="0"]',.65);
   await volume.press('ArrowUp');check((await read()).tracks[0].volume===.66,'Mixer range/numeric are not synchronized.');
   await numeric('[data-pan="0"]',-.3);check((await read()).tracks[0].pan===-.3,'Pan field is not authoritative.');
@@ -99,6 +101,8 @@ export async function runDesignSystemAcceptance(page){
       await page.setViewportSize({width,height:1100});await page.reload();await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'));
       await page.getByRole('button',{name:'Select UX Lead track',exact:true}).click();
       for(const id of ['toggleMixer','toggleDevices'])if(await page.locator(`#${id}`).getAttribute('aria-expanded')==='false')await page.locator(`#${id}`).click();
+      const expand=page.getByRole('button',{name:'Expand UX Lead track',exact:true});
+      if(await expand.getAttribute('aria-expanded')==='false')await expand.click();
       const clips=JSON.stringify((await read()).tracks.map(track=>track.clips));
       await numeric(control('compressor','attack'),.02);
       const attackBefore=(await read()).tracks[0].fx.effects.find(effect=>effect.type==='compressor').params.attack;

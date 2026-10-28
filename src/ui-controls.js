@@ -59,13 +59,14 @@ export function enhanceParameter(input,{name,unit='',reset=0,rotary=false,scale=
     wrapper.classList.toggle('parameter-disabled',input.disabled);
   };
   const set=value=>{if(input.disabled)return;input.value=String(parameterValue(value,spec));input.dispatchEvent(new Event('input',{bubbles:true}))};
+  const commit=value=>{if(input.disabled)return;set(value);input.dispatchEvent(new Event('change',{bubbles:true}))};
   input.setAttribute('aria-label',name);
   input.dataset.parameterName=name;
   input.title=`${name}${unit?` (${unit})`:''}. Range ${spec.min} to ${spec.max}; default ${reset}. ${rotary||vertical?'Drag vertically. ':''}Shift for fine adjustment. Double-click or double-tap to reset; Reset also available.`;
   if(vertical)input.setAttribute('aria-orientation','vertical');
   input.addEventListener('input',sync);
   input.addEventListener('change',sync);
-  input.addEventListener('dblclick',()=>set(reset));
+  input.addEventListener('dblclick',()=>commit(reset));
   input.addEventListener('keydown',event=>{
     if(['ArrowUp','ArrowRight','ArrowDown','ArrowLeft','Home','End','PageUp','PageDown'].includes(event.key)){
       event.preventDefault();event.stopPropagation();
@@ -80,6 +81,7 @@ export function enhanceParameter(input,{name,unit='',reset=0,rotary=false,scale=
         }
         else set(Number(input.value)+direction*spec.step*(fine?1:multiplier));
       }
+      if(!input.disabled)input.dispatchEvent(new Event('change',{bubbles:true}));
     }
   });
   let drag=null,lastTap=0;
@@ -91,6 +93,7 @@ export function enhanceParameter(input,{name,unit='',reset=0,rotary=false,scale=
   input.addEventListener('pointerdown',event=>{
     if(event.button!==0||input.disabled||drag)return;
     event.preventDefault();event.stopPropagation();input.focus();input.setPointerCapture(event.pointerId);
+    const vertical=wrapper.classList.contains('parameter-vertical');
     const rect=input.getBoundingClientRect(),at=vertical?event.clientY:event.clientX,length=vertical?rect.height:rect.width;
     drag={id:event.pointerId,x:event.clientX,y:event.clientY,start:Number(input.value),position:parameterToUnit(Number(input.value),spec),last:rotary?event.clientY:at,length:Math.max(1,length-20),moved:false};
     if(!rotary&&!event.shiftKey){
@@ -100,6 +103,7 @@ export function enhanceParameter(input,{name,unit='',reset=0,rotary=false,scale=
   });
   input.addEventListener('pointermove',event=>{
     if(drag?.id!==event.pointerId)return;
+    const vertical=wrapper.classList.contains('parameter-vertical');
     const at=rotary||vertical?event.clientY:event.clientX,delta=(at-drag.last)*(rotary||vertical?-1:1);
     if(Math.hypot(event.clientX-drag.x,event.clientY-drag.y)>3)drag.moved=true;
     drag.position=Math.max(0,Math.min(1,drag.position+delta/(rotary?200:drag.length)/(event.shiftKey?10:1)));
@@ -121,10 +125,10 @@ export function enhanceParameter(input,{name,unit='',reset=0,rotary=false,scale=
     if(numeric.value===''||!Number.isFinite(numeric.valueAsNumber)){
       numeric.setCustomValidity('Enter a finite parameter value.');numeric.reportValidity();return;
     }
-    numeric.setCustomValidity('');set(numeric.valueAsNumber);
+    numeric.setCustomValidity('');commit(numeric.valueAsNumber);
   });
   numeric.addEventListener('input',()=>numeric.setCustomValidity(''));
-  resetButton.onclick=()=>set(reset);
+  resetButton.onclick=()=>commit(reset);
   wrapper.append(numeric,resetButton);sync();
   input.parameterControl={sync,set,wrapper,spec,setDisabled:disabled=>{input.disabled=disabled;sync()}};
   return input.parameterControl;

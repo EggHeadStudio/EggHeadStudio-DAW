@@ -28,6 +28,7 @@ export async function runRecordingBrowserAcceptance(page){
   };
  });
  await page.getByRole('button',{name:'Recording Studio',exact:true}).click();
+ if(await page.locator('.recording-advanced').count())await page.locator('.recording-advanced>summary').click();
  await page.evaluate(()=>{
   new MutationObserver(()=>{
    const value=document.querySelector('#recordingStatus')?.textContent;

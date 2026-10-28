@@ -64,7 +64,7 @@ function pianoMarkup(track, grid, editor) {
     <label>Time zoom <input id="timeZoom" type="range" min=".5" max="2.5" step=".1" value="${pianoZoom}"></label>
     <label>Key zoom <input id="keyZoom" type="range" min=".7" max="1.6" step=".1" value="${rowZoom}"></label>
     <button id="duplicateNotes">Duplicate</button><button id="copyNotes">Copy</button><button id="pasteNotes">Paste</button>
-    <button id="quantizeNotes">Quantize</button><button id="undoNotes">Undo</button><button id="redoNotes">Redo</button><button id="deleteNote" ${editor.selected.size?'':'disabled'}>Delete</button>
+    <button id="quantizeNotes">Quantize</button><button id="undoNotes">Undo</button><button id="redoNotes">Redo</button><button id="deleteNote" ${editor.selected.size?'':'disabled'}>Delete</button><output id="noteSelectionStatus" role="status">${editor.selected.size} selected</output>
   </div>
   <div class="piano-scroll" id="pianoScroll">
     <div class="piano-world" id="pianoWorld" style="width:${KEY_WIDTH+patternBeats*beatWidth}px;height:${RULER_HEIGHT+gridHeight(rowHeight)}px;--beat-width:${beatWidth}px;--row-height:${rowHeight}px;--key-width:${KEY_WIDTH}px;--ruler-height:${RULER_HEIGHT}px">
@@ -233,6 +233,7 @@ export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, sav
     root.querySelectorAll('.piano-note').forEach(element=>element.classList.toggle('note-selected',editor.selected.has(element.dataset.noteId)));
     drawVelocities?.();
     root.querySelector('#deleteNote').disabled=!editor.selected.size;
+    root.querySelector('#noteSelectionStatus').value=`${editor.selected.size} selected`;
     const selected=notes.find(note=>editor.selected.has(note.id));
     if(selected)root.querySelector('#noteVelocity').value=selected.velocity??.85;
   }
@@ -268,7 +269,11 @@ export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, sav
     gesture.changed=true;
   });
   world.addEventListener('pointerup',event=>{
-    if(gesture?.changed){track.pattern={notes};save();setGrid(grid)}
+    if(gesture?.changed){
+      track.pattern={notes};save();
+      // Keep the dragged note mounted until its synthetic click has targeted it.
+      requestAnimationFrame(()=>{if(root.querySelector('#pianoWorld')===world)setGrid(grid)});
+    }
     gesture=null;
   });
   world.addEventListener('pointercancel',()=>{

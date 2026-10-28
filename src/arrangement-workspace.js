@@ -87,12 +87,14 @@ export function mountArrangementWorkspace(options){
   arrangement.addEventListener('scroll',queueWaves,{passive:true});
   const waveResize=new ResizeObserver(()=>{if(arrangement.isConnected)queueWaves();else waveResize.disconnect()});
   waveResize.observe(arrangement);
+  lanes.forEach(lane=>waveResize.observe(lane));
   document.querySelector('#loop')?.classList.toggle('active',Boolean(project.loop));
   if(state.projectId!==project.id){
     state.projectId=project.id;state.selection=null;state.clipboard=null;state.insertionBeat=0;
   }
   const mobile=matchMedia('(max-width:850px)').matches;
-  if(state.mobile!==mobile){state.mobile=mobile;state.browserOpen=!mobile;state.mixerOpen=!mobile}
+  if(state.mobile===undefined){state.browserOpen=!mobile;state.mixerOpen=!mobile}
+  state.mobile=mobile;
   const beatAt=clientX=>quantizeBeat(timelineBeatsAtClientX(clientX,ruler,arrangement,scale),grid());
   let maxBeat=Math.max(64,(project.loopEnd||4)*4,...project.tracks.flatMap(track=>(track.clips||[]).map(clip=>clip.bar*4+scale.secondsToBeats(clipDurationSeconds(clip,project.bpm))+16)));
   const width=Math.max(1200,scale.beatsToPixels(maxBeat));

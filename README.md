@@ -82,10 +82,43 @@ Track dialogs restore opener focus; device/dialog typing does not invoke
 Arrangement shortcuts. No project/archive schema or audio-quality change.
 
 See the [design-system/API guide](./BATCH_005B_2_DESIGN_SYSTEM.md) and
-[exact acceptance report](./BATCH_005B_2_REPORT.md). Mixer rows deliberately fit
-vertical faders and touch targets; compact density and dedicated phone layouts
-remain staged work. EQ retains its existing controls until the graphical-EQ
-batch. Chromium emulation is not physical-device or all-browser certification.
+[exact acceptance report](./BATCH_005B_2_REPORT.md). Batch 005B.3 adds compact
+Mixer density below; dedicated phone layouts remain staged work. EQ retains its
+existing controls until the graphical-EQ batch. Chromium emulation is not
+physical-device or all-browser certification.
+
+## Batch 005B.3 compact production workflows
+
+Arrangement tracks now start at **84 px**. **Expand** exposes detailed Mixer
+controls, a **220-400 px** height field and Earlier/Later track ordering.
+Each header, lane and right Mixer shares one row height; ordering follows stable
+track identity and uses Arrangement Undo/Redo. Compact/expanded volume is the
+same real parameter, not two competing faders. Track height is a transient
+workspace preference, not new project data.
+
+The bottom Device Panel supports height dragging or keyboard Arrow Up/Down,
+Home/End, **Compact devices** and **Hide devices**. Piano Roll groups note setup,
+view and note operations, shows selected-note/source context and folds advanced
+sample configuration. Drum Rack retains the selected-pad inspector and stable
+pad mappings. Sample Studio follows **Record/Import > Edit > Process > Preview >
+Save**; Save still creates a new 32-bit float WAV asset without replacing the
+original. Song WAV/MP3 belongs in Export Studio.
+
+Recording Studio prioritizes backing, arming, Record/Stop and take review.
+Advanced contains offset, monitoring details, punch and calibration; emergency
+Stop and unsaved-take recovery stay visible. Mastering follows actual processing
+order: Input, the user's module chain, Output gain, then the fixed final Limiter.
+Export separates **Audio Export / Release Information / Release Package**;
+portable editable **.EHS** remains in **Project**.
+
+**283/283 Node tests** pass. Browser acceptance covers five widths, aligned
+300/84 px rows, Device Panel touch/cancel, Piano Roll note move/resize/scroll/
+Undo/Redo, synthetic recording, clean-origin instrument .EHS restoration and
+decoded WAV/MP3. No DSP, scheduler, recording placement or archive schema change.
+See the [workflow audit](./BATCH_005B_3_WORKFLOW_AUDIT.md) and
+[exact results/limitations](./BATCH_005B_3_UX_REPORT.md).
+Next: graphical EQ/spectrum in 005B.4; dedicated phone architecture and physical
+device acceptance remain 005B.5 work.
 
 ## Implemented
 

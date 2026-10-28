@@ -4,6 +4,7 @@ import {commitRecordedTake,quotaFailure} from './recording-session.js';
 import {encodeWavAsync} from './export-dsp.js';
 import {scheduleClipSource,uid} from './audio.js';
 import {formatTransportTime} from './timeline.js';
+import {organizeRecordingStudio} from './studio-workflows.js';
 
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const CALIBRATION_STORE='ehs-recording-calibration',LAST_DEVICE='ehs-recording-last-device';
@@ -25,6 +26,7 @@ export class RecordingStudio{
     return value.source==='loopback'?`Active: measured loopback round trip ${ms(value.roundTripSeconds)} + mastering lookahead ${ms(value.lookaheadSeconds)} = ${ms(value.seconds)}.`:`Active: browser-reported base ${ms(value.baseLatency)} + output ${ms(value.outputLatency)} + mastering lookahead ${ms(value.lookaheadSeconds)} = ${ms(value.seconds)}. Input latency is assumed 0 (not measured).`;
   }
   mount(root){
+    const advancedOpen=Boolean(root.querySelector('.recording-advanced')?.open);
     this.root=root;const project=this.getProject(),settings=this.settings(),audio=project.tracks.filter(track=>!track.sampler&&!track.drumRack);
     if(!audio.some(track=>track.id===this.trackId)){this.trackId=audio[0]?.id||null;this.armed=false}
     const target=audio.find(track=>track.id===this.trackId),takes=target?.clips.filter(clip=>clip.recording)||[];
@@ -84,12 +86,13 @@ export class RecordingStudio{
     buttons('data-edit-take',clip=>this.openSample(clip.asset));
     buttons('data-delete-take',clip=>{if(!confirm('Delete this take clip? Its original sample remains in the shared library.'))return;target.clips=target.clips.filter(item=>item.id!==clip.id);this.save();this.mount(root)});
     buttons('data-preview-take',clip=>this.previewTake(target,clip).catch(error=>this.notify(error.message)));
-    this.drawTimeline();this.update();
+    organizeRecordingStudio(root,{advancedOpen});this.drawTimeline();this.update();
   }
   update(){
     if(!this.root?.querySelector('#studioRecord'))return;
     const $=selector=>this.root.querySelector(selector),active=this.busy;
     $('#recordingStatus').textContent=this.state==='unsaved'?'Buffered take not saved — retry or cancel':this.state.toUpperCase();
+    this.root.querySelector('.recording-studio').dataset.recordingState=this.state;
     $('#studioRecord').disabled=active;$('#studioStop').disabled=!['count-in','pre-roll','recording'].includes(this.state);
     $('#studioCancel').disabled=!active||this.state==='saving';$('#retryRecordingSave').hidden=this.state!=='unsaved';
     $('#downloadBufferedTake').hidden=this.state!=='unsaved'||!this.pending?.wavBytes;
