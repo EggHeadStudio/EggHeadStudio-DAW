@@ -61,7 +61,31 @@ schema is introduced.
 
 See [the concrete UX audit](./BATCH_005B_1_UX_AUDIT.md) and
 [implementation / acceptance report](./BATCH_005B_1_REPORT.md). This is a focused
-foundation, not the complete 005B design system, graphical EQ or mobile redesign.
+foundation, not the complete 005B redesign, graphical EQ or mobile redesign.
+
+## Batch 005B.2 design system and audio controls
+
+Shared rotary controls, horizontal sliders and vertical track faders now retain
+the existing actual-value audio bindings while adding numeric entry, units,
+keyboard/Home/End/Page controls, Shift-fine dragging, pointer capture/cancel,
+reset and disabled state. Utility, Compressor, Delay, Reverb, Saturation and
+Limiter use them, along with the Sampler's existing filter/Q and legacy delay.
+Tempo-synced delay disables millisecond entry. Percent readouts retain fractional
+numeric entry; milliseconds still store seconds through the existing binding.
+
+Device family accents, neutral studio surfaces, focus/status styling and real
+stereo/sample-peak and compressor-reduction readouts share a lightweight token
+system. Meter DOM updates skip hidden/offscreen elements. Device folding,
+scroll and focus survive structural rerenders by stable device identity.
+**Presets** still means the existing chain presets, not a new device format.
+Track dialogs restore opener focus; device/dialog typing does not invoke
+Arrangement shortcuts. No project/archive schema or audio-quality change.
+
+See the [design-system/API guide](./BATCH_005B_2_DESIGN_SYSTEM.md) and
+[exact acceptance report](./BATCH_005B_2_REPORT.md). Mixer rows deliberately fit
+vertical faders and touch targets; compact density and dedicated phone layouts
+remain staged work. EQ retains its existing controls until the graphical-EQ
+batch. Chromium emulation is not physical-device or all-browser certification.
 
 ## Implemented
 

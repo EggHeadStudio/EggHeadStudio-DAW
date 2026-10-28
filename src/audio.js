@@ -242,6 +242,7 @@ export class AudioEngine{
   if(!this.ctx)return;
   const needsSidechain=tracks.some(track=>(track.fx?.effects||[]).some(effect=>effect.enabled&&effect.type==='compressor'&&effect.params?.sidechain?.enabled));
   if(needsSidechain&&!this.sidechainReady)throw this.sidechainError||new Error('External sidechain compression is unavailable because its AudioWorklet processor has not been initialized.');
+  if(!this.eq)return;
   this.bpm=Number.isFinite(Number(bpm))&&Number(bpm)>0?Number(bpm):120;
   const ids=new Set(tracks.map(track=>track.id)),solo=tracks.some(track=>track.solo);
   for(const graph of this.trackNodes.values())graph.disconnectSidechains();

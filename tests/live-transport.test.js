@@ -18,6 +18,14 @@ function fixture(){
   return{engine,ctx,sources,project,track,buffers};
 }
 
+test('mixer edits during initialization defer graph creation until the master input exists',()=>{
+  const {ctx,track}=fixture(),engine=new AudioEngine();engine.ctx=ctx;
+  assert.doesNotThrow(()=>engine.syncTracks([track]));
+  assert.equal(engine.trackNodes.size,0);
+  track.volume=.37;engine.eq=ctx.createGain();engine.syncTracks([track]);
+  assert.equal(engine.trackNodes.get(track.id).gain.gain.value,.37);
+});
+
 test('silent non-loop transport keeps advancing beyond the final clip',()=>{
   const {engine,ctx}=fixture();
   ctx.currentTime=1000;engine.scheduleAhead();

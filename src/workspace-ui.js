@@ -1,5 +1,6 @@
 import {describeControl,enhanceParameter} from './ui-controls.js';
 import {isInstrumentClip,patternForClip} from './instrument-clips.js';
+import {mountDeviceShell,enhanceEffectParameters} from './device-ui.js';
 
 export function createCommandDisclosure(label,className){
   const details=document.createElement('details');details.className=className;
@@ -81,6 +82,18 @@ export function mountArrangementChrome({root,project,selectedTrack,selectedClip,
   const master=root.querySelector('.master-strip');
   master.classList.add('right-mixer');master.hidden=!state.mixerOpen;root.querySelector('.ruler-row').append(master);
   root.querySelector('.bottom-panel>.mixer').remove();
+  for(const strip of root.querySelectorAll('.right-mixer')){
+    const index=Number(strip.dataset.mixerTrack),name=strip===master?'Master':project.tracks[index].name;
+    if(strip!==master)strip.style.setProperty('--track-color',project.tracks[index].color);
+    const volume=strip.querySelector('[data-vol],#masterVolume');
+    enhanceParameter(volume,{name:`${name} volume`,reset:1,vertical:strip!==master,format:'percent'});
+    const pan=strip.querySelector('[data-pan]');
+    if(pan)enhanceParameter(pan,{name:`${name} pan`,reset:0,format:'pan'});
+    const meter=strip.querySelector('[data-meter]');
+    if(meter){
+      const peak=document.createElement('output');peak.className='meter-peak';peak.value='-inf dBFS';peak.setAttribute('aria-label',`${name} sample peak`);meter.append(peak);
+    }
+  }
   if(instrument&&chain){
     const card=document.createElement('article');card.className='instrument-device';
     const heading=document.createElement('h3');heading.textContent=track.drumRack?'Drum Rack':'Sampler';
@@ -114,25 +127,15 @@ export function mountArrangementChrome({root,project,selectedTrack,selectedClip,
   }
 }
 
-export function enhanceDeviceChain(root){
+export function enhanceDeviceChain(root,track){
   const chain=root.querySelector('.effect-chain');if(!chain)return;
   const presets=chain.querySelector('.effect-presets'),presetMenu=createCommandDisclosure('Presets','device-presets');
   presets.before(presetMenu);presetMenu.append(presets);
   const scroll=document.createElement('div');scroll.className='device-chain-scroll';scroll.setAttribute('aria-label','Ordered track devices');scroll.tabIndex=0;
   chain.append(scroll);
-  for(const article of chain.querySelectorAll('.effect-device')){
-    const header=article.querySelector('header'),body=document.createElement('div');body.className='device-body';
-    for(const child of [...article.children])if(child!==header)body.append(child);
-    const fold=document.createElement('button');fold.className='device-fold';fold.textContent='Collapse';fold.setAttribute('aria-expanded','true');fold.title='Fold this device without bypassing its audio processing';
-    fold.onclick=()=>{body.hidden=!body.hidden;fold.textContent=body.hidden?'Expand':'Collapse';fold.setAttribute('aria-expanded',String(!body.hidden));article.classList.toggle('device-collapsed',body.hidden)};
-    header.append(fold);article.append(body);scroll.append(article);
-    const enabled=header.querySelector('[data-effect-enabled]');enabled.setAttribute('aria-label',`Enable ${enabled.parentElement.textContent.trim()}`);
-    const paint=()=>article.classList.toggle('device-bypassed',!enabled.checked);enabled.addEventListener('change',paint);paint();
-    for(const input of article.querySelectorAll('[data-effect-param]')){
-      const name=input.closest('label').firstChild.textContent.trim(),key=input.dataset.param;
-      if(['gain','pan','width'].includes(key)&&article.querySelector('[data-param="invert"]')){
-        enhanceParameter(input,{name,unit:key==='gain'?'dB':'',reset:key==='width'?1:0,rotary:key!=='width'});
-      }
-    }
+  for(const [index,article]of [...chain.querySelectorAll('.effect-device')].entries()){
+    const effect=track.fx.effects[index],title=article.querySelector('header label').textContent.trim();
+    mountDeviceShell(article,{id:effect.id,type:effect.type,title,onPreset:()=>{presetMenu.open=true;chain.querySelector('#effectPresetSelect').focus();presetMenu.scrollIntoView({block:'nearest'})}});
+    scroll.append(article);enhanceEffectParameters(article,effect);
   }
 }

@@ -3,6 +3,7 @@ import {trackPlaybackType} from './project-state.js';
 const types={audio:{name:'Audio',color:'#88a8db'},sampler:{name:'Sampler',color:'#a58bdb'},drumRack:{name:'Drum Rack',color:'#db8a70'}};
 
 export function showTrackSetup({track=null,type='audio',number=1,assets,buffers,onSubmit}){
+  const opener=document.activeElement,openerLabel=opener?.getAttribute('aria-label');
   document.querySelector('#trackSetup')?.remove();
   const dialog=document.createElement('dialog');
   dialog.id='trackSetup';dialog.className='track-setup';
@@ -35,7 +36,11 @@ export function showTrackSetup({track=null,type='audio',number=1,assets,buffers,
   $('#trackType').onchange=updateType;updateType();
   $('#cancelTrackSetup').onclick=()=>dialog.close();
   dialog.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();dialog.close()}});
-  dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+  dialog.addEventListener('close',()=>{
+    dialog.remove();
+    const target=opener?.isConnected?opener:[...document.querySelectorAll('button')].find(button=>openerLabel&&button.getAttribute('aria-label')===openerLabel);
+    (target||document.querySelector('#addTrack')||document.querySelector('#backArrange')||document.querySelector('#rackBack'))?.focus({preventScroll:true});
+  },{once:true});
   dialog.querySelector('form').onsubmit=event=>{
     event.preventDefault();
     const name=$('#trackName').value.trim();

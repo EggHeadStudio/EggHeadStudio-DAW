@@ -1,4 +1,5 @@
 import {detectPitch,noteName,snapBeats} from './music.js';
+import {enhanceParameter} from './ui-controls.js';
 import {PianoNoteEditor} from './piano-model.js';
 import {pianoBeatAtClientX} from './timeline.js';
 import {assignSamplerSource,bindSampleDrop,showSamplePicker} from './instrument-source.js';
@@ -170,6 +171,11 @@ export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, sav
   root.querySelector('#filterType').value=track.fx.filterType;
   for(const [id,key] of [['filterCutoff','cutoff'],['filterQ','resonance'],['delayMix','delay'],['delayTime','delayTime'],['delayFeedback','feedback']])root.querySelector(`#${id}`).oninput=event=>{track.fx[key]=Number(event.target.value);engine.syncTracks(tracks);save()};
   root.querySelector('#filterType').onchange=event=>{track.fx.filterType=event.target.value;engine.syncTracks(tracks);save()};
+  for(const [id,name,unit,reset,scale,format]of [
+    ['filterCutoff','Cutoff','Hz',20000,'log','number'],['filterQ','Resonance','Q',.7,'log','number'],
+    ['delayMix','Delay mix','',0,'linear','percent'],['delayTime','Delay time','s',.25,'log','number'],
+    ['delayFeedback','Feedback','',.25,'linear','percent']
+  ])enhanceParameter(root.querySelector(`#${id}`),{name,unit,reset,scale,format,rotary:id!=='delayMix'});
 
   const world=root.querySelector('#pianoWorld');
   let gesture=null;

@@ -194,7 +194,7 @@ No miniature desktop clone. Bottom navigation or tabs: Arrange, Samples, Record,
 | 002 | Sample-based instruments, pitch detection, Piano Roll and Drum Rack sequencing | Notes/pads persist and produce sample audio | PARTIAL — sampler, internal note editor, 16-pad rack and shared step/piano pattern exist; unit tests pass, but full workflow acceptance remains incomplete |
 | 003 | Professional mixing/effects architecture, arrangement clip editing, live/offline consistency | Reorderable tested device chains and equivalent live/offline signal measurements | COMPLETE — 45 local Node tests pass; generated-audio Chromium acceptance verified Sample Studio processing/save, Sampler and Drum Rack patterns, independent track effects, mixer mute/solo, non-silent WAV export, project reload, and mobile-emulated timeline seek/alignment. Physical-device checks, remote CI and quantitative live/offline parity tolerances remain release follow-ups, not claims of completion |
 | 004 | Mastering Studio | Measurement-driven mastering chain, validated export and A/B | FUNCTIONALLY COMPLETE — Phases 1–6 implemented; Phase 6 boundary suite passed 110/110. Deterministic eight-track acceptance, clean IndexedDB `.EHS` restore/reopen, unchanged asset hashes, four-format mastered export and Release ZIP verified in Chromium. Independent standards/device/deployment and medium/large-project performance checks remain release/Batch 005 work; see `BATCH_004_FINAL_ACCEPTANCE.md` |
-| 005 | Performance, Mobile Experience & Production Reliability (005A/005B) | Measured performance/memory improvements, safe large archives, responsive editing, reliable recovery and real-device evidence | IN PROGRESS - 005A.7 closed for tested desktop scope; 005B.1 UX foundation complete. Current suite 271/271; contextual navigation/devices, five-width synthetic touch, clean-origin .EHS and decoded WAV/MP3 verified. Full design system, physical/cross-engine acceptance and low-memory budgets remain. See `BATCH_005A_7C_REPORT.md` and `BATCH_005B_1_REPORT.md` |
+| 005 | Performance, Mobile Experience & Production Reliability (005A/005B) | Measured performance/memory improvements, safe large archives, responsive editing, reliable recovery and real-device evidence | IN PROGRESS - 005A.7 closed for tested desktop scope; 005B.1/005B.2 UX/design-system foundations complete. Current suite 279/279; reusable real controls, five-width synthetic touch, clean-origin .EHS and decoded WAV/MP3 verified. Full redesign, physical/cross-engine acceptance and low-memory budgets remain. See `BATCH_005A_7C_REPORT.md` and `BATCH_005B_2_REPORT.md` |
 | 006 | Persistence and portable projects | Versioned save/reopen, sample relink and media archive round-trip | PARTIAL — JSON/localStorage plus versioned `.EHS` archives with embedded/deduplicated media, checksums and schema migration; automated and Chromium round-trips pass, broader compatibility/missing-media acceptance remains |
 | 007 | Mobile UX, accessibility and performance | End-to-end workflow on physical desktop and mobile browsers | PARTIAL — browser-emulated responsive smoke checks only; physical devices, long recordings and memory budgets unverified |
 | 008 | GitHub Pages release verification | Static deployment smoke checks at repository subpath across target browsers | PARTIAL — local static requests passed for the app, workers, worklets and vendors; the previously published revision was checked, but this unpushed worktree has not been deployed |
@@ -329,7 +329,7 @@ Update this checklist only after relevant test evidence is recorded. A feature e
 
 ## 13. NEXT IMMEDIATE ACTION
 
-Continue from `BATCH_005B_1_REPORT.md` and `BATCH_005B_1_UX_AUDIT.md` for the interface, and `BATCH_005A_7C_REPORT.md` for audio/reliability. Continuous-context bounded offline scheduling closes the demonstrated future-source graph bottleneck without resetting DSP state. The medium/large full-chain exports and independent WAV/MP3 decoding have measured results; native crash/relaunch boundaries and extended scheduling stress have also been exercised. ZIP output is chunked but input collection/extraction remain buffered. The 005B.1 workspace foundation is now implemented; the full redesign, graphical EQ and dedicated mobile architecture remain staged work. Independent standards references, physical-device/cross-engine acceptance and deployment of an approved release remain explicit gates.
+Continue with 005B.3 from `BATCH_005B_2_REPORT.md` and `BATCH_005B_2_DESIGN_SYSTEM.md`; retain `BATCH_005B_1_UX_AUDIT.md` for the interface roadmap and `BATCH_005A_7C_REPORT.md` for audio/reliability. Continuous-context bounded offline scheduling closes the demonstrated future-source graph bottleneck without resetting DSP state. The medium/large full-chain exports and independent WAV/MP3 decoding have measured results; native crash/relaunch boundaries and extended scheduling stress have also been exercised. ZIP output is chunked but input collection/extraction remain buffered. The workspace and reusable real-control foundations are implemented; the full redesign, graphical EQ and dedicated mobile architecture remain staged work. Independent standards references, physical-device/cross-engine acceptance and deployment of an approved release remain explicit gates.
 
 
 ## Batch 005A.7-UX — Instrument Workflow Cleanup
@@ -358,9 +358,27 @@ Native keyboard-accessible disclosures support project, contextual commands,
 presets and device folding. Shared parameter primitives demonstrate real Utility
 gain/pan knobs and a numeric-enabled width slider without a second DSP model.
 
-Next: 005B.2 expands the tested design tokens, controls, context-popup styling,
-device skins and focus/contrast review. 005B.4 adds actual FFT analysis, DSP
+005B.2 now expands the tested design tokens, controls, device skins and
+focus/contrast review. 005B.4 adds actual FFT analysis, DSP
 response curves and draggable EQ nodes using logarithmic frequency mapping;
 waveform data is not a spectrum. 005B.5 handles full-screen phone editors and
 bottom sheets with physical-device acceptance. Do not silently add automation,
 Session View, a framework migration or a new project schema to these UI batches.
+
+## Batch 005B.2 - Design system and reusable real audio controls
+
+Shared actual-value rotary/slider/fader controls now cover Utility, Compressor,
+Delay, Reverb, Saturation, Limiter and existing Sampler source filter/delay.
+Device shells preserve stable focus/fold/scroll across rebuilds. The Mixer has
+vertical faders, numeric/pan controls and true measured peak/reduction outputs;
+hidden/offscreen meter DOM work is skipped. Track-dialog focus and shortcut
+isolation are explicit. No second DSP model, parameter automation, new archive
+schema or new processor is introduced.
+
+The tested 35-workspace/five-width and synthetic Drum Rack/velocity/control touch
+scope is complete. Native Edge verifies clean-origin .EHS restoration, decoded
+WAV/MP3 and -12 dB live/offline Utility attenuation. Tokens exceed the selected
+4.5:1 text/status contrast target; this is not a complete accessibility audit.
+See `BATCH_005B_2_REPORT.md` for exact evidence and `BATCH_005B_2_DESIGN_SYSTEM.md`
+for tokens/API/units. Next: 005B.3; compact density, physical/cross-engine testing,
+graphical EQ (005B.4) and dedicated phone architecture (005B.5) remain staged.
