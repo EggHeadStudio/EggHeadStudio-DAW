@@ -185,7 +185,7 @@ export function createMasteringGraph(ctx,settings,destination){
  multiband?.port.start?.();
  if(limiter)limiter.port.onmessage=event=>{if(event.data?.type==='gain-reduction')graph.gainReductionDb=Math.max(0,Number(event.data.db)||0)};
  if(multiband)multiband.port.onmessage=event=>{if(event.data?.type==='gain-reduction')graph.multibandGainReduction=event.data.bands||[0,0,0]};
- const graph={input,nodes,eqFilters,bands,limiter,multiband,inputTrim,preAnalyser,postAnalyser,gainReductionDb:0,multibandGainReduction:[0,0,0],get moduleOrder(){return [...connectedOrder]},get latencyFrames(){return latencyFrames},disconnect(){input.disconnect();for(const node of nodes)node.disconnect()},update};
+ const graph={input,nodes,eqFilters,bands,limiter,multiband,inputTrim,preAnalyser,postAnalyser,gainReductionDb:0,multibandGainReduction:[0,0,0],get moduleOrder(){return [...connectedOrder]},get latencyFrames(){return latencyFrames},disconnect(){input.disconnect();for(const node of nodes){if(node.port)node.onprocessorerror=null;node.disconnect()}},update};
  return graph;
 }
 

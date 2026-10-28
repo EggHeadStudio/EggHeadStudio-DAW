@@ -197,6 +197,7 @@ export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, sav
     for(const bar of root.querySelectorAll('.velocity-bar')){
       const note=notes.find(item=>item.id===bar.dataset.velocityId);if(!note)continue;
       bar.style.height=`${velocityBarHeight(note.velocity)}px`;bar.title=String(Math.round(note.velocity*127));
+      bar.setAttribute('aria-label',`${noteName(note.midi)} velocity ${Math.round(note.velocity*127)}`);
       bar.classList.toggle('note-selected',editor.selected.has(note.id));
     }
   };

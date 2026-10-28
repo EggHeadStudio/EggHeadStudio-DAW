@@ -1,4 +1,5 @@
-import {unzipSync,zipSync} from '../vendor/fflate/fflate.js';
+import {unzipSync} from '../vendor/fflate/fflate.js';
+import {chunkedZip} from './archive-zip.js';
 import {encodeWavAsync} from './export-dsp.js';
 import {validateReleaseMetadata} from './release-metadata.js';
 import {hasTypedInstrumentClips,INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION,LEGACY_PROJECT_SCHEMA_VERSION} from './project-state.js';
@@ -65,6 +66,10 @@ function zipCentralDirectory(bytes){
   if(view.getUint16(localOffset+6,true)&1||view.getUint16(localOffset+6,true)!==flags||view.getUint16(localOffset+8,true)!==method)throw new Error('ZIP local and central headers disagree.');
   const dataEnd=dataStart+compressedSize,descriptorBytes=flags&8?(view.getUint32(dataEnd,true)===0x08074b50?16:12):0;
   if(dataEnd+descriptorBytes>centralOffset)throw new Error('ZIP entry data exceeds archive bounds.');
+  if(descriptorBytes){
+   const descriptor=dataEnd+(descriptorBytes===16?4:0);
+   if(view.getUint32(descriptor,true)!==crc||view.getUint32(descriptor+4,true)!==compressedSize||view.getUint32(descriptor+8,true)!==uncompressedSize)throw new Error('ZIP data descriptor and central checksums or sizes disagree.');
+  }
   if(!(flags&8)&&(view.getUint32(localOffset+14,true)!==crc||view.getUint32(localOffset+18,true)!==compressedSize||view.getUint32(localOffset+22,true)!==uncompressedSize))throw new Error('ZIP local and central sizes or checksums disagree.');
   localRanges.push([localOffset,dataEnd+descriptorBytes]);
   entries.push({path,method,crc,compressedSize,uncompressedSize});
@@ -92,7 +97,8 @@ async function zipFiles(files,{signal,onProgress}={}){
  const zipInputs=Object.fromEntries(Object.entries(files).map(([path,bytes])=>[path,path.startsWith('assets/audio/')||path.startsWith('assets/artwork/')?[bytes,{level:0}]:bytes]));
  if(typeof Worker!=='function'){
   if(signal?.aborted)throw signal.reason||new DOMException('Archive creation cancelled.','AbortError');
-  return zipSync(zipInputs,{level:1});
+  const entries=Object.entries(zipInputs).map(([path,value])=>Array.isArray(value)?[path,...value]:[path,value,null]);
+  return chunkedZip(entries,{maxBytes:MAX_EHS_ARCHIVE_BYTES,signal,onProgress});
  }
  const worker=new Worker(new URL('./archive-worker.js',import.meta.url),{type:'module'});
  return new Promise((resolve,reject)=>{
@@ -101,16 +107,20 @@ async function zipFiles(files,{signal,onProgress}={}){
   const finish=(callback,value)=>{if(settled)return;settled=true;cleanup();callback(value)};
   const abort=()=>finish(reject,signal?.reason||new DOMException('Archive creation cancelled.','AbortError'));
   worker.onmessage=({data})=>{
-   if(data?.type==='error')finish(reject,new Error(`ZIP compression failed: ${data.message}`));
-   else if(data?.type==='done'){onProgress?.({stage:'zip',progress:1,message:'ZIP compression complete.'});finish(resolve,new Uint8Array(data.archive))}
+   if(data?.type==='progress'){try{onProgress?.(data.status)}catch(error){finish(reject,error)}}
+   else if(data?.type==='error')finish(reject,new Error(`ZIP compression failed: ${data.message}`));
+   else if(data?.type==='done')finish(resolve,data.archive);
   };
   worker.onerror=event=>finish(reject,new Error(event.message||'Archive worker failed.'));
   worker.onmessageerror=()=>finish(reject,new Error('Archive worker returned unreadable data.'));
   signal?.addEventListener('abort',abort,{once:true});
   const entries=Object.entries(zipInputs),transfer=[];
   const payload=entries.map(([path,value])=>{const[data,options]=Array.isArray(value)?value:[value,null],bytes=data instanceof Uint8Array?data:new Uint8Array(data);transfer.push(bytes.buffer);return[path,bytes.buffer,options]});
-  onProgress?.({stage:'zip',progress:0,message:'Compressing archive in a background worker…'});
-  try{worker.postMessage({type:'zip',files:payload},transfer)}catch(error){finish(reject,error)}
+  try{
+   onProgress?.({stage:'zip',progress:0,message:'Compressing archive in a background worker…'});
+   if(signal?.aborted){abort();return}
+   worker.postMessage({type:'zip',files:payload,maxBytes:MAX_EHS_ARCHIVE_BYTES},transfer);
+  }catch(error){finish(reject,error)}
  });
 }
 
@@ -143,17 +153,20 @@ export async function createPortableProjectArchive(project,{assetFiles=new Map()
  for(const id of ids){
   if(signal?.aborted)throw signal.reason||new DOMException('Archive creation cancelled.','AbortError');
   let source=assetFiles.get(id),bytes,name=source?.name||id,mime=source?.type||'application/octet-stream',sampleRate=null,channels=null;
+  if((source?.size??source?.byteLength??0)>MAX_EHS_ARCHIVE_BYTES)throw new RangeError(`Stored audio asset "${id}" cannot fit within the 256 MiB archive limit.`);
   if(source)bytes=await bytesOf(source);
   else{
    const audio=audioBuffers.get(id);
    if(!audio)throw new Error(`Project references missing audio asset "${id}". Nothing was archived.`);
    channels=audio.numberOfChannels;sampleRate=audio.sampleRate;
+   if(44+audio.length*channels*4>MAX_EHS_ARCHIVE_BYTES)throw new RangeError(`Stored audio asset "${id}" cannot fit within the 256 MiB archive limit.`);
    bytes=new Uint8Array(await encodeWavAsync(Array.from({length:channels},(_,index)=>audio.getChannelData(index)),sampleRate,{bitDepth:32,dither:false}));
    name=`${id}.wav`;mime='audio/wav';
   }
   const digest=await sha256(bytes),path=contentPaths.get(digest)||`assets/audio/${digest}.${safeExtension(name,mime)}`;
   if(bytes.byteLength>MAX_EHS_UNCOMPRESSED_BYTES)throw new RangeError(`Audio asset "${id}" exceeds the archive asset size limit.`);
   if(!contentPaths.has(digest)){contentPaths.set(digest,path);files[path]=bytes;uncompressed+=bytes.byteLength}
+  if(uncompressed>MAX_EHS_ARCHIVE_BYTES)throw new RangeError('Stored audio cannot fit within the 256 MiB archive limit.');
   if(uncompressed>MAX_EHS_UNCOMPRESSED_BYTES)throw new RangeError('Portable project exceeds the 512 MiB uncompressed size limit.');
   if(!/^[A-Za-z0-9._-]{1,128}$/.test(id))throw new Error(`Project asset identifier "${id}" cannot be safely packaged.`);
   assetMap[id]={path,size:bytes.byteLength,sha256:digest,name:String(name).slice(0,255),mime:String(mime).slice(0,100),...(sampleRate?{sampleRate,channels}:{})};
@@ -188,7 +201,10 @@ export async function createPortableProjectArchive(project,{assetFiles=new Map()
  files['README.txt']=encoder.encode('EggHeadStudio portable project archive (.ehs).\r\nOpen this file with EggHeadStudio DAW. Audio assets are losslessly embedded and referenced by project.json.\r\n');
  uncompressed+=files['README.txt'].byteLength;
  const fileManifest=[];
- for(const[path,data]of Object.entries(files))fileManifest.push({path,size:data.byteLength,sha256:await sha256(data)});
+ for(const[path,data]of Object.entries(files)){
+  if(path==='project.json'&&data.byteLength>16*1024*1024||path.startsWith('presets/')&&data.byteLength>2*1024*1024)throw new RangeError(`Archive file ${path} exceeds its JSON size limit.`);
+  fileManifest.push({path,size:data.byteLength,sha256:await sha256(data)});
+ }
  const createdAt=now.toISOString(),manifest={
   format:'EggHeadStudioProject',formatVersion:EHS_FORMAT_VERSION,applicationVersion:appVersion,
   projectSchemaVersion,projectId:String(project.id||''),projectName:String(project.name||'Untitled Project'),
@@ -198,13 +214,14 @@ export async function createPortableProjectArchive(project,{assetFiles=new Map()
   limits:{payloadBytes:uncompressed,fileCount:Object.keys(files).length+1}
  };
  files['manifest.json']=manifestJson(manifest);
+ if(files['manifest.json'].byteLength>2*1024*1024)throw new RangeError('Archive manifest exceeds its JSON size limit.');
  const totalUncompressed=Object.values(files).reduce((size,data)=>size+data.byteLength,0);
  if(Object.keys(files).length>MAX_EHS_FILE_COUNT||totalUncompressed>MAX_EHS_UNCOMPRESSED_BYTES)throw new RangeError('Portable project exceeds archive size or file-count limits.');
  if(signal?.aborted)throw signal.reason||new DOMException('Archive creation cancelled.','AbortError');
  onProgress({stage:'zip',progress:0,message:'Compressing project archive…'});
  await new Promise(resolve=>setTimeout(resolve,0));
  const archive=await zipFiles(files,{signal,onProgress});
- if(archive.byteLength>MAX_EHS_ARCHIVE_BYTES)throw new RangeError('Portable project archive exceeds the 256 MiB compressed size limit.');
+ if(archive.size>MAX_EHS_ARCHIVE_BYTES)throw new RangeError('Portable project archive exceeds the 256 MiB compressed size limit.');
  onProgress({stage:'zip',progress:1,message:'Portable project archive ready.'});
  return new Blob([archive],{type:'application/vnd.eggheadstudio.project+zip'});
 }
@@ -389,7 +406,7 @@ export function createReleaseZip(files,{signal,onProgress=()=>{}}={}){
   const safeFiles={};
   for(const[path,value]of Object.entries(files)){assertSafePath(path);if(value instanceof Uint8Array)safeFiles[path]=value;else if(value instanceof ArrayBuffer)safeFiles[path]=new Uint8Array(value);else throw new TypeError(`Release package entry "${path}" must be binary data.`)}
   const archive=await zipFiles(safeFiles,{signal,onProgress});
-  if(archive.byteLength>MAX_EHS_ARCHIVE_BYTES)throw new RangeError('Release package exceeds the 256 MiB compressed size limit.');
+  if(archive.size>MAX_EHS_ARCHIVE_BYTES)throw new RangeError('Release package exceeds the 256 MiB compressed size limit.');
   if(signal?.aborted)throw signal.reason||new DOMException('Release package cancelled.','AbortError');
   onProgress({stage:'zip',progress:1,message:'Release package ready.'});
   return new Blob([archive],{type:'application/zip'});

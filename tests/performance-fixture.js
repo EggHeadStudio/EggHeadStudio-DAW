@@ -52,7 +52,7 @@ export function createPerformanceProject(size,createBuffer){
  return{project,buffers,workload};
 }
 
-export async function runPerformanceBenchmark(size,{exportAudio=false,playback=true}={}){
+export async function runPerformanceBenchmark(size,{exportAudio=false,playback=true,observePlaybackMs=1000}={}){
  const status={size,stage:'prepare'};globalThis.performanceBenchmarkStatus=status;
  const started=performance.now(),engine=new AudioEngine(),context=new OfflineAudioContext(2,1,44100);
  const fixture=createPerformanceProject(size,(channels,frames,rate)=>context.createBuffer(channels,frames,rate));
@@ -77,10 +77,26 @@ export async function runPerformanceBenchmark(size,{exportAudio=false,playback=t
   start=performance.now();status.stage='import-archive';const restored=await openPortableProjectArchive(archive);const archiveImportMs=performance.now()-start;
   let restoredBytes=0;
   for(const file of restored.assetFiles.values())restoredBytes+=file.size;
-  let audioInitMs=null,playbackInitMs=null,scheduledSources=null;
+  start=performance.now();
+  const decoded=new Map();
+  for(const[id,file]of restored.assetFiles){
+   const hash=restored.assetMetadata.get(id).sha256;
+   if(!decoded.has(hash))decoded.set(hash,await context.decodeAudioData(await file.arrayBuffer()));
+  }
+  const audioRestoreMs=performance.now()-start;
+  start=performance.now();JSON.parse(JSON.stringify(project));const metadataLoadMs=performance.now()-start;
+  let audioInitMs=null,playbackInitMs=null,scheduledSources=null,sourcesAfterStop=null;
+  const schedulerMs=[],nodesCreated={};
   if(playback){
    start=performance.now();status.stage='audio-init';await engine.init();engine.setMastering(project.mastering);audioInitMs=performance.now()-start;
-   start=performance.now();status.stage='schedule-playback';await engine.play(project,buffers);playbackInitMs=performance.now()-start;scheduledSources=engine.sources.length;engine.stop(true);
+   for(const method of ['createBufferSource','createGain','createStereoPanner','createBiquadFilter','createAnalyser','createDelay','createChannelSplitter','createChannelMerger']){
+    const original=engine.ctx[method].bind(engine.ctx);engine.ctx[method]=(...args)=>{nodesCreated[method]=(nodesCreated[method]||0)+1;return original(...args)};
+   }
+   const schedule=engine.scheduleAhead.bind(engine);
+   engine.scheduleAhead=()=>{const at=performance.now();schedule();schedulerMs.push(performance.now()-at)};
+   start=performance.now();status.stage='schedule-playback';await engine.play(project,buffers);playbackInitMs=performance.now()-start;scheduledSources=engine.sources.length;
+   await new Promise(resolve=>setTimeout(resolve,observePlaybackMs));
+   engine.stop(true);sourcesAfterStop={sources:engine.sources.length};
   }
   let renderMs=null,encodeMs=null,outputFrames=null,outputPeak=null,outputChecksum=null,outputHashes=null;
   if(exportAudio){
@@ -92,7 +108,7 @@ export async function runPerformanceBenchmark(size,{exportAudio=false,playback=t
    start=performance.now();status.stage='encode-export';await encodeExport(rendered,{format:'wav',bitDepth:24,sampleRate:44100,channels:2,dither:false});encodeMs=performance.now()-start;
   }
   await new Promise(resolve=>setTimeout(resolve,30));
-  status.stage='complete';return{size,tracks:workload.tracks,programSeconds:workload.seconds,sampleRate:44100,preparationMs,waveformMs:waveform,archiveCreateMs,archiveImportMs,archiveBytes:archive.size,restoredBytes,audioInitMs,playbackInitMs,scheduledSources,renderMs,encodeMs,outputFrames,outputPeak,outputChecksum,outputHashes,heapPeak,maxHeartbeatDelay,longTasks,expectedRender:estimateProjectRender(project,buffers),environment:{userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemory:navigator.deviceMemory}};
+  status.stage='complete';return{size,tracks:workload.tracks,programSeconds:workload.seconds,sampleRate:44100,preparationMs,metadataLoadMs,audioRestoreMs,waveformMs:waveform,archiveCreateMs,archiveImportMs,archiveBytes:archive.size,restoredBytes,audioInitMs,playbackInitMs,scheduledSources,sourcesAfterStop,nodesCreated,schedulerMs,renderMs,encodeMs,outputFrames,outputPeak,outputChecksum,outputHashes,heapPeak,maxHeartbeatDelay,longTasks,expectedRender:estimateProjectRender(project,buffers),environment:{userAgent:navigator.userAgent,hardwareConcurrency:navigator.hardwareConcurrency,deviceMemory:navigator.deviceMemory,visibility:document.visibilityState}};
  }finally{
   clearInterval(heartbeat);clearInterval(memory);observer?.disconnect();engine.stop(true);
   for(const graph of engine.trackNodes.values())graph.disconnect();

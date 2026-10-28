@@ -19,10 +19,13 @@ import {addId3v23Metadata,addWavInfoMetadata,normalizeReleaseMetadata,validateRe
 import {mountArrangementWorkspace} from './arrangement-workspace.js';
 import {showTrackSetup} from './track-ui.js';
 import {RecordingStudio} from './recording-studio.js';
+import {saveProjectSnapshot} from './project-storage.js';
 const arrangementWorkspaceState={selection:null,insertionBeat:0,selectMode:false,follow:false,browserOpen:true,mixerOpen:true,devicesOpen:true};
 let arrangementWorkspace=null;
 const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={id:uid(),schemaVersion:1,name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,releaseMetadata:{},exportSettings:normalizeExportSettings(),tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null,exportController=null,exportRun=null,releaseZipController=null,releaseArtworkBlob=null,releaseArtworkSourceBlob=null,releaseArtworkUrl=null;
 let portableImportController=null;
+let portableExportController=null;
+let recoverySnapshot=null;
 const portableBufferDigests=new WeakMap();
 const dbp=new Promise((resolve,reject)=>{const r=indexedDB.open('pulse-studio-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('assets');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
 const recordingStudio=new RecordingStudio({engine,getProject:()=>project,assets,buffers,save,notify,
@@ -32,12 +35,23 @@ const recordingStudio=new RecordingStudio({engine,getProject:()=>project,assets,
  openArrangement:(trackId,clipId)=>{selectedTrack=project.tracks.findIndex(track=>track.id===trackId);selectedClip=clipId;view='arrange';render()},
  onBusy:busy=>{for(const element of document.querySelectorAll('header button,header input,nav button'))element.disabled=busy;const stop=$('#stop');if(stop)stop.disabled=false}
 });
+engine.onError=error=>{notify(error.message);if($('#play'))$('#play').textContent='▶';if(recordingStudio.busy)recordingStudio.finish()};
 window.addEventListener('beforeunload',event=>{if(recordingStudio.busy){event.preventDefault();event.returnValue='A recording or buffered take is not saved.'}});
 async function dbSet(k,v){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets','readwrite');t.objectStore('assets').put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}async function dbGet(k){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets');const r=t.objectStore('assets').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 async function dbSetMany(entries){const db=await dbp;return new Promise((resolve,reject)=>{const tx=db.transaction('assets','readwrite'),store=tx.objectStore('assets');for(const[key,value]of entries)value===null?store.delete(key):store.put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Asset cache transaction was aborted.'))})}
 function notify(s){$('#toast').textContent=s;$('#toast').classList.add('show');setTimeout(()=>$('#toast')?.classList.remove('show'),3500)}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function save(markDirty=true){project.id ||= uid();normalizeProjectSchema(project);project.modifiedAt=new Date().toISOString();project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.masterSettings={...engine.masterSettings};project.mastering=normalizeMasteringSettings(engine.masteringSettings);if(engine.playing){const playback=recordingStudio.busy?recordingStudio.playbackProject():project;engine.syncTracks(playback.tracks,project.bpm);engine.updatePlayback(playback,buffers)}localStorage.setItem('pulse-project',serializeProject(project));if(markDirty)projectDirty=true;const state=$('#projectSaveState');if(state)state.textContent=projectDirty?'Unsaved changes':'Saved locally'}
+function captureProjectSnapshot(markDirty=true){project.id ||= uid();normalizeProjectSchema(project);project.modifiedAt=new Date().toISOString();project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.masterSettings={...engine.masterSettings};project.mastering=normalizeMasteringSettings(engine.masteringSettings);if(engine.playing){const playback=recordingStudio.busy?recordingStudio.playbackProject():project;engine.syncTracks(playback.tracks,project.bpm);engine.updatePlayback(playback,buffers)}if(markDirty)projectDirty=true;return serializeProject(project)}
+function save(markDirty=true){
+ try{
+  saveProjectSnapshot(localStorage,captureProjectSnapshot(markDirty),recoverySnapshot);recoverySnapshot=null;
+  const state=$('#projectSaveState');if(state)state.textContent=projectDirty?'Unsaved changes':'Saved locally';
+ }catch(error){
+  projectDirty=true;const state=$('#projectSaveState');if(state)state.textContent='Local save failed';
+  notify(`Local project save failed: ${error.message}. Changes remain in this tab; export JSON or .EHS before closing.`);
+  throw error;
+ }
+}
 function barSeconds(){return 240/project.bpm}
 function beatsWidth(){return 156*zoom}
 function timelineScale(){return new TimelineScale(project.bpm,beatsWidth()/4)}
@@ -47,14 +61,19 @@ function clipWidth(c){return Math.max(1,timelineScale().timeToPixels(clipDuratio
 function setArrangementZoom(value,anchorClientX){const arrangement=$('.arrangement'),ruler=$('#ruler');if(!arrangement||!ruler){zoom=value;render();return}const anchor=anchorClientX??arrangement.getBoundingClientRect().left+arrangement.clientWidth/2,anchorTime=Math.max(0,timelineScale().pixelsToTime(timelinePixelsAtClientX(anchor,ruler,arrangement)));zoom=Math.max(.4,Math.min(4,value));render();const nextArrangement=$('.arrangement'),nextRuler=$('#ruler');if(nextArrangement&&nextRuler){const timelineScreenX=anchor-nextRuler.getBoundingClientRect().left;nextArrangement.scrollLeft=Math.max(0,timelineScale().timeToPixels(anchorTime)-timelineScreenX)}}
 function shell(){app.innerHTML=`<header><div class="brand"><span class="logo">◉</span><b>EggHeadStudio</b><span>DAW</span></div><input id="projectName" value="${esc(project.name)}" aria-label="Project name"><div class="transport"><button id="toStart" title="Back to start" aria-label="Back to start">⏮</button><button id="play" class="primary" title="Play Arrangement" aria-label="Play Arrangement">▶</button><button id="stop" title="Stop Playback" aria-label="Stop Playback">■</button><span class="clock" id="clock">1.1.1</span><label>BPM <input id="bpm" type="number" min="40" max="240" value="${project.bpm}" aria-label="Project tempo in BPM"></label><button id="loop" class="${project.loop?'active':''}" aria-label="Toggle arrangement loop">↻ Loop</button></div><div class="actions"><button id="newProject" title="Create an Empty Project" aria-label="New Project">New Project</button><button id="saveProject" title="Save project metadata locally">Save Locally</button><button id="saveEhs" title="Download the complete portable .ehs project">Save .EHS</button><button id="openProject" title="Open a legacy JSON project">Open JSON</button><button id="openEhs" title="Open a portable .ehs project">Open .EHS</button><button id="exportMix" title="Open Export Studio">Export Audio</button><span id="projectSaveState" role="status">${projectDirty?'Unsaved changes':'Saved locally'}</span></div></header><nav><button data-view="arrange" class="selected">▥ Arrangement</button><button data-view="sample">◉ Sample Studio</button><button data-view="master">▤ Mastering</button><button data-view="export">⇩ Export Studio</button><span class="grow"></span><span id="status">Local-first · Browser audio</span></nav><main id="main"></main><footer><span>EggHeadStudio DAW • Prototype v0.1</span><span id="footerInfo">Ready</span></footer><div id="toast" role="status"></div><input id="importProject" type="file" accept="application/json,.json" hidden><input id="importEhs" type="file" accept=".ehs,application/vnd.eggheadstudio.project+zip,application/zip" hidden><input id="artworkFile" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" hidden><input id="importFiles" type="file" accept="audio/*,.wav,.mp3,.ogg,.m4a" multiple hidden><input id="importFolder" type="file" webkitdirectory directory multiple hidden><dialog id="newProjectDialog" class="new-project-dialog" aria-labelledby="newProjectTitle"><h2 id="newProjectTitle">Start a New Project?</h2><p id="newProjectMessage">Your project has unsaved changes. Save a JSON copy before creating an empty project, discard changes, or cancel.</p><div class="new-project-actions"><button id="saveAndNew">Save Current Project</button><button id="discardAndNew" class="accent">Discard Changes</button><button id="cancelNewProject">Cancel</button></div></dialog>`;wireShell();render()}
 document.addEventListener('change',event=>{if(event.target?.id==='snapGrid'){snapGrid=+event.target.value;$$('.lane').forEach(lane=>lane.style.backgroundSize=`${beatsWidth()*(snapGrid||.0625)/4}px 100%`)}});
-function saveProjectFile(serialized=serializeProject(project),name=project.name){download(new Blob([serialized],{type:'application/json'}),`${name.replace(/[^\w-]/g,'_')||'Untitled_Project'}.json`);projectDirty=false;const state=$('#projectSaveState');if(state)state.textContent='Saved locally'}
+function saveProjectFile(serialized=serializeProject(project),name=project.name){download(new Blob([serialized],{type:'application/json'}),`${name.replace(/[^\w-]/g,'_')||'Untitled_Project'}.json`);projectDirty=false;const state=$('#projectSaveState');if(state)state.textContent='JSON project exported'}
 function archiveStatus(message){const footer=$('#footerInfo');if(footer)footer.textContent=message}
 function artworkKeys(forProject=project){const id=String(forProject.id||'project');return{current:forProject.releaseArtwork?.key||`${id}:artwork`,source:forProject.releaseArtwork?.sourceKey||`${id}:artwork-source`}}
 function audioBlobName(blob,name){if(!blob||!name||blob.name===name)return blob;if(typeof File==='function')return new File([blob],name,{type:blob.type||'application/octet-stream'});Object.defineProperty(blob,'name',{value:name,configurable:true});return blob}
 async function savePortableProject(){
- if(releaseZipController)return;
- save(false);const ids=getProjectAssetIds(project),assetFiles=new Map();
+ if(releaseZipController||portableExportController||portableImportController)return notify('Wait for the current archive operation to finish or cancel it first.');
+ const controller=new AbortController();portableExportController=controller;
+ const cancel=document.createElement('button');cancel.textContent='Cancel project export';cancel.onclick=()=>controller.abort();
+ document.querySelector('footer').append(cancel);
+ const replacementButtons=['#newProject','#openProject','#openEhs','#saveEhs'].map(selector=>$(selector));
+ replacementButtons.forEach(button=>button.disabled=true);
  try{
+  const snapshot=JSON.parse(captureProjectSnapshot(false)),ids=getProjectAssetIds(snapshot),assetFiles=new Map();
   for(const id of ids){const blob=await dbGet(id);if(blob)assetFiles.set(id,blob)}
   const keys=artworkKeys(),artworkFile=await dbGet(keys.current),artworkSourceFile=await dbGet(keys.source);
   let customPresets={};
@@ -66,14 +85,16 @@ async function savePortableProject(){
   const estimatedBytes=[...assetFiles.values()].reduce((sum,file)=>sum+(file.size||0),0)+(artworkFile?.size||0)+(artworkSourceFile?.size||0);
   if(estimatedBytes>192*1024*1024&&!window.confirm(`The portable archive will include about ${Math.ceil(estimatedBytes/1024/1024)} MiB of source audio/artwork in memory. Continue?`))return;
   archiveStatus('Packaging portable project…');
-  const archive=await createPortableProjectArchive(project,{assetFiles,audioBuffers:buffers,artworkFile,artworkSourceFile,presets:customPresets,onProgress:status=>archiveStatus(status.message)});
-  const filename=`${project.name.replace(/[^\w-]/g,'_')||'Untitled_Project'}.ehs`;
-  download(archive,filename);projectDirty=false;
-  const state=$('#projectSaveState');if(state)state.textContent='Portable project exported';
+  const archive=await createPortableProjectArchive(snapshot,{assetFiles,audioBuffers:buffers,artworkFile,artworkSourceFile,presets:customPresets,signal:controller.signal,onProgress:status=>archiveStatus(status.message)});
+  const filename=`${snapshot.name.replace(/[^\w-]/g,'_')||'Untitled_Project'}.ehs`;
+  download(archive,filename);const unchanged=serializeProject(project)===serializeProject(snapshot);if(unchanged)projectDirty=false;
+  const state=$('#projectSaveState');if(state)state.textContent=unchanged?'Portable project exported':'Earlier snapshot exported; newer changes unsaved';
   archiveStatus('Ready');notify(`Portable project saved · ${filename} · ${(archive.size/1024/1024).toFixed(1)} MiB.`);
- }catch(error){archiveStatus('Ready');notify(`Portable project export failed: ${error.message}`)}
+ }catch(error){archiveStatus('Ready');notify(error.name==='AbortError'?'Portable project export cancelled. No archive was downloaded.':`Portable project export failed: ${error.message}`)}
+ finally{cancel.remove();replacementButtons.forEach(button=>button.disabled=recordingStudio.busy);portableExportController=null}
 }
 async function importPortableProject(file){
+ if(portableExportController){notify('Finish or cancel the portable project export before opening a project.');return}
  if(portableImportController){notify('A portable project is already being opened. Cancel it or wait for it to finish.');return}
  if(projectDirty&&!window.confirm('The current project has unsaved changes. Opening this portable project replaces the active arrangement. Continue?'))return;
  const controller=new AbortController();portableImportController=controller;
@@ -139,12 +160,13 @@ async function importPortableProject(file){
   }
   controller.signal.throwIfAborted();cancel.disabled=true;archiveStatus('Saving verified project assets…');
   await dbSetMany(writes);
+  saveProjectSnapshot(localStorage,serializeProject(restored),recoverySnapshot);recoverySnapshot=null;
   if(archive.presetFiles.size)try{localStorage.setItem('pulse-master-presets',JSON.stringify(portablePresets))}catch(error){notify(`Project opened, but custom presets could not be saved locally: ${error.message}`)}
   engine.stop(true);engine.setMaster({...DEFAULT_MASTER_SETTINGS,...restored.masterSettings});engine.setMastering(restored.mastering||DEFAULT_MASTERING_SETTINGS);
   resetArrangementEditing();project=restored;for(const[id,buffer]of stagedBuffers)buffers.set(id,buffer);for(const[id,asset]of stagedAssets)assets.set(id,asset);
   releaseArtworkBlob=archive.artworkFile;releaseArtworkSourceBlob=archive.artworkSourceFile;
   if(releaseArtworkUrl)URL.revokeObjectURL(releaseArtworkUrl);releaseArtworkUrl=releaseArtworkBlob?URL.createObjectURL(releaseArtworkBlob):null;
-  projectDirty=false;selectedTrack=0;selectedClip=null;playhead=0;masteringPreview=null;view='arrange';save(false);shell();
+  projectDirty=false;selectedTrack=0;selectedClip=null;playhead=0;masteringPreview=null;view='arrange';shell();
   notify(`Portable project opened · ${archive.assetFiles.size} audio assets verified and restored.`);
  }catch(error){notify(error.name==='AbortError'?'Portable project import cancelled. The active project was not replaced.':`Could not open portable project: ${error.message}`)}
  finally{cancel.remove();replacementButtons.forEach(button=>button.disabled=false);portableImportController=null;archiveStatus('Ready')}
@@ -955,7 +977,7 @@ function saveMasterPreset(){
  try{const presets=JSON.parse(localStorage.getItem('pulse-master-presets')||'{}');project.mastering.preset=name.trim();presets[name.trim()]=normalizeMasteringSettings(project.mastering);localStorage.setItem('pulse-master-presets',JSON.stringify(presets));engine.setMastering(project.mastering);save();notify(`Saved mastering preset "${name.trim()}".`);renderMaster()}catch(error){notify(`Could not save mastering preset: ${error.message}`)}
 }
 async function startup(){
- let recoveryError=null;
- try{const saved=localStorage.getItem('pulse-project');if(saved)project=normalizeProjectData(parseProject(saved));else normalizeProject()}catch(error){recoveryError=error;console.error('Project recovery failed; saved project retained.',error)}
+ let recoveryError=null,savedProject=null;
+ try{savedProject=localStorage.getItem('pulse-project');if(savedProject)project=normalizeProjectData(parseProject(savedProject));else normalizeProject()}catch(error){recoveryError=error;if(savedProject)recoverySnapshot={key:`pulse-project-recovery-${Date.now()}`,serialized:savedProject};console.error('Project recovery failed; saved project retained.',error)}
  project.mastering=normalizeMasteringSettings(project.mastering||DEFAULT_MASTERING_SETTINGS);engine.masterSettings={...engine.masterSettings,...project.masterSettings};engine.masteringSettings=normalizeMasteringSettings(project.mastering);shell();await restoreAssets();const keys=artworkKeys();releaseArtworkBlob=await dbGet(keys.current);releaseArtworkSourceBlob=await dbGet(keys.source);releaseArtworkUrl=releaseArtworkBlob?URL.createObjectURL(releaseArtworkBlob):null;if(view==='arrange')render();notify(recoveryError?`Saved project could not be restored: ${recoveryError.message}. Its stored data was not replaced.`:'Ready. Import a folder or record your first sample.');
 }startup();

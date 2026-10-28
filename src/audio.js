@@ -140,7 +140,7 @@ export function createTrackGraph(ctx,track,output,stableInput=null,bpm=120){
   for(const effect of fx.effects||[]){const instance=instances.get(effect.id);if(instance)setEffectValues(instance,effect,currentBpm)}
  };
  update(track);
- return{input,gain,sidechainPre,sidechainPost,sidechainConnections:[],pan,filter,legacyDelay,feedback,wet,dry,instances,update,readMeter(){leftMeter.getFloatTimeDomainData(leftSamples);rightMeter.getFloatTimeDomainData(rightSamples);let leftPeak=0,rightPeak=0,leftSquare=0,rightSquare=0;for(let i=0;i<leftSamples.length;i++){const left=leftSamples[i],right=rightSamples[i];leftPeak=Math.max(leftPeak,Math.abs(left));rightPeak=Math.max(rightPeak,Math.abs(right));leftSquare+=left*left;rightSquare+=right*right}const reductions={};for(const[id,instance]of instances)if(instance.type==='compressor'||instance.type==='limiter')reductions[id]=instance.externalSidechain?instance.reductionDb:Math.max(0,-Number(instance.node.reduction||0));return{leftPeak,rightPeak,leftRms:Math.sqrt(leftSquare/leftSamples.length),rightRms:Math.sqrt(rightSquare/leftSamples.length),reductions}},signature:trackGraphSignature(track),disconnectSidechains(){for(const connection of this.sidechainConnections){try{connection.source.disconnect(connection.send)}catch{}try{connection.send.disconnect()}catch{}}this.sidechainConnections.length=0},disconnect(){this.disconnectSidechains();for(const node of new Set(nodes))try{node.disconnect()}catch{}}};
+ return{input,gain,sidechainPre,sidechainPost,sidechainConnections:[],pan,filter,legacyDelay,feedback,wet,dry,instances,update,readMeter(){leftMeter.getFloatTimeDomainData(leftSamples);rightMeter.getFloatTimeDomainData(rightSamples);let leftPeak=0,rightPeak=0,leftSquare=0,rightSquare=0;for(let i=0;i<leftSamples.length;i++){const left=leftSamples[i],right=rightSamples[i];leftPeak=Math.max(leftPeak,Math.abs(left));rightPeak=Math.max(rightPeak,Math.abs(right));leftSquare+=left*left;rightSquare+=right*right}const reductions={};for(const[id,instance]of instances)if(instance.type==='compressor'||instance.type==='limiter')reductions[id]=instance.externalSidechain?instance.reductionDb:Math.max(0,-Number(instance.node.reduction||0));return{leftPeak,rightPeak,leftRms:Math.sqrt(leftSquare/leftSamples.length),rightRms:Math.sqrt(rightSquare/leftSamples.length),reductions}},signature:trackGraphSignature(track),disconnectSidechains(){for(const connection of this.sidechainConnections){try{connection.source.disconnect(connection.send)}catch{}try{connection.send.disconnect()}catch{}}this.sidechainConnections.length=0},disconnect(){this.disconnectSidechains();for(const node of new Set(nodes)){if(node.port)node.onprocessorerror=null;try{node.disconnect()}catch{}}}};
 }
 function trackGraphSignature(track){
  return(track.fx?.effects||[]).filter(effect=>effect.enabled).map(effect=>{
@@ -221,11 +221,22 @@ export function estimateProjectRender(project,buffers){
  const effectTail=Math.max(.3,...tails),tail=effectTail+Math.max(0,finalInstrumentAudioEnd-end);
  return{programSeconds:end,tailSeconds:tail,durationSeconds:end+tail};
 }
+function watchGraphProcessors(graph,onError){
+ const nodes=graph.nodes||[...graph.instances.values()].map(instance=>instance.node);
+ for(const node of new Set(nodes))if(node?.port)node.onprocessorerror=()=>onError(new Error('AudioWorklet processing failed. Playback stopped; retry Play to rebuild the audio graph.'));
+}
 export class AudioEngine{
+ handleProcessorError(error){
+  this.stop();
+  for(const graph of this.trackNodes.values())graph.disconnect();
+  this.trackNodes.clear();
+  this.masteringGraph?.disconnect();this.masteringGraph=null;this.master?.disconnect();
+  if(this.onError)this.onError(error);else console.error(error);
+ }
  constructor(){this.ctx=null;this.master=null;this.compressor=null;this.eq=null;this.masteringGraph=null;this.masteringSettings=normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS);this.trackNodes=new Map();this.sources=[];this.sourceNodes=new WeakMap();this.playing=false;this.startedAt=0;this.offset=0;this.timer=null;this.raf=null;this.onTick=()=>{};this.onMeter=()=>{};this.onEnd=()=>{};this.loop=false;this.bpm=120;this.masterSettings={eq:0,threshold:-12,makeup:0,volume:1};this.clipHoldUntil=new Map();this.sidechainReady=false;this.sidechainError=null;this.masteringLimiterReady=false;this.masteringLimiterError=null;}
- async init(){if(!this.ctx){this.ctx=new (window.AudioContext||window.webkitAudioContext)();if(this.ctx.audioWorklet&&typeof globalThis.AudioWorkletNode==='function'){try{await this.ctx.audioWorklet.addModule(new URL('./sidechain-processor.js',import.meta.url));this.sidechainReady=true}catch(error){this.sidechainError=error;console.error('External sidechain processor could not be loaded.',error)}try{await this.ctx.audioWorklet.addModule(new URL('./mastering-processor.js',import.meta.url));this.ctx.masteringLimiterReady=true}catch(error){this.masteringLimiterError=error;console.error('Mastering limiter processor could not be loaded.',error)}}else{this.sidechainError=new Error('AudioWorklet is unavailable in this browser.');this.masteringLimiterError=this.sidechainError}this.eq=this.ctx.createBiquadFilter();this.eq.type='highshelf';this.eq.frequency.value=4500;this.compressor=this.ctx.createDynamicsCompressor();this.master=this.ctx.createGain();this.eq.connect(this.compressor).connect(this.master);this.setMaster(this.masterSettings);this.setMastering(this.masteringSettings)}await this.ctx.resume();return this.ctx}
+ async init(){if(!this.ctx){this.ctx=new (window.AudioContext||window.webkitAudioContext)();if(this.ctx.audioWorklet&&typeof globalThis.AudioWorkletNode==='function'){try{await this.ctx.audioWorklet.addModule(new URL('./sidechain-processor.js',import.meta.url));this.sidechainReady=true}catch(error){this.sidechainError=error;console.error('External sidechain processor could not be loaded.',error)}try{await this.ctx.audioWorklet.addModule(new URL('./mastering-processor.js',import.meta.url));this.ctx.masteringLimiterReady=true}catch(error){this.masteringLimiterError=error;console.error('Mastering limiter processor could not be loaded.',error)}}else{this.sidechainError=new Error('AudioWorklet is unavailable in this browser.');this.masteringLimiterError=this.sidechainError}this.eq=this.ctx.createBiquadFilter();this.eq.type='highshelf';this.eq.frequency.value=4500;this.compressor=this.ctx.createDynamicsCompressor();this.master=this.ctx.createGain();this.eq.connect(this.compressor).connect(this.master);this.setMaster(this.masterSettings);this.setMastering(this.masteringSettings)}await this.ctx.resume();if(!this.masteringGraph)this.setMastering(this.masteringSettings);return this.ctx}
  setMaster(s){this.masterSettings={...this.masterSettings,...s};if(!this.ctx)return;const eq=Number(this.masterSettings.eq),threshold=Number(this.masterSettings.threshold),makeup=Number(this.masterSettings.makeup),volume=Number(this.masterSettings.volume);this.eq.gain.value=Number.isFinite(eq)?eq:0;this.compressor.threshold.value=Number.isFinite(threshold)?threshold:-12;this.compressor.ratio.value=3;this.master.gain.value=Math.max(0,Number.isFinite(volume)?volume:1)*Math.pow(10,(Number.isFinite(makeup)?makeup:0)/20)}
- setMastering(settings){const next=normalizeMasteringSettings(settings);if(!this.ctx||!this.master){this.masteringSettings=next;return}this.masteringLimiterReady=Boolean(this.ctx.masteringLimiterReady);if(this.masteringGraph){this.masteringGraph.update(next);this.masteringSettings=next;return}const graph=createMasteringGraph(this.ctx,next,this.ctx.destination);this.master.connect(graph.input);this.masteringGraph=graph;this.masteringSettings=next}
+ setMastering(settings){const next=normalizeMasteringSettings(settings);if(!this.ctx||!this.master){this.masteringSettings=next;return}this.masteringLimiterReady=Boolean(this.ctx.masteringLimiterReady);if(this.masteringGraph){this.masteringGraph.update(next);this.masteringSettings=next;return}const graph=createMasteringGraph(this.ctx,next,this.ctx.destination);this.master.connect(graph.input);this.masteringGraph=graph;watchGraphProcessors(graph,error=>this.handleProcessorError(error));this.masteringSettings=next}
  syncTracks(tracks,bpm=this.bpm){
   if(!this.ctx)return;
   const needsSidechain=tracks.some(track=>(track.fx?.effects||[]).some(effect=>effect.enabled&&effect.type==='compressor'&&effect.params?.sidechain?.enabled));
@@ -237,7 +248,7 @@ export class AudioEngine{
   for(const track of tracks){
    const signature=trackGraphSignature(track);
    let graph=this.trackNodes.get(track.id);
-   if(!graph||graph.signature!==signature){const input=graph?.input;graph?.disconnect();graph=createTrackGraph(this.ctx,track,this.eq,input,this.bpm);this.trackNodes.set(track.id,graph)}
+   if(!graph||graph.signature!==signature){const input=graph?.input;graph?.disconnect();graph=createTrackGraph(this.ctx,track,this.eq,input,this.bpm);watchGraphProcessors(graph,error=>this.handleProcessorError(error));this.trackNodes.set(track.id,graph)}
    graph.update(track,solo,this.bpm,isTrackAudible(track,tracks));
   }
   connectTrackSidechains(tracks,this.trackNodes,this.ctx);
@@ -335,16 +346,24 @@ export class AudioEngine{
   if(bypassMastering)master.connect(ctx.destination);
   let masteringGraph=null;
   if(!bypassMastering){masteringGraph=createMasteringGraph(ctx,masteringSettings,ctx.destination);master.connect(masteringGraph.input)}
-  const offlineTrackNodes=new Map();
+  const offlineTrackNodes=new Map();let rejectProcessor;
+  const processorFailure=new Promise((_,reject)=>{rejectProcessor=reject});
+  if(masteringGraph)watchGraphProcessors(masteringGraph,rejectProcessor);
   for(const track of project.tracks){
    const graph=createTrackGraph(ctx,track,eq,null,project.bpm);
    offlineTrackNodes.set(track.id,graph);
+   watchGraphProcessors(graph,rejectProcessor);
    graph.update(track,project.tracks.some(item=>item.solo),project.bpm,isTrackAudible(track,project.tracks));
    for(const clip of track.clips){const buffer=buffers.get(clip.asset);if(!buffer||clip.mute)continue;const source=ctx.createBufferSource(),clipGain=ctx.createGain(),when=clip.bar*bar,duration=clipDurationSeconds(clip);source.buffer=buffer;source.playbackRate.value=clip.rate||1;source.connect(clipGain).connect(graph.input);scheduleClipSource(ctx,source,clipGain,clip,when,0,duration)}
    for(const event of instrumentEvents(track,buffers,project.bpm,end/beat,0,end/beat,patternBeats))scheduleInstrumentEvent(ctx,graph.input,event,0,end,0,true);
   }
   connectTrackSidechains(project.tracks,offlineTrackNodes,ctx);
-  const rendered=await ctx.startRendering();
+  let rendered;
+  try{rendered=await Promise.race([ctx.startRendering(),processorFailure])}
+  finally{
+   for(const graph of offlineTrackNodes.values())graph.disconnect();
+   masteringGraph?.disconnect();eq.disconnect();comp.disconnect();master.disconnect();
+  }
   if(!masteringGraph?.latencyFrames)return rendered;
   const trimFrames=masteringGraph.latencyFrames,trimmed=ctx.createBuffer(rendered.numberOfChannels,rendered.length-trimFrames,rendered.sampleRate);
   for(let channel=0;channel<rendered.numberOfChannels;channel++)trimmed.getChannelData(channel).set(rendered.getChannelData(channel).subarray(trimFrames));

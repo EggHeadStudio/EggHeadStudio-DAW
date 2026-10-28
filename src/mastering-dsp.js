@@ -139,9 +139,9 @@ function runBiquad(sample,coefficients,state){
  return value;
 }
 
-function runFourthOrder(sample,filters,states){
+function runFourthOrder(sample,filter,states){
  let output=sample;
- for(let stage=0;stage<2;stage++)output=runBiquad(output,filters[stage],states[stage]);
+ for(let stage=0;stage<2;stage++)output=runBiquad(output,filter,states[stage]);
  return output;
 }
 
@@ -180,23 +180,24 @@ export class MultibandCompressor{
    for(let channel=0;channel<this.channels;channel++)outputChannels[channel].set(inputChannels[channel].subarray(0,frameCount),0);
    return;
   }
+  const coefficients=config.bands.map(band=>({attack:Math.exp(-1/(band.attack*this.sampleRate)),release:Math.exp(-1/(band.release*this.sampleRate))}));
   for(let offset=0;offset<frameCount;offset++,this.frame++){
    this.channelMix.fill(0);
    for(let channel=0;channel<this.channels;channel++){
     const sample=inputChannels[channel][offset]||0,states=this.filterStates[channel];
-    const low=runFourthOrder(sample,[this.filters[0],this.filters[0]],states[0]);
-    const upper=runFourthOrder(sample,[this.filters[1],this.filters[1]],states[1]);
-    const mid=runFourthOrder(upper,[this.filters[2],this.filters[2]],states[2]);
-    const high=runFourthOrder(upper,[this.filters[3],this.filters[3]],states[3]);
+    const low=runFourthOrder(sample,this.filters[0],states[0]);
+    const upper=runFourthOrder(sample,this.filters[1],states[1]);
+    const mid=runFourthOrder(upper,this.filters[2],states[2]);
+    const high=runFourthOrder(upper,this.filters[3],states[3]);
     this.bandFrames[0][channel]=low;this.bandFrames[1][channel]=mid;this.bandFrames[2][channel]=high;
    }
    for(let bandIndex=0;bandIndex<3;bandIndex++){
     const band=config.bands[bandIndex];let peak=0;
     for(let channel=0;channel<this.channels;channel++)peak=Math.max(peak,Math.abs(this.bandFrames[bandIndex][channel]));
-    const envelope=this.envelopes[0][bandIndex],time=peak>envelope?band.attack:band.release,coefficient=Math.exp(-1/(time*this.sampleRate)),nextEnvelope=peak+(envelope-peak)*coefficient;
+    const envelope=this.envelopes[0][bandIndex],coefficient=peak>envelope?coefficients[bandIndex].attack:coefficients[bandIndex].release,nextEnvelope=peak+(envelope-peak)*coefficient;
     for(let channel=1;channel<this.channels;channel++)this.envelopes[channel][bandIndex]=nextEnvelope;
     this.envelopes[0][bandIndex]=nextEnvelope;
-    const targetReduction=band.enabled?compressionGainDb(20*Math.log10(Math.max(1e-12,nextEnvelope)),band):0,currentReduction=this.gainReduction[bandIndex],smooth=Math.exp(-1/((targetReduction<currentReduction?band.attack:band.release)*this.sampleRate));
+    const targetReduction=band.enabled?compressionGainDb(20*Math.log10(Math.max(1e-12,nextEnvelope)),band):0,currentReduction=this.gainReduction[bandIndex],smooth=targetReduction<currentReduction?coefficients[bandIndex].attack:coefficients[bandIndex].release;
     this.gainReduction[bandIndex]=targetReduction+(currentReduction-targetReduction)*smooth;
     const audible=!soloed||band.solo;
     if(!audible)continue;

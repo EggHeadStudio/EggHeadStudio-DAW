@@ -5,6 +5,10 @@
 
 Batch 005B is NOT recommended yet.
 
+## Superseding 005A.7B reliability checkpoint
+
+See [BATCH_005A_7B_REPORT.md](./BATCH_005A_7B_REPORT.md) for the latest results. Synthetic recording browser acceptance, recorded-project clean-origin restoration/export, five-width Drum Rack/velocity touch, storage quota/corrupt-recovery, archive cancellation and actual live/offline processor-crash checks have now been executed. ZIP output is chunked, not end-to-end streamed. The stale instrument workflow script has been updated. The historical outstanding-items lists below describe the earlier checkpoint, not the current state; long-project export/native-memory closure still blocks full 005A.7 sign-off.
+
 ## 1. Implemented functionality
 - Piano Roll velocity lane (`src/piano-layout.js`, `src/sampler-ui.js`, `src/sampler.css`): collapsible, one bar per note, shares the Piano Roll scroll/zoom coordinates, mouse + touch vertical drag, multi-note drag (anchor delta applied to all selected, clamped), one Undo step per gesture, writes `note.velocity` (the single velocity model), syncs the toolbar slider (which remains the default for new notes).
 - Fix: `.note-resize` is `min(10px,35%)` wide so short notes can be moved by touch.

@@ -329,10 +329,13 @@ Update this checklist only after relevant test evidence is recorded. A feature e
 
 ## 13. NEXT IMMEDIATE ACTION
 
-Continue Batch 005A using `BATCH_005A_REPORT.md`: establish a reliable foreground-browser long-project export baseline, implement bounded/chunked archive processing and reference-aware sample caches, then complete scheduling, native-memory and recovery acceptance. The archive/waveform/voice checkpoint passes 119 Node tests but is not full 005A completion. Keep independent standards references, physical-device 005B work and deployment of an approved release as explicit gates; do not claim unverified results.
+Continue from `BATCH_005A_7B_REPORT.md`, not from the earlier 119-test checkpoint. Synthetic recording, five-width instrument touch, archive cancellation/integrity, autosave quota/corrupt recovery and live/offline Worklet failure checks now have evidence. ZIP output is chunked but input collection/extraction remain buffered. Finish the long-export performance and native-memory/crash-recovery gates before signing off Batch 005A.7; do not implement the professional 005B redesign yet. Independent standards references, physical-device 005B work and deployment of an approved release remain explicit gates.
 
 
 ## Batch 005A.7-UX — Instrument Workflow Cleanup
 
 Drum Racks now start with one pad and grow with Add Pad (max 32); the Piano Roll has a fixed vertical keyboard (C4=MIDI 60, C#4 directly above). See BATCH_005A_7_UX_REPORT.md. Earlier notes mentioning a fixed 16-pad rack describe the legacy default.
 
+The collapsible Piano Roll velocity lane shares note scroll/zoom, supports mouse/touch and selected-note relative changes, and writes the existing `note.velocity`. One drag is one Undo step. JSON/.EHS and actual instrument playback use that same field; the toolbar slider remains the default for new notes.
+
+Batch 005A.7B adds explicit storage-failure recovery, chunked ZIP output and Worklet fault handling without a new production feature or UI redesign. See its report for measured benchmarks, unresolved long-export blockers and the modular transport/device/DSP handoff to 005B.

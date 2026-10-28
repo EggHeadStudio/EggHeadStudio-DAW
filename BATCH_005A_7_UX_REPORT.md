@@ -26,14 +26,17 @@ Samplers without a sample show "Choose Sample" and "notes you place become audib
 - Node suite: 234/234 passing (224 preserved + 10 new in `tests/drum-pads.test.js`). `git diff --check` clean (only CRLF notices).
 - Chromium (integrated browser, desktop emulation via viewport resize) on a fresh `.localhost` origin: Drum Rack starts with 1 pad, Add Pad → 3 pads, step rows follow pad count, no "Open Piano Roll"; Sampler Piano Roll shows 85 keys, C4 key row aligned with C4 lane (offset 0 px), C#4 directly above, keys fixed at the left after horizontal scroll, vertical sync offset 0, key click highlights key and lane — at 360, 390, 430, 768 and 1280 px, no horizontal page overflow.
 
-## Known limitations / not done
-- Optional bottom velocity editor not implemented (toolbar velocity slider remains).
+## Historical limitations at the original 234-test checkpoint
+- The velocity editor and browser checks below were outstanding then; see the superseding updates.
 - Dropping notes on a removed pad ("keep") leaves them silent orphans.
 - Not tested in this pass: synthetic touch note creation, pad removal dialog in browser, `.ehs` browser round trip with dynamic pads (Node JSON round-trip covered), pad-grid visual screenshots at all widths, live/offline equivalence test for a dynamic rack beyond existing instrument tests.
 - Firefox/Safari and physical devices were not tested.
 
-**BATCH 005A.7-UX INCOMPLETE — FUNCTIONAL REQUIREMENTS REMAIN** (velocity editor, touch/browser round-trip verification outstanding)
+Original checkpoint status: incomplete. Superseded by the velocity-lane checkpoint and 005A.7B evidence below.
 
 ## Update (velocity lane & acceptance)
 - Velocity lane implemented; Drum Rack browser acceptance, 360 px emulated touch editing and a clean-profile .ehs round trip verified. See BATCH_005A_7_REPORT.md. Status: complete for emulated-browser scope; touch checks for Drum Rack controls outstanding.
 
+## Batch 005A.7B acceptance update
+
+**BATCH 005A.7-UX COMPLETE for the tested Chromium scope.** The maintained `tests/instrument-workflow-ui.js` now exercises dynamic pad creation, current editor selectors and reload. Synthetic CDP touch verified pad selection, Add Pad, referenced removal Cancel/Delete and step editing at 360/390/430/768/1280 px, without page overflow. At the same widths, velocity touch edits changed the stored values and max-scroll positions matched exactly at 2.5x time zoom (1358/1328/1288/950/456 px). Velocity bars now refresh their accessible names during dragging as well as their heights/titles. Physical touch devices and non-Chromium engines remain unverified. Full reliability/performance status is separate in `BATCH_005A_7B_REPORT.md`.
