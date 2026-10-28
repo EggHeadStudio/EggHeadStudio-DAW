@@ -20,6 +20,7 @@ import {mountArrangementWorkspace} from './arrangement-workspace.js';
 import {showTrackSetup} from './track-ui.js';
 import {RecordingStudio} from './recording-studio.js';
 import {saveProjectSnapshot} from './project-storage.js';
+import {mountProjectControls,mountArrangementChrome,enhanceDeviceChain} from './workspace-ui.js';
 const arrangementWorkspaceState={selection:null,insertionBeat:0,selectMode:false,follow:false,browserOpen:true,mixerOpen:true,devicesOpen:true};
 let arrangementWorkspace=null;
 const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={id:uid(),schemaVersion:1,name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,releaseMetadata:{},exportSettings:normalizeExportSettings(),tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null,exportController=null,exportRun=null,releaseZipController=null,releaseArtworkBlob=null,releaseArtworkSourceBlob=null,releaseArtworkUrl=null;
@@ -221,6 +222,7 @@ function wireShell(){
  engine.onTick=t=>{playhead=t;tick(t)};
  engine.onMeter=meters=>{$$('[data-meter]').forEach(meter=>{const levels=meters[meter.dataset.meter];if(!levels)return;const left=meter.querySelector('[data-meter-left]'),right=meter.querySelector('[data-meter-right]'),warning=meter.querySelector('[data-clip-warning]');left.style.width=`${Math.min(100,levels.leftPeak*100)}%`;right.style.width=`${Math.min(100,levels.rightPeak*100)}%`;warning.hidden=!levels.clipped;meter.classList.toggle('clipped',levels.clipped);meter.setAttribute('aria-label',`${meter.dataset.trackName} stereo peak ${Math.round(Math.max(levels.leftPeak,levels.rightPeak)*100)} percent${levels.clipped?', clipping detected':''}`)});$$('[data-compressor-meter]').forEach(meter=>{const reduction=meters[meter.dataset.meterTrack]?.reductions?.[meter.dataset.compressorMeter]??0;meter.value=`${reduction.toFixed(1)} dB`})};
  engine.onEnd=()=>$('#play').textContent='▶';
+ mountProjectControls(app);
 }
 const $$=s=>[...document.querySelectorAll(s)];
 async function addAsset(file){const id=uid(),ctx=await engine.init(),buffer=await ctx.decodeAudioData(await file.arrayBuffer());assets.set(id,{id,name:file.name,path:file.webkitRelativePath||file.name,size:file.size,duration:buffer.duration});buffers.set(id,buffer);await dbSet(id,file);return id}
@@ -357,9 +359,12 @@ function instrumentEditorContext(track){
  return{adapter:{...track,pattern:{id:`${track.id}-empty-editor`,notes:[],lengthBeats:16}},clip:null,commit(){},localBeat:()=>0};
 }
 function mountInstrumentDevices(){
- const section=document.createElement('section');section.className='instrument-devices';section.innerHTML=renderTrackEffects(project.tracks[selectedTrack]);$('#main .studio').append(section);wireTrackEffects();
- const gain=document.createElement('label');gain.innerHTML=`Instrument / track gain <input id="instrumentTrackGain" type="range" min="0" max="1.5" step=".01" value="${project.tracks[selectedTrack].volume}">`;section.prepend(gain);$('#instrumentTrackGain').oninput=event=>{project.tracks[selectedTrack].volume=Number(event.target.value);engine.syncTracks(project.tracks,project.bpm);save()};
- const browser=document.createElement('details');browser.className='instrument-browser';browser.innerHTML='<summary>Sample Browser — drag samples to the source or a pad</summary><input id="search" placeholder="Search samples…"><div id="sampleList"></div>';section.before(browser);drawList();$('#search').oninput=event=>drawList(event.target.value);
+ const section=document.createElement('section');section.className='instrument-devices';
+ const devices=document.createElement('button');devices.id='openTrackDevices';devices.textContent='Track effects & Mixer';
+ devices.title='Open this track in Arrangement. Track effects are edited only in the Device Panel; volume and pan in the Mixer.';
+ devices.onclick=()=>{arrangementWorkspaceState.devicesOpen=true;arrangementWorkspaceState.mixerOpen=true;view='arrange';render();$('#main .bottom-panel').scrollIntoView({block:'nearest'})};
+ section.append(devices);$('#main .studio').append(section);
+ const browser=document.createElement('details');browser.className='instrument-browser';browser.innerHTML='<summary>Sample Browser — drag samples to the source or a pad</summary><input id="search" aria-label="Search instrument samples" placeholder="Search samples…"><div id="sampleList"></div>';section.before(browser);drawList();$('#search').oninput=event=>drawList(event.target.value);
 }
 function openInstrumentSample(id){
  const buffer=buffers.get(id);if(!buffer)return notify('Select a loaded sample first.');
@@ -392,14 +397,20 @@ function renderSamplerBlocks(){
 }
 function render(){
  const scroll=$('.arrangement'),scrollLeft=scroll?.scrollLeft||0,scrollTop=scroll?.scrollTop||0;
- $$('[data-view]').forEach(b=>b.classList.toggle('selected',b.dataset.view===view));
+ $$('[data-view]').forEach(b=>{b.classList.toggle('selected',b.dataset.view===view);if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
  if(view==='arrange'){
   renderArrange();$$('.lane').forEach(lane=>lane.style.backgroundSize=`${beatsWidth()*(snapGrid||.0625)/4}px 100%`);renderSamplerBlocks();addArrangementControls();
-  arrangementWorkspace=mountArrangementWorkspace({root:$('#main'),project,buffers,state:arrangementWorkspaceState,scale:timelineScale(),grid:()=>snapGrid,selectedTrack,selectedClip,checkpoint:checkpointArrangement,commit:commitArrangement,save,notify,idFactory:uid,render,openClip:openInstrumentClip,createClip:addPatternClip,selectTrack:index=>{selectedTrack=index;render()},selectClip:(id,index)=>{selectedClip=id;selectedTrack=index;render()},seek:async seconds=>{const playing=engine.playing;if(playing)engine.stop();playhead=seconds;engine.offset=seconds;tick(seconds);if(playing)try{await engine.play(project,buffers,seconds)}catch(error){notify(error.message)}},playFrom:async beat=>{try{playhead=beat*60/project.bpm;await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}},copyClip:copySelectedClip,pasteClip,duplicateClip:duplicateSelectedClip,deleteClip:deleteSelectedClip});
+  arrangementWorkspace=mountArrangementWorkspace({root:$('#main'),project,buffers,state:arrangementWorkspaceState,scale:timelineScale(),grid:()=>snapGrid,selectedTrack,selectedClip,checkpoint:checkpointArrangement,commit:commitArrangement,save,notify,idFactory:uid,render,openClip:openInstrumentClip,createClip:addPatternClip,selectTrack:selectArrangementTrack,selectClip:(id,index)=>{selectedClip=id;selectedTrack=index;render()},seek:async seconds=>{const playing=engine.playing;if(playing)engine.stop();playhead=seconds;engine.offset=seconds;tick(seconds);if(playing)try{await engine.play(project,buffers,seconds)}catch(error){notify(error.message)}},playFrom:async beat=>{try{playhead=beat*60/project.bpm;await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}},copyClip:copySelectedClip,pasteClip,duplicateClip:duplicateSelectedClip,deleteClip:deleteSelectedClip});
+  mountArrangementChrome({root:$('#main'),project,selectedTrack,selectedClip,state:arrangementWorkspaceState,addTrack:openTrackSetup,addEffect:type=>{arrangementWorkspaceState.devicesOpen=true;const select=$('#addTrackEffect');select.value=type;select.dispatchEvent(new Event('change',{bubbles:true}))},selectContext:(id,index)=>{selectedClip=id;selectArrangementTrack(index)}});
   $('.arrangement').scrollLeft=scrollLeft;$('.arrangement').scrollTop=scrollTop;tick(playhead);
  }
  if(view==='sample')renderSampleBatch003();if(view==='master')renderMaster();if(view==='export')renderExport();if(view==='keys')renderKeys();if(view==='rack')renderRack();
  if(view==='recording')recordingStudio.mount($('#main'));
+}
+function selectArrangementTrack(index){
+ selectedTrack=index;
+ if(!project.tracks[index]?.clips.some(clip=>clip.id===selectedClip))selectedClip=null;
+ render();
 }
 function eqResponsePath(bands,sampleRate=48000,lowCut=20,highCut=20000){
  const width=420,height=120,minDb=-24,maxDb=24,points=[];
@@ -506,6 +517,7 @@ function wireTrackEffects(){
   }else effect.params[key]=value;
   input.nextElementSibling.value=Number(input.value).toFixed(input.step.includes('.')?2:0);refresh();
  });
+ enhanceDeviceChain($('#main'));
 }
 function clipControls(){
  const c=project.tracks.flatMap(t=>t.clips).find(c=>c.id===selectedClip);if(!c)return '';
@@ -524,10 +536,10 @@ function wireArrange(){
  $('#connectFolder').onclick=connectFolder;$('#addFiles').onclick=()=>$('#importFiles').click();$('#search').oninput=e=>drawList(e.target.value);$('#recordOwn').onclick=()=>{view='sample';render()};
  $('#addTrack').onclick=()=>openTrackSetup();
  $('#zoomIn').onclick=event=>setArrangementZoom(zoom*1.25,event.clientX);$('#zoomOut').onclick=event=>setArrangementZoom(zoom/1.25,event.clientX);
- $$('[data-track]').forEach(e=>e.onclick=()=>{selectedTrack=+e.dataset.track;render()});
- $$('[data-mute]').forEach(b=>b.onclick=e=>{e.stopPropagation();selectedTrack=+b.dataset.mute;project.tracks[selectedTrack].mute=!project.tracks[selectedTrack].mute;engine.syncTracks(project.tracks);save();render()});
- $$('[data-solo]').forEach(b=>b.onclick=e=>{e.stopPropagation();selectedTrack=+b.dataset.solo;project.tracks[selectedTrack].solo=!project.tracks[selectedTrack].solo;engine.syncTracks(project.tracks);save();render()});
- $$('[data-fx]').forEach(button=>button.onclick=event=>{event.stopPropagation();selectedTrack=Number(button.dataset.fx);render();$('.effect-chain')?.scrollIntoView({behavior:'smooth',block:'nearest'})});
+ $$('[data-track]').forEach(e=>e.onclick=()=>selectArrangementTrack(+e.dataset.track));
+ $$('[data-mute]').forEach(b=>b.onclick=e=>{e.stopPropagation();const index=+b.dataset.mute;project.tracks[index].mute=!project.tracks[index].mute;engine.syncTracks(project.tracks);save();selectArrangementTrack(index)});
+ $$('[data-solo]').forEach(b=>b.onclick=e=>{e.stopPropagation();const index=+b.dataset.solo;project.tracks[index].solo=!project.tracks[index].solo;engine.syncTracks(project.tracks);save();selectArrangementTrack(index)});
+ $$('[data-fx]').forEach(button=>button.onclick=event=>{event.stopPropagation();arrangementWorkspaceState.devicesOpen=true;selectArrangementTrack(Number(button.dataset.fx));$('.effect-chain')?.scrollIntoView({behavior:'smooth',block:'nearest'})});
  $$('[data-remove]').forEach(b=>b.onclick=e=>{e.stopPropagation();const index=Number(b.dataset.remove),track=project.tracks[index];if(!window.confirm(`Delete track “${track.name}” and its clips/instrument settings? Shared samples will remain in your library.`))return;if(!deleteProjectTrack(project,index))return;selectedTrack=project.tracks.length?Math.min(selectedTrack>index?selectedTrack-1:index,project.tracks.length-1):0;selectedClip=null;engine.syncTracks(project.tracks);save();render()});
  $$('[data-vol]').forEach(e=>e.oninput=()=>{project.tracks[+e.dataset.vol].volume=+e.value;engine.syncTracks(project.tracks);save()});
  $$('[data-pan]').forEach(e=>e.oninput=()=>{project.tracks[+e.dataset.pan].pan=+e.value;engine.syncTracks(project.tracks);save()});

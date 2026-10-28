@@ -194,7 +194,7 @@ No miniature desktop clone. Bottom navigation or tabs: Arrange, Samples, Record,
 | 002 | Sample-based instruments, pitch detection, Piano Roll and Drum Rack sequencing | Notes/pads persist and produce sample audio | PARTIAL — sampler, internal note editor, 16-pad rack and shared step/piano pattern exist; unit tests pass, but full workflow acceptance remains incomplete |
 | 003 | Professional mixing/effects architecture, arrangement clip editing, live/offline consistency | Reorderable tested device chains and equivalent live/offline signal measurements | COMPLETE — 45 local Node tests pass; generated-audio Chromium acceptance verified Sample Studio processing/save, Sampler and Drum Rack patterns, independent track effects, mixer mute/solo, non-silent WAV export, project reload, and mobile-emulated timeline seek/alignment. Physical-device checks, remote CI and quantitative live/offline parity tolerances remain release follow-ups, not claims of completion |
 | 004 | Mastering Studio | Measurement-driven mastering chain, validated export and A/B | FUNCTIONALLY COMPLETE — Phases 1–6 implemented; Phase 6 boundary suite passed 110/110. Deterministic eight-track acceptance, clean IndexedDB `.EHS` restore/reopen, unchanged asset hashes, four-format mastered export and Release ZIP verified in Chromium. Independent standards/device/deployment and medium/large-project performance checks remain release/Batch 005 work; see `BATCH_004_FINAL_ACCEPTANCE.md` |
-| 005 | Performance, Mobile Experience & Production Reliability (005A/005B) | Measured performance/memory improvements, safe large archives, responsive editing, reliable recovery and real-device evidence | IN PROGRESS — 005A.6 instrument Arrangement integration complete; current suite 198/198. Actual UI/touch, WAV/MP3 and isolated-browser portable-project acceptance pass. 005A.7 retains streaming archives, bounded caches, long-project benchmarks, recovery and physical devices. See `BATCH_005A_REPORT.md` and `BATCH_005A_6_REPORT.md` |
+| 005 | Performance, Mobile Experience & Production Reliability (005A/005B) | Measured performance/memory improvements, safe large archives, responsive editing, reliable recovery and real-device evidence | IN PROGRESS - 005A.7 closed for tested desktop scope; 005B.1 UX foundation complete. Current suite 271/271; contextual navigation/devices, five-width synthetic touch, clean-origin .EHS and decoded WAV/MP3 verified. Full design system, physical/cross-engine acceptance and low-memory budgets remain. See `BATCH_005A_7C_REPORT.md` and `BATCH_005B_1_REPORT.md` |
 | 006 | Persistence and portable projects | Versioned save/reopen, sample relink and media archive round-trip | PARTIAL — JSON/localStorage plus versioned `.EHS` archives with embedded/deduplicated media, checksums and schema migration; automated and Chromium round-trips pass, broader compatibility/missing-media acceptance remains |
 | 007 | Mobile UX, accessibility and performance | End-to-end workflow on physical desktop and mobile browsers | PARTIAL — browser-emulated responsive smoke checks only; physical devices, long recordings and memory budgets unverified |
 | 008 | GitHub Pages release verification | Static deployment smoke checks at repository subpath across target browsers | PARTIAL — local static requests passed for the app, workers, worklets and vendors; the previously published revision was checked, but this unpushed worktree has not been deployed |
@@ -329,7 +329,7 @@ Update this checklist only after relevant test evidence is recorded. A feature e
 
 ## 13. NEXT IMMEDIATE ACTION
 
-Continue from `BATCH_005A_7C_REPORT.md`, not from the earlier checkpoints. Continuous-context bounded offline scheduling closes the demonstrated future-source graph bottleneck without resetting DSP state. The medium/large full-chain exports and independent WAV/MP3 decoding now have measured results; native crash/relaunch boundaries and extended scheduling stress have also been exercised. ZIP output is chunked but input collection/extraction remain buffered. Preserve the engine, instrument/recording models and project format when preparing 005B; the professional redesign itself was not implemented here. Independent standards references, physical-device/cross-engine acceptance and deployment of an approved release remain explicit gates.
+Continue from `BATCH_005B_1_REPORT.md` and `BATCH_005B_1_UX_AUDIT.md` for the interface, and `BATCH_005A_7C_REPORT.md` for audio/reliability. Continuous-context bounded offline scheduling closes the demonstrated future-source graph bottleneck without resetting DSP state. The medium/large full-chain exports and independent WAV/MP3 decoding have measured results; native crash/relaunch boundaries and extended scheduling stress have also been exercised. ZIP output is chunked but input collection/extraction remain buffered. The 005B.1 workspace foundation is now implemented; the full redesign, graphical EQ and dedicated mobile architecture remain staged work. Independent standards references, physical-device/cross-engine acceptance and deployment of an approved release remain explicit gates.
 
 
 ## Batch 005A.7-UX — Instrument Workflow Cleanup
@@ -345,3 +345,22 @@ Batch 005A.7B adds explicit storage-failure recovery, chunked ZIP output and Wor
 The 12-track controlled context render improved from 546.25 s to 66.18 s; the 24-track/five-minute context render completed in 192.70 s. Retain the single continuous DSP graph and quantum-aligned source windows: do not replace them with independent audio chunks. Cancellation closes the native context after graph retirement and silent draining. The mastering right-side polarity repair is an intentional audio-integrity fix, not a quality reduction.
 
 Static deployment now has a deterministic content-versioned asset build and a Pages Actions workflow. Switch Pages source to Actions only when deploying an approved release; local source serving remains build-free. Version checking must never clear IndexedDB/local projects. The 005B handoff should preserve device/DSP boundaries, explicit fault notifications, snapshot export semantics, archive limits and the updated browser regression fixtures. Native memory samples include retained allocator/process overhead; keep low-memory physical-device budgets and non-Chromium verification as explicit 005B gates. See `BATCH_005A_7C_REPORT.md` for exact evidence and limitations.
+
+## Batch 005B.1 - Professional UX foundation
+
+The running-workspace audit and official Live 12 workflow comparison are in
+`BATCH_005B_1_UX_AUDIT.md`. Project actions are grouped, Arrangement commands are
+context-sensitive, browser categories call existing creation handlers, and track
+effects have one owner in the bottom Device Panel. Instrument workspaces retain
+source/pad/note editing and navigate back to Devices/Mixer instead of duplicating
+their effect and track-gain editors. Master volume belongs to the right Mixer.
+Native keyboard-accessible disclosures support project, contextual commands,
+presets and device folding. Shared parameter primitives demonstrate real Utility
+gain/pan knobs and a numeric-enabled width slider without a second DSP model.
+
+Next: 005B.2 expands the tested design tokens, controls, context-popup styling,
+device skins and focus/contrast review. 005B.4 adds actual FFT analysis, DSP
+response curves and draggable EQ nodes using logarithmic frequency mapping;
+waveform data is not a spectrum. 005B.5 handles full-screen phone editors and
+bottom sheets with physical-device acceptance. Do not silently add automation,
+Session View, a framework migration or a new project schema to these UI batches.

@@ -30,6 +30,39 @@ The deterministic build hashes the HTML and all `src`/`vendor` assets. JavaScrip
 
 After deployment, reload and inspect `document.querySelector('meta[name="ehs-build"]').content` in DevTools; compare it with `version.json` fetched using `{cache:'no-store'}`. All script/style requests should contain that same version. GitHub/CDN caching can still serve an old HTML entry temporarily; use a hard reload if its version differs. This is not an instantaneous-update guarantee, and the first transition from an unversioned release may require a hard reload. Never clear site data to update: that would remove local projects/audio.
 
+## Batch 005B.1 workspace foundation
+
+The global transport stays at the top. **Project** groups New Project, portable
+Save/Open .EHS and legacy JSON operations. **Download JSON** is the former
+"Save Locally" button: it downloads metadata, not audio. Local autosave remains
+automatic; use .EHS for portable backups. **Export Studio** in workspace
+navigation is the single global export entry.
+
+Arrangement has a categorized **Samples / Instruments / Effects** browser on
+the left, timeline in the center, collapsible track Mixer on the right and
+selected-track **Devices & Clip Editor** below. **Edit** contains contextual
+clip/range commands. Right-click a clip/track header or use **Shift+F10** to open
+that same command disclosure; Escape closes it. Existing copy/paste, duplicate,
+split and Undo/Redo shortcuts remain available.
+
+Track effects now have one editing location: the bottom Device Panel. Sampler
+and Drum Rack editors provide **Track effects & Mixer** to return there without
+losing the selected pattern. Instrument setup is the first device card, followed
+by ordered effects. Cards scroll horizontally, fold without bypassing audio,
+and retain bypass/reorder/remove and a **Presets** disclosure. Master volume is
+in the right Mixer header. When the Mixer is collapsed, track-header M/S/FX/Edit
+shortcuts remain available.
+
+Utility gain/pan demonstrate functional rotary controls; width retains a linear
+slider. Native range keyboard behavior, numeric entry, reset, vertical
+mouse/touch dragging, Shift-fine rotary adjustment and double-click/double-tap
+rotary reset all edit the existing DSP parameters. No new parameter or project
+schema is introduced.
+
+See [the concrete UX audit](./BATCH_005B_1_UX_AUDIT.md) and
+[implementation / acceptance report](./BATCH_005B_1_REPORT.md). This is a focused
+foundation, not the complete 005B design system, graphical EQ or mobile redesign.
+
 ## Implemented
 
 - Responsive dark UI with Arrangement, Sample Studio and Mastering views.

@@ -4,6 +4,7 @@ import {clipViewportWindow,draggedClipStart,editLoopRegion,quantizeBeat,timeline
 import {getWaveformRangePeaks} from './waveform.js';
 import {normalizeArrangementLoop} from './project-state.js';
 import {assertClipDestination,instrumentType,isInstrumentClip,patternForClip} from './instrument-clips.js';
+import {syncArrangementActions} from './workspace-ui.js';
 
 function drawPattern(canvas,track,clip,window,height){
   const width=Math.max(1,Math.ceil(window.width)),dpr=Math.min(devicePixelRatio||1,2),pattern=patternForClip(track,clip);
@@ -135,6 +136,7 @@ export function mountArrangementWorkspace(options){
     }
     $('#rangeSummary').textContent=range?`Beats ${range.startBeat.toFixed(3)} - ${range.endBeat.toFixed(3)} | Tracks ${range.firstTrack+1} - ${range.lastTrack+1}`:'No time range';
     $('#rangeStart').value=range?.startBeat??'';$('#rangeEnd').value=range?.endBeat??'';
+    syncArrangementActions(root,project.tracks[selectedTrack],project.tracks[selectedTrack]?.clips.find(clip=>clip.id===selectedClip),range);
     if(!range)return;
     for(let index=range.firstTrack;index<=range.lastTrack;index++){
       const lane=lanes[index];if(!lane)continue;

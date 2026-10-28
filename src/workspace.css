@@ -1,0 +1,86 @@
+:root{--surface:#191d25;--surface-raised:#242a33;--border:#3b424d;--focus:#9ce8d6;--space:8px}
+[hidden]{display:none!important}
+button,summary,input,select{scroll-margin:12px}
+button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+button,summary{border-radius:4px}
+.global-header{gap:10px;background:var(--surface);padding:8px 12px}
+.global-header .transport{gap:6px;flex-wrap:wrap;justify-content:center}
+.global-header .actions{gap:10px;flex-shrink:0}
+#projectSaveState{max-width:145px;font-size:11px;color:#b1bfca}
+nav button[aria-current=page]{box-shadow:inset 0 -2px var(--focus);border-radius:0}
+summary{cursor:pointer;min-height:36px;padding:9px 12px;border:1px solid var(--border);background:var(--surface-raised);font-weight:600;list-style-position:inside}
+.disclosure-body{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--border);background:var(--surface);box-shadow:0 6px 16px #0005}
+.project-menu{position:relative}
+.project-menu>.disclosure-body{position:absolute;right:0;top:100%;width:240px;z-index:40}
+.project-menu .disclosure-body button{text-align:left;min-height:40px}
+.workspace .editor-tools{max-height:none;overflow:visible;gap:6px;align-items:center;padding:6px;background:var(--surface)}
+.workspace .editor-tools>button{padding:7px 9px}
+.arrangement-edit-menu{flex:none}
+.arrangement-edit-menu[open]{flex-basis:100%}
+.arrangement-edit-menu>.disclosure-body{flex-direction:row;flex-wrap:wrap;box-shadow:none}
+.arrangement-edit-menu>summary{width:max-content}
+.range-toolbar{background:var(--surface)}
+.track-select{display:block;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;background:none;border:0;padding:4px 0;font-weight:600}
+.track-select[aria-pressed=true]{box-shadow:inset 0 -1px var(--focus)}
+.browser-tabs{display:flex;gap:3px;flex:none}
+.browser-tabs button{flex:1;min-width:0;padding:8px 3px;font-size:11px}
+.browser-tabs [aria-pressed=true]{border-color:var(--focus);color:var(--focus)}
+.browser-category{display:flex;flex:1;min-height:0;flex-direction:column;gap:8px;overflow:auto}
+.browser-category #search{width:100%}
+.browser-category .sample-list{min-height:80px}
+.workspace .device-panel{display:block;min-width:0}
+.workspace .effect-chain{min-width:0;display:block}
+.effect-chain-title,.effect-presets{margin-bottom:8px}
+.device-chain-scroll{display:flex;gap:8px;max-width:100%;overflow-x:auto;align-items:flex-start;padding:4px 3px 12px;overscroll-behavior-x:contain}
+.device-presets{margin-bottom:6px}
+.device-presets>summary{width:max-content;padding:6px 10px;min-height:30px;font-size:11px}
+.device-presets>.effect-presets{padding:10px;border:1px solid var(--border)}
+.ruler-row>.master-strip{display:grid;grid-template-columns:1fr;align-content:center;gap:2px;max-height:72px;min-width:210px}
+.ruler-row>.master-strip label{display:flex;gap:6px;align-items:center}
+.ruler-row>.master-strip output{font-size:10px}
+.device-chain-scroll>.effect-device,.device-chain-scroll>.instrument-device{flex:0 0 320px;max-width:calc(100vw - 56px);min-width:240px;margin:0;padding:0;border:1px solid var(--border);border-radius:4px;background:var(--surface)}
+.device-chain-scroll>.effect-device{display:flex;flex-direction:column;gap:0}
+.effect-device>header{padding:7px;background:var(--surface-raised);flex-wrap:wrap;border:0;border-bottom:1px solid var(--border)}
+.effect-device>header label{flex:1;min-width:100px}
+.effect-device>header button{min-width:34px;padding:5px;margin-left:2px;font-size:11px}
+.device-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:10px;max-height:350px;overflow-y:auto}
+.device-body>label{display:grid;gap:4px;min-width:0;color:#bdc9d5;font-size:12px}
+.device-body>.eq-response,.device-body>.sidechain-controls{grid-column:1/-1}
+.device-body .eq-band{min-width:0;margin:0;padding:6px}
+.device-body .eq-band label{display:grid;gap:3px}
+.device-body output{font-variant-numeric:tabular-nums;color:#c5e1d8}
+.device-bypassed{border-style:dashed!important}
+.device-bypassed>header{color:#a8aeb9}
+.instrument-device{padding:12px!important}
+.instrument-device h3{margin:0 0 8px;font-size:13px}
+.instrument-device p{color:#acbac8}
+.instrument-device .selected-instrument{width:100%;margin:0}
+.workspace .clip-device{margin-top:8px;border-top:1px solid var(--border);padding-top:10px}
+.instrument-devices{margin-top:16px;border-top:1px solid var(--border);padding-top:12px}
+.parameter-control{position:relative;display:grid;gap:6px;min-width:0}
+.parameter-number{width:100%;font-variant-numeric:tabular-nums}
+.parameter-control>button{min-height:32px;font-size:11px}
+.parameter-rotary{padding-top:58px}
+.parameter-rotary>input[type=range]{position:absolute;top:0;left:calc(50% - 25px);width:50px;height:50px;min-height:50px;opacity:0;cursor:ns-resize;touch-action:none;margin:0}
+.parameter-dial{position:absolute;top:0;left:calc(50% - 25px);height:50px;width:50px;border:2px solid #718a91;border-radius:50%;background:#303943;pointer-events:none;transform:rotate(var(--parameter-turn))}
+.parameter-dial::after{content:"";position:absolute;top:3px;left:21px;width:4px;height:14px;background:var(--focus);border-radius:2px}
+.parameter-control:focus-within .parameter-dial{outline:2px solid var(--focus);outline-offset:3px}
+.parameter-rotary>output{text-align:center}
+.ui-tooltip{position:fixed;z-index:100;max-width:270px;padding:8px 10px;border:1px solid #809aab;border-radius:4px;color:#f1f5f8;background:#171d26;box-shadow:0 4px 12px #0008;font-size:12px;font-weight:400;line-height:1.5;pointer-events:none}
+@media(max-width:850px){
+  .global-header{gap:7px}
+  .global-header .actions{margin-left:auto;width:auto;order:initial;flex-wrap:nowrap}
+  .global-header .actions #projectSaveState{display:none}
+  .global-header .transport{margin:0;width:100%;order:3}
+  .global-header .transport input{width:55px}
+  .global-header .actions button{flex:none}
+  .project-menu>.disclosure-body{width:min(270px,calc(100vw - 20px))}
+  .workspace .editor-tools{max-height:none}
+  .workspace .editor-tools>button,.browser-tabs button,summary{min-height:40px}
+  .workspace .browser{max-height:340px}
+  .workspace .bottom-panel{height:300px;max-height:55%}
+  .device-body{max-height:300px}
+  .device-chain-scroll .effect-device header button{min-height:40px}
+  .ruler-row>.master-strip{min-width:164px}
+}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}

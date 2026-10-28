@@ -1,6 +1,10 @@
 export async function runInstrumentWorkflowAcceptance(page){
   const check=(condition,message)=>{if(!condition)throw new Error(message)};
-  const click=selector=>page.locator(selector).first().click({force:true});
+  const click=async selector=>{
+    if(selector==='#newProject'&&await page.locator('.project-menu').getAttribute('open')===null)await page.locator('.project-menu>summary').click();
+    if(selector==='#openPiano'&&await page.locator('.arrangement-edit-menu').getAttribute('open')===null)await page.locator('.arrangement-edit-menu>summary').click();
+    await page.locator(selector).first().click();
+  };
   const read=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('pulse-project')));
   await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'));
   check(await page.evaluate(()=>!localStorage.getItem('pulse-project')),'Use a fresh disposable origin.');
@@ -35,8 +39,10 @@ export async function runInstrumentWorkflowAcceptance(page){
   await click('#rackBack');await click('[data-new-pattern="0"]');await click('dialog button[type=submit]');
   check((await read()).tracks[0].clips[0].durationBeats===16,'Default pattern is not four bars.');
   await click('#openPiano');await click('[data-step-pad="0"][data-step="0"]');
-  await page.locator('#addTrackEffect').selectOption('utility');await page.locator('[data-effect-param][data-param=gain]').fill('-6');
-  await click('#rackBack');await add('sampler','Empty Lead');
+  await click('#openTrackDevices');await page.locator('#addTrackEffect').selectOption('utility');
+  await page.getByRole('spinbutton',{name:'Gain (dB), numeric entry (dB)',exact:true}).fill('-6');
+  await page.getByRole('spinbutton',{name:'Gain (dB), numeric entry (dB)',exact:true}).press('Tab');
+  await add('sampler','Empty Lead');
   track=(await read()).tracks[1];check(!track.sampler.asset&&track.clips.length===0,'Sampler was not empty.');
   check((await page.locator('.sample-source').textContent()).includes('No sample selected'),'Empty source hint missing.');
   await pick('#chooseSamplerSample','tone');await click('#previewSamplerSample');
@@ -44,7 +50,10 @@ export async function runInstrumentWorkflowAcceptance(page){
   await click('#openPiano');
   const lane=page.locator('.piano-lane[data-midi="60"]');await lane.scrollIntoViewIfNeeded();await lane.click({position:{x:10,y:8},force:true});
   track=(await read()).tracks[1];check(track.patterns[0].notes.length===1,'Selected pattern note missing.');
-  await page.locator('#addTrackEffect').selectOption('utility');await page.locator('[data-effect-param][data-param=gain]').fill('-6');
+  await click('#openTrackDevices');await page.locator('#addTrackEffect').selectOption('utility');
+  await page.getByRole('spinbutton',{name:'Gain (dB), numeric entry (dB)',exact:true}).fill('-6');
+  await page.getByRole('spinbutton',{name:'Gain (dB), numeric entry (dB)',exact:true}).press('Tab');
+  await click('#openPiano');
   const layouts=[];
   for(const width of [360,390,430,768,1280]){
     await page.setViewportSize({width,height:1000});
@@ -54,6 +63,7 @@ export async function runInstrumentWorkflowAcceptance(page){
   await click('#backArrange');await page.reload();
   await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'));
   const project=await read();check(project.tracks.length===2&&project.tracks[0].drumRack.pads[1].asset,'Reload lost instrument data.');
+  check(project.tracks.every(track=>track.fx.effects[0].params.gain===-6),'Device Panel edits were not persisted for both instruments.');
   return{tracks:project.tracks.map(track=>({name:track.name,clips:track.clips.length,beats:track.patterns[0].lengthBeats})),layouts};
 }
 
@@ -69,7 +79,10 @@ export async function runInstrumentTouchAcceptance(page){
     await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
     await page.waitForTimeout(100);
   };
-  const click=selector=>page.locator(selector+':visible').first().click(),results=[];
+  const click=async selector=>{
+    if(selector==='#openPiano'&&await page.locator('.arrangement-edit-menu').getAttribute('open')===null)await page.locator('.arrangement-edit-menu>summary').click();
+    await page.locator(selector+':visible').first().click();
+  },results=[];
   try{
     for(const width of [360,390,430,768,1280]){
       await page.setViewportSize({width,height:1000});

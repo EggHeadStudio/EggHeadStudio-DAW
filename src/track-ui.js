@@ -30,7 +30,7 @@ export function showTrackSetup({track=null,type='audio',number=1,assets,buffers,
       if($('#trackColor').value===previous.color)$('#trackColor').value=selected.color;
     }
     previous=selected;
-    $('#trackTypeHint').textContent=track?'Playback type is fixed after creation to preserve clips, notes and instrument settings.':value==='sampler'?'An empty sample instrument. Choose its source inside the instrument editor, then add a pattern.':value==='drumRack'?'16 empty independent pads. Assign samples inside the Drum Rack, then add a pattern.':'Audio clips placed on the Arrangement timeline.';
+    $('#trackTypeHint').textContent=track?'Playback type is fixed after creation to preserve clips, notes and instrument settings.':value==='sampler'?'An empty sample instrument. Choose its source inside the instrument editor, then add a pattern.':value==='drumRack'?'One empty pad; add up to 32 pads. Assign samples inside the Drum Rack, then add a pattern.':'Audio clips placed on the Arrangement timeline.';
   };
   $('#trackType').onchange=updateType;updateType();
   $('#cancelTrackSetup').onclick=()=>dialog.close();
