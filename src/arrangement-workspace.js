@@ -73,16 +73,23 @@ export function mountArrangementWorkspace(options){
   const mobile=matchMedia('(max-width:850px)').matches;
   if(state.mobile!==mobile){state.mobile=mobile;state.browserOpen=!mobile;state.mixerOpen=!mobile}
   const beatAt=clientX=>quantizeBeat(timelineBeatsAtClientX(clientX,ruler,arrangement,scale),grid());
-  const maxBeat=Math.max(64,(project.loopEnd||4)*4,...project.tracks.flatMap(track=>(track.clips||[]).map(clip=>clip.bar*4+scale.secondsToBeats(clipDurationSeconds(clip))+16)));
+  let maxBeat=Math.max(64,(project.loopEnd||4)*4,...project.tracks.flatMap(track=>(track.clips||[]).map(clip=>clip.bar*4+scale.secondsToBeats(clipDurationSeconds(clip))+16)));
   const width=Math.max(1200,scale.beatsToPixels(maxBeat));
   ruler.style.width=`${width}px`;lanes.forEach(lane=>lane.style.width=`${width}px`);
   ruler.replaceChildren();
   ruler.setAttribute('aria-label','Beat-time ruler');
-  for(let beat=0;beat<=maxBeat;beat++){
+  const appendTicks=(from,to)=>{for(let beat=from;beat<=to;beat++){
     const label=document.createElement('span');label.style.left=`${scale.beatsToPixels(beat)}px`;
     label.textContent=beat%4===0?String(beat/4+1):scale.pixelsPerBeat>=30?`${Math.floor(beat/4)+1}.${beat%4+1}`:'';
     label.className=beat%4===0?'bar-tick':'beat-tick';ruler.append(label);
-  }
+  }};
+  appendTicks(0,maxBeat);
+  const ensureBeat=beat=>{
+    if(beat<=maxBeat)return;
+    const end=Math.ceil(beat/64)*64;
+    appendTicks(Math.floor(maxBeat)+1,end);maxBeat=end;
+    const width=scale.beatsToPixels(maxBeat);ruler.style.width=`${width}px`;lanes.forEach(lane=>lane.style.width=`${width}px`);
+  };
   tools.insertAdjacentHTML('beforeend',`<button id="selectRange" aria-pressed="${state.selectMode}">Select Range</button><button id="editClips" aria-pressed="${Boolean(state.editMode)}">Edit Clips (touch)</button><button id="clearRange">Clear Range</button><button id="cutRange">Cut</button><button id="deleteRange">Delete Selection</button><button id="setLoopRange">Loop from Range</button><button id="selectLoopRange">Select Loop</button><button id="playInsertion">Play from Marker</button><button id="followPlayhead" aria-pressed="${state.follow}">Follow</button><button id="toggleBrowser" aria-expanded="${state.browserOpen}">Samples</button><button id="toggleMixer" aria-expanded="${state.mixerOpen}">Mixer</button><button id="toggleDevices" aria-expanded="${state.devicesOpen}">Devices</button>`);
   const selectionToolbar=document.createElement('div');selectionToolbar.className='range-toolbar';
   selectionToolbar.innerHTML='<output id="rangeSummary" aria-live="polite">No time range</output><label>Start beat <input id="rangeStart" type="number" min="0" step="any"></label><label>End beat <input id="rangeEnd" type="number" min="0" step="any"></label>';
@@ -277,7 +284,7 @@ export function mountArrangementWorkspace(options){
     instrument.onclick=()=>{state.selectMode=false;lanes[selectedTrack].querySelector('.sampler-block')?.click()};$('.device-panel').prepend(instrument);
   }
   paintWaves();
-  return{handleKey(event){
+  return{ensureBeat,handleKey(event){
     const mod=event.ctrlKey||event.metaKey,key=event.key.toLowerCase();
     if(mod&&key==='l'){event.preventDefault();loopFromRange();return true}
     if(mod&&key==='x'){event.preventDefault();cut();return true}

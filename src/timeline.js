@@ -23,6 +23,10 @@ export function timelineBeatsAtClientX(clientX,ruler,scrollContainer,scale){
   return scale.pixelsToBeats(timelinePixelsAtClientX(clientX,ruler,scrollContainer));
 }
 
+export function pianoBeatAtClientX(clientX,laneLeft,pixelsPerBeat){
+  return Math.max(0,(clientX-laneLeft)/pixelsPerBeat);
+}
+
 export function timelineContentOrigin(ruler,scrollContainer){
   if(!ruler||!scrollContainer)return 0;
   return ruler.getBoundingClientRect().left-scrollContainer.getBoundingClientRect().left+scrollContainer.scrollLeft;

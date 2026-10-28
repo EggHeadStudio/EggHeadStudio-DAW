@@ -1,5 +1,6 @@
 import {detectPitch,noteName,snapBeats} from './music.js';
 import {PianoNoteEditor} from './piano-model.js';
+import {pianoBeatAtClientX} from './timeline.js';
 
 const escapeHTML = value => String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const patternBeats = 64;
@@ -41,7 +42,7 @@ function pianoMarkup(track, grid, editor) {
   for (let midi = highestMidi; midi >= lowestMidi; midi--) {
     const rowNotes = notes.filter(note => note.midi === midi).map(note => {
       const selected = editor.selected.has(note.id);
-      return `<button class="piano-note ${selected?'note-selected':''}" data-note-id="${note.id}" style="left:${note.beat*beatWidth}px;width:${Math.max(8,note.durationBeats*beatWidth)}px;top:${(highestMidi-note.midi)*rowHeight}px;height:${rowHeight-2}px" aria-label="${noteName(note.midi)} note, beat ${note.beat+1}">
+      return `<button class="piano-note ${selected?'note-selected':''}" data-note-id="${note.id}" style="left:${note.beat*beatWidth}px;width:${Math.max(8,note.durationBeats*beatWidth)}px;top:0;height:${rowHeight-2}px" aria-label="${noteName(note.midi)} note, beat ${note.beat+1}">
         <span>${noteName(note.midi)}</span><i class="note-resize" aria-label="Resize note"></i></button>`;
     }).join('');
     const keyClass = midi % 12 === 1 || midi % 12 === 3 || midi % 12 === 6 || midi % 12 === 8 || midi % 12 === 10 ? 'black-key' : '';
@@ -167,7 +168,7 @@ export function wireSamplerUI(root, {track, tracks, buffers, engine, save, notif
     const resize=event.target.closest('.note-resize');
     if(!editor.selected.has(id))editor.select([id],event.ctrlKey||event.metaKey||event.shiftKey);
     const note=notes.find(item=>item.id===id);
-    gesture={id,mode:resize?'resize':'move',x:event.clientX,y:event.clientY,beat:note.beat,midi:note.midi,duration:note.durationBeats,changed:false,initial:notes.filter(item=>editor.selected.has(item.id)).map(item=>({id:item.id,beat:item.beat,midi:item.midi}))};
+    gesture={id,pointerId:event.pointerId,mode:resize?'resize':'move',x:event.clientX,y:event.clientY,beat:note.beat,midi:note.midi,duration:note.durationBeats,changed:false,initial:notes.filter(item=>editor.selected.has(item.id)).map(item=>({id:item.id,beat:item.beat,midi:item.midi}))};
     noteElement.setPointerCapture(event.pointerId);
   });
   world.addEventListener('pointermove',event=>{
@@ -185,7 +186,8 @@ export function wireSamplerUI(root, {track, tracks, buffers, engine, save, notif
       const proposed=snapBeats(Math.max(0,gesture.beat+dx/worldBeatWidth),grid)-gesture.beat;
       const beatDelta=Math.max(-minBeat,Math.min(patternBeats-maxEnd,proposed));
       const midiDelta=Math.round(-dy/rowHeight);
-      for(const original of gesture.initial){const note=notes.find(item=>item.id===original.id);if(!note)continue;note.beat=Math.max(0,original.beat+beatDelta);note.midi=Math.max(0,Math.min(127,original.midi+midiDelta));noteElementStyle(note.id,note)}
+      const minMidi=Math.min(...gesture.initial.map(note=>note.midi)),maxMidi=Math.max(...gesture.initial.map(note=>note.midi)),pitchDelta=Math.max(lowestMidi-minMidi,Math.min(highestMidi-maxMidi,midiDelta));
+      for(const original of gesture.initial){const note=notes.find(item=>item.id===original.id);if(!note)continue;note.beat=Math.max(0,original.beat+beatDelta);note.midi=original.midi+pitchDelta;noteElementStyle(note.id,note)}
     }
     gesture.changed=true;
   });
@@ -193,19 +195,25 @@ export function wireSamplerUI(root, {track, tracks, buffers, engine, save, notif
     if(gesture?.changed){track.pattern={notes};save();setGrid(grid)}
     gesture=null;
   });
+  world.addEventListener('pointercancel',()=>{
+    if(gesture?.changed){track.pattern={notes};save();setGrid(grid)}
+    gesture=null;
+  });
   world.addEventListener('click',event=>{
     if(event.target.closest('.piano-note')){const id=event.target.closest('.piano-note').dataset.noteId;if(!event.ctrlKey&&!event.metaKey&&!event.shiftKey)editor.select([id]);drawSelection();return}
     const lane=event.target.closest('.piano-lane');if(!lane)return;
     const durationBeats=Math.max(grid||.0625,+root.querySelector('#noteLength').value);
-    const rect=lane.getBoundingClientRect(),beat=Math.min(patternBeats-durationBeats,snapBeats(Math.max(0,(event.clientX-rect.left+root.querySelector('#pianoScroll').scrollLeft)/worldBeatWidth),grid)),midi=+lane.dataset.midi;
+    const beat=Math.min(patternBeats-durationBeats,snapBeats(pianoBeatAtClientX(event.clientX,lane.getBoundingClientRect().left,worldBeatWidth),grid)),midi=+lane.dataset.midi;
     const note=editor.add({beat,midi,durationBeats,velocity:.85},patternBeats);
     track.pattern={notes};save();setGrid(grid);engine.previewNote(track,buffers,note.midi,.25,tracks).catch(error=>notify(`Preview failed: ${error.message}`));
   });
   function noteElementStyle(id,note) {
     const element=root.querySelector(`.piano-note[data-note-id="${id}"]`);
     if(!element)return;
+    const lane=root.querySelector(`.piano-lane[data-midi="${note.midi}"]`),captured=gesture&&element.hasPointerCapture(gesture.pointerId);
+    if(lane&&element.parentElement!==lane){lane.append(element);if(captured)element.setPointerCapture(gesture.pointerId)}
     element.style.left=`${note.beat*worldBeatWidth}px`;
-    element.style.top=`${(highestMidi-note.midi)*rowHeight}px`;
+    element.style.top='0';
     element.style.width=`${Math.max(8,note.durationBeats*worldBeatWidth)}px`;
   }
   for(const key of root.querySelectorAll('[data-preview-midi]'))key.onclick=()=>engine.previewNote(track,buffers,+key.dataset.previewMidi,.4,tracks).catch(error=>notify(`Preview failed: ${error.message}`));

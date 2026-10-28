@@ -4,6 +4,34 @@
 
 **BATCH 005A.5 INCOMPLETE - REMAINING FUNCTIONAL REQUIREMENTS**
 
+### Transport / live-control follow-up
+
+The original checkpoint below recorded 141 passing tests. The follow-up now passes **152/152** with 11 added regressions in [live-transport.test.js](./tests/live-transport.test.js); changed-JavaScript syntax checks and `git diff --check` passed.
+
+- Non-loop transport no longer stops at the last audio clip; it advances through silence until stopped, with ruler extension as needed.
+- Enabled loops clamp playback into the selected range and repeat independently of audio presence or last-clip duration.
+- A 25 ms scheduler fills a 150 ms audio-clock lookahead. Sources are scheduled at exact loop boundaries and capped at the range end; the old 70 ms stop/restart loop timer is removed. Position wraps from the audio clock, not the timer's callback time.
+- Scheduler underrun recovery replaces existing voices before resuming, avoiding doubled audio. This is not a guarantee against background throttling or long main-thread stalls.
+- Effect topology rebuilds preserve the track input used by playing sources. Track effect/fader/pan/mute/solo edits therefore affect live audio; mixer/effect-only edits do not restart sources.
+- Clip, note-pattern, instrument and loop edits reschedule at the current position, including active gated-note source/envelope phase. The old restart-playback notification is removed.
+- Piano Roll fixes both double horizontal scrolling and vertical row offsets. Notes use local row coordinates, move to the correct pitch lane during dragging, and editing preserves scroll position.
+- Offline export remains content-duration based. Shared effects/clip scheduling and `.EHS` v1 are preserved; Sample Studio's separately bounced preview processing is unchanged.
+
+New Chromium evidence:
+
+| Check | Result |
+|---|---|
+| Live enabled loop | Recorded source starts at 0.312, 0.812, 1.312 audio seconds: exactly 0.5-second intervals |
+| Empty loop beyond audio | Still playing, position 2.20133 within the 2.0-2.5-second range |
+| Loop disabled afterward | Still playing beyond the old range at 2.50533 seconds |
+| Two-second offline loop schedule, 44100 Hz | 88200 frames; RMS in 220-frame windows before/at/after 0.5, 1.0, 1.5-second seams ranged 0.09644-0.10408, with no silent seam |
+| Actual UI volume and added Utility during playback | Baseline left RMS 0.07255; volume zero gave 0; restored volume plus -20 dB Utility gave 0.006573 while playback continued |
+| Scrolled mouse placement | scrollLeft 640 retained; beat 20 / MIDI 71 rendered at x185 for click x184, centered within 1 px vertically |
+| Mouse note move | Beat 20 / MIDI 71 moved to beat 21 / MIDI 73, preserving duration |
+| Synthetic touch, 390 px | Beat 20 / MIDI 71 rendered at x176 for touch x175; correct row and scrollLeft 640 retained |
+
+These are local Chromium and synthetic audio/touch checks, not physical-device evidence. Original project data was restored after disposable UI fixtures. Structural device changes can reset effect tails, and voice rescheduling is not guaranteed click-free. Waveform discontinuities can click even when loop timing is exact. The original remaining-work items about mandatory playback restart and UI-timer looping are superseded by this follow-up; instrument clip/range work and the other listed acceptance limitations remain open.
+
 This is a tested audio-editing checkpoint, not completion of the entire requested workspace. Existing Sampler/Drum Rack patterns remain functional, but independent instrument Arrangement clips and instrument time-range editing are not implemented. No commit, push or deployment was performed. Earlier Batch 005A performance changes in the worktree were preserved.
 
 The audit followed the relevant editing, timeline, scheduling, persistence and layout paths; it was not a complete source-repository audit. The supplied attachment contained text, not accessible screenshot files.
@@ -143,8 +171,8 @@ Synthetic CDP touch exercised Sample Studio endpoints, range creation, loop resi
 ## Remaining functional work / limitations
 
 1. **Instrument Arrangement clips:** Sampler/Drum Rack still repeat a whole-track pattern. Independent pattern clips, drag/resize/copy/delete and mixed audio/instrument ranges need an explicit compatible model and live/offline scheduler implementation.
-2. **Live editing:** the engine pre-schedules the arrangement. A notification explains that playback must restart to hear changed clips; seamless live rescheduling is not implemented.
-3. **Loop engine:** existing timer/rescheduling behavior remains. A loop wrap was observed, not proven gapless/sample-accurate.
+2. **Live editing:** current-position rescheduling is implemented in the follow-up above. It is not guaranteed click-free, and structural device edits can reset tails.
+3. **Loop engine:** audio-clock lookahead replaces the timer-restart design in the follow-up above. Physical timing, prolonged-stall behavior and discontinuous waveform seam quality remain validation concerns.
 4. **Fractional rate:** investigate the measured slicing mismatch above; do not claim exact sample alignment.
 5. **Devices/mobile:** instrument controls still open existing editors. Fully inline instruments, a fully integrated mobile mixer sheet and broader accessible touch/keyboard workflows remain.
 6. **Release acceptance:** physical devices, Firefox/WebKit, physical audio output, complete new instrument workflow, full export-format matrix and a fresh-context archive round trip were not rerun here.
@@ -163,4 +191,4 @@ Some listed files also contain the preserved earlier 005A changes. Archive Worke
 
 ## Continuation
 
-Finish compatible instrument clips and mixed-range scheduling first, then fractional-rate alignment, live-edit/loop precision and the remaining device/mobile acceptance. Continue the existing 005A performance backlog separately. Batch 005B should retain real-device touch/audio, browser compatibility, latency, accessibility and production-reliability priorities; no new major batch was implemented here.
+Finish compatible instrument clips and mixed-range scheduling first, then fractional-rate alignment, long-stall/click-free live-edit behavior and the remaining device/mobile acceptance. Continue the existing 005A performance backlog separately. Batch 005B should retain real-device touch/audio, browser compatibility, latency, accessibility and production-reliability priorities; no new major batch was implemented here.
