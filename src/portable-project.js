@@ -3,6 +3,7 @@ import {encodeWavAsync} from './export-dsp.js';
 import {validateReleaseMetadata} from './release-metadata.js';
 import {hasTypedInstrumentClips,INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION,LEGACY_PROJECT_SCHEMA_VERSION} from './project-state.js';
 import {isInstrumentClip,instrumentType,validateInstrumentData} from './instrument-clips.js';
+import {MAX_DRUM_PADS} from './drum-pads.js';
 
 export const EHS_FORMAT_VERSION=1;
 export const PROJECT_SCHEMA_VERSION=INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION;
@@ -219,7 +220,7 @@ function validateProjectShape(project,{allowTypedSchemaPromotion=false}={}){
   if(!track||typeof track!=='object')throw new Error('Project contains an invalid track.');
   clips+=(track.clips||[]).length;notes+=(track.pattern?.notes||[]).length;
   if(!Array.isArray(track.clips||[])||!Array.isArray(track.pattern?.notes||[])||!Array.isArray(track.drumRack?.pads||[])||track.patterns!==undefined&&!Array.isArray(track.patterns))throw new Error('Project contains invalid clip, note, pattern, or pad data.');
-  if((track.drumRack?.pads||[]).length>16)throw new Error('Project contains more than 16 Drum Rack pads on a track.');
+  if((track.drumRack?.pads||[]).length>MAX_DRUM_PADS)throw new Error(`Project contains more than ${MAX_DRUM_PADS} Drum Rack pads on a track.`);
   for(const clip of track.clips||[]){
    if(!clip||typeof clip!=='object')throw new Error('Project contains an invalid clip.');
    validateRecordingClip(clip);

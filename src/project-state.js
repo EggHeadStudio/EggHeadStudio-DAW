@@ -44,7 +44,8 @@ export function createProjectTrack({name,color,type='audio',assetId=null,duratio
     track.patterns=[];
   }
   if(type==='sampler')track.sampler={asset:assetId,rootNote:pitch?.midi||60,start:0,end:duration,mode:'melodic',detected:pitch?.name||null,confidence:pitch?.confidence||null};
-  if(type==='drumRack')track.drumRack={steps:16,pads:Array.from({length:16},(_,index)=>({name:`Pad ${index+1}`,note:36+index,asset:instrumentClipModel&&index>0?null:assetId,volume:1,pitch:0,pan:0,mute:false}))};
+  // The instrument-clip model starts with one pad; the legacy path keeps its fixed 16-pad grid.
+  if(type==='drumRack')track.drumRack={steps:16,pads:Array.from({length:instrumentClipModel?1:16},(_,index)=>({id:globalThis.crypto?.randomUUID?.()||`${id}-pad-${index}`,name:`Pad ${index+1}`,note:36+index,asset:assetId,volume:1,pitch:0,pan:0,mute:false}))};
   return track;
 }
 

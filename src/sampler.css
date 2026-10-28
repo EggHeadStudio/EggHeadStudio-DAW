@@ -12,6 +12,7 @@
 .piano-scroll{overflow:auto;max-height:58vh;min-height:320px;background:#111722;border:1px solid #3a4354;border-radius:8px;overscroll-behavior:contain}
 .piano-world{position:relative;isolation:isolate}
 .piano-ruler{position:sticky;top:0;z-index:4;background:#283140}
+.piano-ruler{width:100%}
 .piano-ruler span{position:absolute;top:0;height:28px;padding:6px 4px;font-size:10px;color:#c4d0df;border-left:1px solid #8291a5}
 .piano-lanes{position:absolute;inset:28px 0 0 0}
 .piano-lane{position:relative;width:100%;border-bottom:1px solid #333d4b;background-image:repeating-linear-gradient(to right,#343c4b 0 1px,transparent 1px 100%);background-size:var(--grid-width) 100%;touch-action:pan-x pan-y}
@@ -21,8 +22,16 @@
 .piano-note span{overflow:hidden;white-space:nowrap;font-size:10px;pointer-events:none}
 .note-resize{position:absolute;right:0;top:0;width:10px;height:100%;cursor:ew-resize;background:#fff5}
 .piano-cursor{position:absolute;top:0;bottom:0;width:2px;z-index:5;background:#ff7084;pointer-events:none}
-.piano-preview{display:flex;gap:3px;overflow-x:auto;padding:7px 0;margin:7px 0;touch-action:pan-x}
-.piano-preview button{min-width:48px;min-height:44px;padding:5px;font-size:10px;touch-action:manipulation}
+.piano-ruler{display:flex}
+.piano-corner{position:sticky;left:0;z-index:7;flex:0 0 var(--key-width);background:#1d2531;border-right:1px solid #8291a5}
+.piano-ruler-bars{position:relative;flex:1}
+.piano-keys{position:sticky;left:0;z-index:6;float:left;width:var(--key-width)}
+.piano-key{display:block;width:100%;margin:0;padding:0 4px;box-sizing:border-box;border:0;border-bottom:1px solid #556;border-radius:0;text-align:right;font-size:9px;line-height:1;touch-action:manipulation}
+.piano-key.white{background:#f2f4f7;color:#223}
+.piano-key.black{background:#1b2029;color:#9aa;width:70%;border-radius:0 3px 3px 0}
+.piano-key.key-active{background:#67cfb4;color:#101922}
+.piano-lane.lane-active{background-color:#1e3a3a}
+.piano-lanes{inset:var(--ruler-height) 0 0 var(--key-width)}
 .piano-toolbar input[type=range]{width:90px}
 .sampler-block{position:absolute;top:9px;height:63px;overflow:hidden;text-align:left;white-space:nowrap;background:#7655a9;color:#fff;border:1px solid #c7a7f1;border-radius:5px;font-weight:700}
 .sampler-block.rack-block{background:#8c5549;border-color:#dda291}
@@ -32,7 +41,9 @@
 .drum-tools{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:16px 0;color:#9eacbc}
 .drum-tools label{display:flex;align-items:center;gap:7px}
 .drum-tools select,.drum-pad select{background:#191e29;color:#e8ebf1;border:1px solid #343c4c;border-radius:5px;padding:7px}
-.drum-pad-grid{display:grid;grid-template-columns:repeat(4,minmax(170px,1fr));gap:9px}
+.drum-pad-grid{display:grid;grid-template-columns:repeat(var(--pad-cols,4),minmax(0,190px));gap:9px}
+.drum-pad-actions{display:flex;align-items:center;gap:10px;margin:9px 0}
+.step-pad-label small{display:block;color:#7f8da0;font-size:8px;overflow:hidden;text-overflow:ellipsis}
 .drum-pad{display:grid;gap:8px;padding:9px;background:#1d2430;border:1px solid #384253;border-radius:9px}
 .drum-pad.pad-muted{opacity:.55}
 .drum-pad label{display:grid;grid-template-columns:58px minmax(0,1fr);align-items:center;gap:7px;color:#aebaca;font-size:10px}
@@ -49,7 +60,7 @@
 .step-pad-label{grid-column:1;color:#b2bfd0;font-size:10px;align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .drum-step{min-height:26px;padding:0;background:#252c39;border-color:#3b4557;touch-action:manipulation}
 .drum-step.step-active{background:#d78b70;border-color:#ffd1bc}
-@media(max-width:700px){.drum-pad-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.drum-tools{align-items:flex-start}.drum-pad label{grid-template-columns:50px minmax(0,1fr)}}
+@media(max-width:700px){.drum-pad-grid{grid-template-columns:repeat(var(--pad-cols-mobile,2),minmax(0,1fr))}.drum-tools{align-items:flex-start}.drum-pad label{grid-template-columns:50px minmax(0,1fr)}}
 .sample-wave-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px}
 .sample-wave-toolbar label{display:flex;align-items:center;gap:8px;color:#b2bfd0}
 .sample-wave-toolbar input[type=range]{width:min(220px,45vw)}

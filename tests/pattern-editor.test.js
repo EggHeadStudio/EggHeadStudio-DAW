@@ -64,7 +64,7 @@ test('Piano Roll renders selected pattern length without changing legacy default
   const html=renderSamplerHTML(context.adapter,new Map(),new Map(),.25);
   assert.match(html,/width:160px/);
   const legacy=renderSamplerHTML({...sampler,pattern:{notes:[]}},new Map(),new Map(),.25);
-  assert.match(legacy,/width:2560px/);
+  assert.match(legacy,/width:2616px/);// 56px fixed key column + 64 beats * 40px
 });
 
 test('Drum Sequencer draws the full selected pattern at its own step resolution',()=>{

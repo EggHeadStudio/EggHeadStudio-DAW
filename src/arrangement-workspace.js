@@ -307,7 +307,7 @@ export function mountArrangementWorkspace(options){
   bottom.addEventListener('pointerup',()=>state.deviceHeight=bottom.getBoundingClientRect().height);
   bottom.querySelector('.pane-head').firstChild.textContent='DEVICES & CLIP EDITOR ';
   if(project.tracks[selectedTrack]?.sampler||project.tracks[selectedTrack]?.drumRack){
-    const instrument=document.createElement('button');instrument.className='selected-instrument';instrument.textContent=project.tracks[selectedTrack].drumRack?'Open Drum Rack instrument':'Open Sampler instrument';
+    const instrument=document.createElement('button');instrument.className='selected-instrument';instrument.textContent=project.tracks[selectedTrack].drumRack?'Drum Rack Setup (pads & samples)':'Sampler Setup (sample & keys)';
     instrument.onclick=()=>{state.selectMode=false;options.openClip(selectedClip,selectedTrack)};$('.device-panel').prepend(instrument);
   }
   paintWaves();

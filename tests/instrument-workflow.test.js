@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {createEmptyProject,createProjectTrack,normalizeProjectSchema,parseProject,serializeProject} from '../src/project-state.js';
 import {createInstrumentClip,migrateInstrumentArrangement,resizeInstrumentClip} from '../src/instrument-clips.js';
 import {assignPadSource,assignSamplerSource,resetPad} from '../src/instrument-source.js';
+import {addPad} from '../src/drum-pads.js';
 import {createPortableProjectArchive,openPortableProjectArchive} from '../src/portable-project.js';
 
 const make=type=>createProjectTrack({name:type,color:'#aabbcc',type},type,{instrumentClipModel:true});
@@ -18,7 +19,8 @@ test('new instrument tracks need no samples or clips and do not migrate into ful
 });
 test('new rack source initializes only first pad and assignments never replace other pads',()=>{
   const rack=createProjectTrack({name:'Kit',color:'#abcdef',type:'drumRack',assetId:'kick'},'rack',{instrumentClipModel:true}).drumRack;
-  assert.equal(rack.pads[0].asset,'kick');assert.ok(rack.pads.slice(1).every(pad=>pad.asset===null));
+  assert.equal(rack.pads.length,1);assert.equal(rack.pads[0].asset,'kick');
+  addPad({drumRack:rack,patterns:[]});assert.equal(rack.pads.length,2);assert.equal(rack.pads[1].asset,null);
   assignPadSource(rack.pads[1],{id:'snare',name:'Snare.wav'});
   assert.equal(rack.pads[1].name,'Snare');assert.equal(rack.pads[0].asset,'kick');
   assignPadSource(rack.pads[1],{id:'hat',name:'Hat.mp3'});assert.equal(rack.pads[1].asset,'hat');

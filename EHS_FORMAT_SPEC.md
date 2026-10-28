@@ -82,3 +82,11 @@ Compression and decompression remain buffered, not streamed: input payload bytes
 ## Verification
 
 `tests/release-package.test.js` covers metadata validation, Unicode ID3 frames and cover art, WAV LIST/INFO preservation, archive asset deduplication and checksum verification, float-WAV fallback, schema migration, traversal and tampering rejection, artwork validation, compression-ratio rejection, and Release ZIP contents. Browser round-trip behavior and responsive UI are acceptance checks recorded in `BATCH_004C_REPORT.md`; independent media-player tag interoperability and physical-device memory/performance remain release validation.
+
+## Batch 005A.7-UX additive fields (format version stays 1)
+
+- drumRack.visibleCount (integer, optional): floor for how many leading pads are displayed.
+- drumRack.pads[].id (string, stable): pad identity. Pad 
+ote remains the note mapping used by pattern notes.
+- Step notes may carry padId.
+- Pad cap raised from 16 to 32. Legacy 16-pad racks load unchanged; trailing untouched default pads are hidden, never deleted. Older app versions ignore the new fields and re-pad to 16.

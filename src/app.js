@@ -2,6 +2,7 @@ import {AudioEngine,uid,encodeWav,toWav,download,processSample,drawWave,createTr
 import {detectPitch,snapBeats} from './music.js';
 import {renderSamplerHTML,wireSamplerUI} from './sampler-ui.js';
 import {renderDrumRackHTML,wireDrumRackUI} from './drum-rack-ui.js';
+import {normalizeDrumRack} from './drum-pads.js';
 import {SampleEditor,renderSampleStudioHTML,wireSampleStudio,drawSampleStudioWave,stopSampleStudioPreview} from './sample-editor.js';
 import {ArrangementHistory,copyTimeRange,pasteTimeRange,duplicateClip,moveClipTo,splitClipAtTime} from './arrangement.js';
 import {createInstrumentClip,isInstrumentClip,instrumentType,makePatternIndependent,migrateInstrumentArrangement,patternForClip} from './instrument-clips.js';
@@ -210,9 +211,7 @@ function normalizeProjectData(input){
   for(const track of project.tracks){
    track.clips ||= [];if(!track.patterns){track.pattern ||= {notes:[]};track.pattern.notes ||= []}
    if(!track.drumRack)continue;
-   track.drumRack.steps=[16,32,64].includes(track.drumRack.steps)?track.drumRack.steps:16;track.drumRack.pads=(track.drumRack.pads||[]).slice(0,16);
-   while(track.drumRack.pads.length<16){const index=track.drumRack.pads.length;track.drumRack.pads.push({name:`Pad ${index+1}`,note:36+index,asset:null,volume:1,pitch:0,pan:0,mute:false})}
-   for(const [index,pad]of track.drumRack.pads.entries()){pad.name ||= `Pad ${index+1}`;pad.note=Number.isInteger(pad.note)?pad.note:36+index;pad.volume=Number.isFinite(pad.volume)?pad.volume:1;pad.pitch=Number.isFinite(pad.pitch)?pad.pitch:0;pad.pan=Number.isFinite(pad.pan)?pad.pan:0;pad.mute=Boolean(pad.mute)}
+   normalizeDrumRack(track,uid);
   }
   migrateInstrumentArrangement(project,uid);normalizeProjectSchema(project);
  return project;
@@ -268,7 +267,6 @@ function addArrangementControls(){
    label.querySelector('.track-actions').append(button);
    if(project.tracks[index].sampler||project.tracks[index].drumRack){
     const pattern=document.createElement('button');pattern.textContent='+ Pattern';pattern.dataset.newPattern=String(index);pattern.onclick=event=>{event.stopPropagation();choosePatternLength(index)};label.append(pattern);
-    const edit=document.createElement('button');edit.textContent='Instrument';edit.dataset.openInstrument=String(index);edit.onclick=event=>{event.stopPropagation();openInstrumentClip(null,index)};label.append(edit);
    }
   }
  $('#splitClip').onclick=splitSelectedClip;
@@ -312,6 +310,7 @@ function createDrumRack(assetId=null,settings={}){
 function renderKeys(){
  const source=project.tracks[selectedTrack];
  const track=source;
+ if(track?.drumRack){view='rack';renderRack();return}
  if(!track?.sampler&&!track?.drumRack){$('#main').innerHTML='<section class="studio"><h2>Sampler / Piano Roll</h2><p>Select or create an instrument track from Arrangement.</p><button id="backArrange">Back to Arrangement</button></section>';$('#backArrange').onclick=()=>{view='arrange';render()};return}
  const previous=$('#pianoScroll'),scroll=previous?{left:previous.scrollLeft,top:previous.scrollTop}:null;
  const context=instrumentEditorContext(source);
@@ -327,7 +326,7 @@ function renderRack(){
  const context=instrumentEditorContext(source);
  selectedClip=context.clip?.id||null;
  $('#main').innerHTML=renderDrumRackHTML(context.adapter,assets);
- wireDrumRackUI($('#main'),{track:context.adapter,assets,buffers,engine,tracks:project.tracks,save:()=>{context.commit();save()},notify,preview:previewAsset,back:()=>{view='arrange';render()},openPiano:()=>{view='keys';render()},refresh:renderRack});
+ wireDrumRackUI($('#main'),{track:context.adapter,assets,buffers,engine,tracks:project.tracks,save:()=>{context.commit();save()},notify,preview:previewAsset,back:()=>{view='arrange';render()},refresh:renderRack});
  mountPatternControls(context);
  mountInstrumentDevices();
 }
