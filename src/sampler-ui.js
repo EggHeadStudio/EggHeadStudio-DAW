@@ -2,7 +2,7 @@ import {detectPitch,noteName,snapBeats} from './music.js';
 import {PianoNoteEditor} from './piano-model.js';
 import {pianoBeatAtClientX} from './timeline.js';
 import {assignSamplerSource,bindSampleDrop,showSamplePicker} from './instrument-source.js';
-import {BASE_ROW_HEIGHT,KEY_WIDTH,PITCH_HIGH,PITCH_LOW,RULER_HEIGHT,gridHeight,isBlackKey,keyboardKeys,midiAtY,rowTop} from './piano-layout.js';
+import {BASE_ROW_HEIGHT,KEY_WIDTH,PITCH_HIGH,PITCH_LOW,RULER_HEIGHT,VELOCITY_LANE_HEIGHT,applyVelocityDrag,gridHeight,isBlackKey,keyboardKeys,midiAtY,rowTop,velocityAtY,velocityBarHeight} from './piano-layout.js';
 
 const escapeHTML = value => String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let pianoZoom = 1;
@@ -10,6 +10,7 @@ let rowZoom = 1;
 // Highest pitch visible at the top edge, so reopening or zooming keeps the same pitch range in view.
 let topPitch = 76;
 let highlightedPitch = null;
+let velocityOpen = true;
 const editors = new Map();
 let activePianoRoot = null;
 let activeSecondsPerBeat = .5;
@@ -71,7 +72,16 @@ function pianoMarkup(track, grid, editor) {
       <div class="piano-lanes">${rows.join('')}</div>
       <div class="piano-cursor" id="pianoCursor"></div>
     </div>
-  </div>`;
+  </div>
+  <details class="velocity-panel" id="velocityPanel" ${velocityOpen?'open':''}>
+    <summary>Velocity</summary>
+    <div class="velocity-scroll" id="velocityScroll">
+      <div class="velocity-world" id="velocityWorld" style="width:${KEY_WIDTH+patternBeats*beatWidth}px;height:${VELOCITY_LANE_HEIGHT}px">
+        <div class="velocity-corner" style="width:${KEY_WIDTH}px">Vel</div>
+        ${notes.map(note=>`<button class="velocity-bar ${editor.selected.has(note.id)?'note-selected':''}" data-velocity-id="${note.id}" style="left:${KEY_WIDTH+note.beat*beatWidth}px;height:${velocityBarHeight(note.velocity)}px" aria-label="${noteName(note.midi)} velocity ${Math.round((note.velocity??.85)*127)}" title="${Math.round((note.velocity??.85)*127)}"></button>`).join('')}
+      </div>
+    </div>
+  </details>`;
 }
 
 export function renderSamplerHTML(track, assets, buffers, grid) {
@@ -175,8 +185,46 @@ export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, sav
   scroller.addEventListener('scroll',()=>{topPitch=midiAtY(Math.max(0,scroller.scrollTop),rowHeight)},{passive:true});
   if(highlightedPitch!==null)highlight(highlightedPitch);
   for(const key of root.querySelectorAll('.piano-key'))key.onclick=()=>{const midi=+key.dataset.keyMidi;highlight(midi);engine.previewNote(track,buffers,midi,.4,tracks).catch(error=>notify(`Preview failed: ${error.message}`))};
+  const velocityScroll=root.querySelector('#velocityScroll'),velocityPanel=root.querySelector('#velocityPanel');
+  // The velocity lane shares the Piano Roll's horizontal scroll position and zoom; scrollLeft is mirrored both ways.
+  let syncing=false;
+  const mirror=(from,to)=>from.addEventListener('scroll',()=>{if(syncing)return;syncing=true;to.scrollLeft=from.scrollLeft;syncing=false},{passive:true});
+  mirror(scroller,velocityScroll);mirror(velocityScroll,scroller);
+  velocityScroll.scrollLeft=scroller.scrollLeft;
+  velocityPanel.addEventListener('toggle',()=>{velocityOpen=velocityPanel.open;if(velocityOpen)velocityScroll.scrollLeft=scroller.scrollLeft});
+  let velocityDrag=null;
+  const drawVelocities=()=>{
+    for(const bar of root.querySelectorAll('.velocity-bar')){
+      const note=notes.find(item=>item.id===bar.dataset.velocityId);if(!note)continue;
+      bar.style.height=`${velocityBarHeight(note.velocity)}px`;bar.title=String(Math.round(note.velocity*127));
+      bar.classList.toggle('note-selected',editor.selected.has(note.id));
+    }
+  };
+  const velocityY=event=>velocityAtY(event.clientY-velocityScroll.querySelector('#velocityWorld').getBoundingClientRect().top,VELOCITY_LANE_HEIGHT);
+  velocityScroll.addEventListener('pointerdown',event=>{
+    const bar=event.target.closest('.velocity-bar');if(!bar)return;
+    event.preventDefault();
+    const id=bar.dataset.velocityId;
+    if(!editor.selected.has(id))editor.select([id],event.ctrlKey||event.metaKey||event.shiftKey);
+    velocityDrag={id,pointerId:event.pointerId,changed:false,initial:Object.fromEntries(notes.map(note=>[note.id,note.velocity??.85]))};
+    bar.setPointerCapture(event.pointerId);drawSelection();drawVelocities();
+  });
+  velocityScroll.addEventListener('pointermove',event=>{
+    if(!velocityDrag)return;
+    const value=velocityY(event);
+    if(!velocityDrag.changed){editor.checkpoint();velocityDrag.changed=true}
+    applyVelocityDrag(notes,editor.selected,velocityDrag.id,velocityDrag.initial,value);
+    drawVelocities();
+  });
+  const endVelocityDrag=()=>{
+    if(velocityDrag?.changed){track.pattern={notes};save();root.querySelector('#noteVelocity').value=notes.find(item=>item.id===velocityDrag.id)?.velocity??.85}
+    velocityDrag=null;
+  };
+  velocityScroll.addEventListener('pointerup',endVelocityDrag);
+  velocityScroll.addEventListener('pointercancel',endVelocityDrag);
   function drawSelection() {
     root.querySelectorAll('.piano-note').forEach(element=>element.classList.toggle('note-selected',editor.selected.has(element.dataset.noteId)));
+    drawVelocities?.();
     root.querySelector('#deleteNote').disabled=!editor.selected.size;
     const selected=notes.find(note=>editor.selected.has(note.id));
     if(selected)root.querySelector('#noteVelocity').value=selected.velocity??.85;

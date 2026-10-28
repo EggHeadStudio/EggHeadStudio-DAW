@@ -33,3 +33,7 @@ Samplers without a sample show "Choose Sample" and "notes you place become audib
 - Firefox/Safari and physical devices were not tested.
 
 **BATCH 005A.7-UX INCOMPLETE — FUNCTIONAL REQUIREMENTS REMAIN** (velocity editor, touch/browser round-trip verification outstanding)
+
+## Update (velocity lane & acceptance)
+- Velocity lane implemented; Drum Rack browser acceptance, 360 px emulated touch editing and a clean-profile .ehs round trip verified. See BATCH_005A_7_REPORT.md. Status: complete for emulated-browser scope; touch checks for Drum Rack controls outstanding.
+

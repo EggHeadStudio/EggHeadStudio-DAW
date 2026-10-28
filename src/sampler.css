@@ -20,7 +20,7 @@
 .piano-note{position:absolute;z-index:2;display:flex;align-items:center;justify-content:space-between;min-width:8px;overflow:hidden;padding:0 3px;background:#67cfb4;color:#101922;border:1px solid #c5fff0;border-radius:4px;text-align:left;touch-action:none;user-select:none}
 .piano-note.note-selected{background:#e6bf62;border-color:#fff0b7;z-index:3}
 .piano-note span{overflow:hidden;white-space:nowrap;font-size:10px;pointer-events:none}
-.note-resize{position:absolute;right:0;top:0;width:10px;height:100%;cursor:ew-resize;background:#fff5}
+.note-resize{position:absolute;right:0;top:0;width:min(10px,35%);height:100%;cursor:ew-resize;background:#fff5}
 .piano-cursor{position:absolute;top:0;bottom:0;width:2px;z-index:5;background:#ff7084;pointer-events:none}
 .piano-ruler{display:flex}
 .piano-corner{position:sticky;left:0;z-index:7;flex:0 0 var(--key-width);background:#1d2531;border-right:1px solid #8291a5}
@@ -32,6 +32,14 @@
 .piano-key.key-active{background:#67cfb4;color:#101922}
 .piano-lane.lane-active{background-color:#1e3a3a}
 .piano-lanes{inset:var(--ruler-height) 0 0 var(--key-width)}
+.velocity-panel{margin-top:6px;background:#111722;border:1px solid #3a4354;border-radius:8px}
+.velocity-panel summary{padding:6px 10px;cursor:pointer;color:#aab6c8;font-size:12px}
+.velocity-scroll{overflow-x:auto;overflow-y:scroll;scrollbar-color:#0e141d #0e141d;touch-action:pan-x}
+.velocity-world{position:relative;background:#0e141d}
+.velocity-corner{position:sticky;left:0;top:0;z-index:3;height:100%;display:flex;align-items:flex-end;justify-content:flex-end;padding:4px;box-sizing:border-box;background:#1d2531;border-right:1px solid #8291a5;color:#8d9bb0;font-size:10px}
+.velocity-bar{position:absolute;bottom:0;width:10px;margin:0;padding:0;min-width:10px;background:#67cfb4;border:1px solid #c5fff0;border-radius:3px 3px 0 0;touch-action:none;cursor:ns-resize}
+.velocity-bar::before{content:"";position:absolute;inset:-6px -8px 0 -8px}
+.velocity-bar.note-selected{background:#e6bf62;border-color:#fff0b7}
 .piano-toolbar input[type=range]{width:90px}
 .sampler-block{position:absolute;top:9px;height:63px;overflow:hidden;text-align:left;white-space:nowrap;background:#7655a9;color:#fff;border:1px solid #c7a7f1;border-radius:5px;font-weight:700}
 .sampler-block.rack-block{background:#8c5549;border-color:#dda291}
