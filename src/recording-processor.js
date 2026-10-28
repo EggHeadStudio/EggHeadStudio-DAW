@@ -2,8 +2,8 @@ class RecordingProcessor extends AudioWorkletProcessor{
   constructor(){
     super();this.active=false;this.buffer=new Float32Array(4096);this.used=0;this.frames=0;
     this.port.onmessage=({data})=>{
-      if(data.type==='start'){this.start=data.startFrame;this.limit=data.maxFrames;this.end=Infinity;this.active=true}
-      if(data.type==='stop')this.end=data.stopFrame;
+      if(data.type==='start'){this.start=data.startFrame;this.limit=data.maxFrames;this.end=Number.isFinite(data.endFrame)?data.endFrame:Infinity;this.active=true}
+      if(data.type==='stop')this.end=Math.min(this.end,data.stopFrame);
       if(data.type==='cancel'){this.active=false;this.used=0;this.port.postMessage({type:'cancelled'})}
     };
   }

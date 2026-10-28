@@ -54,7 +54,7 @@ test('validateRecordingClip rejects malformed metadata',()=>{
   const ok=createRecordingTake({id:'t',assetId:'a',groupId:'g',name:'n',timing:timing(),frames:4800,sampleRate:48000,bpm:120});
   validateRecordingClip(ok);
   validateRecordingClip({id:'x'});
-  for(const patch of [{takeId:'other'},{frames:0},{sampleRate:100},{offsetMs:9999},{inputLatency:-1},{groupId:''},{name:'n'.repeat(121)}])
+  for(const patch of [{takeId:''},{takeId:'x'.repeat(129)},{frames:0},{sampleRate:100},{offsetMs:9999},{inputLatency:-1},{groupId:''},{name:'n'.repeat(121)},{compensation:{source:'x',seconds:0}},{punch:{inSeconds:2,outSeconds:1}}])
     assert.throws(()=>validateRecordingClip({...ok,recording:{...ok.recording,...patch}}),/Invalid recording take/);
   assert.throws(()=>validateRecordingClip({...ok,mute:'yes'}),/mute/);
 });

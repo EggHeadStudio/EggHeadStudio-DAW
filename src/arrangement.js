@@ -1,7 +1,8 @@
 import {clipDurationSeconds} from './audio.js';
 import {assertClipDestination,clonePattern,instrumentType,isInstrumentClip,makePatternIndependent,patternForClip,resizeInstrumentClip,sliceInstrumentClip} from './instrument-clips.js';
 
-const copyClips=tracks=>tracks.map(track=>({id:track.id,clips:(track.clips||[]).map(clip=>({...clip})),...(track.patterns?{patterns:track.patterns.map(pattern=>clonePattern(pattern))}:{})}));
+const copyClip=clip=>clip.recording?{...clip,recording:{...clip.recording}}:{...clip};
+const copyClips=tracks=>tracks.map(track=>({id:track.id,clips:(track.clips||[]).map(copyClip),...(track.patterns?{patterns:track.patterns.map(pattern=>clonePattern(pattern))}:{})}));
 
 export class ArrangementHistory {
   constructor(limit=100){this.limit=limit;this.undoStack=[];this.redoStack=[]}
@@ -16,7 +17,7 @@ export class ArrangementHistory {
   restore(tracks,snapshot,project){
     const saved=new Map(snapshot.map(track=>[track.id,track]));
     for(const track of tracks)if(saved.has(track.id)){
-      const state=saved.get(track.id);track.clips=state.clips.map(clip=>({...clip}));
+      const state=saved.get(track.id);track.clips=state.clips.map(copyClip);
       if(state.patterns)track.patterns=state.patterns.map(pattern=>clonePattern(pattern));
       else delete track.patterns;
     }
@@ -85,7 +86,7 @@ export function resizeClipBoundary(clip,edge,sourceSeconds,assetDuration,bpm){
 export function duplicateClip(tracks,trackId,clipId,bpm,idFactory,shared=false){
   const track=tracks.find(item=>item.id===trackId),clip=track?.clips.find(item=>item.id===clipId);
   if(!clip||!Number.isFinite(bpm)||bpm<=0)return null;
-  const copy={...clip,id:idFactory(),bar:clip.bar+clipDurationSeconds(clip,bpm)/(240/bpm)};
+  const copy={...copyClip(clip),id:idFactory(),bar:clip.bar+clipDurationSeconds(clip,bpm)/(240/bpm)};
   if(isInstrumentClip(copy)&&!shared)makePatternIndependent(track,copy,idFactory);
   track.clips.push(copy);
   return copy;
@@ -101,6 +102,7 @@ export function sliceAudioClip(clip,fromSeconds,toSeconds,bpm,id){
   const duration=clipDurationSeconds(clip),from=Math.max(0,fromSeconds),to=Math.min(duration,toSeconds),rate=clip.rate||1;
   if(to<=from)return null;
   const result={...clip,id,bar:clip.bar+from*bpm/240,envelopeOffset:(clip.envelopeOffset||0)+from,envelopeDuration:clip.envelopeDuration??duration};
+  if(clip.recording)result.recording={...clip.recording};
   if(clip.loop){
     result.duration=to-from;
     result.loopOffset=((clip.loopOffset||0)+from*rate)%(clip.end-clip.start);
@@ -133,7 +135,7 @@ export function pasteTimeRange(tracks,clipboard,atBeat,firstTrack,idFactory,vali
   if(validateOnly)return;
   const patterns=new Map();
   const additions=clipboard.entries.map(entry=>{
-    const track=tracks[firstTrack+entry.trackOffset],clip={...entry.clip,id:idFactory(),bar:(atBeat+entry.relativeBeat)/4};
+    const track=tracks[firstTrack+entry.trackOffset],clip={...copyClip(entry.clip),id:idFactory(),bar:(atBeat+entry.relativeBeat)/4};
     if(isInstrumentClip(clip)){
       const key=`${entry.trackOffset}:${entry.pattern.id}`;
       if(!patterns.has(key))patterns.set(key,{track,pattern:clonePattern(entry.pattern,idFactory())});
