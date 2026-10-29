@@ -67,7 +67,7 @@ Arrangement transport.
 | `tests/ux-architecture-ui.js` (new) | Maintained Page-based UX and 35-case workspace audit |
 | `tests/instrument-workflow-ui.js` | Updated Project/Edit/Device Panel paths; original behavior assertions retained |
 | `README.md`, `IDEA.md` | Workflow documentation and staged roadmap |
-| `BATCH_005B_1_UX_AUDIT.md`, this report (new) | Requested audit and technical handoff |
+| [BATCH_005B_1_UX_AUDIT.md](./BATCH_005B_1_UX_AUDIT.md), this report (new) | Requested audit and technical handoff |
 
 No DSP, live/offline scheduler, sidechain/mastering processor, recording model,
 archive schema/limits, storage recovery or encoder implementation changed.

@@ -91,8 +91,8 @@ function clampNumber(value,min,max,fallback){
  return Number.isFinite(number)?Math.max(min,Math.min(max,number)):fallback;
 }
 
-function setParam(param,value,ctx){
- if(param?.setTargetAtTime)param.setTargetAtTime(value,ctx.currentTime,.015);
+function setParam(param,value,ctx,initial=false){
+ if(param?.setTargetAtTime&&!initial)param.setTargetAtTime(value,ctx.currentTime,.015);
  else if(param)param.value=value;
 }
 
@@ -168,26 +168,29 @@ export function createMasteringGraph(ctx,settings,destination){
  if(postAnalyser)postAnalyser.connect(destination);
 
  let latencyFrames=limiter?Math.round(current.limiter.lookaheadMs/1000*ctx.sampleRate)+8:0;
- let lastOrder=`${current.chainOrder.join('|')}:${eqActive}`;
+ let lastOrder=`${current.chainOrder.join('|')}:${eqActive}`,initialized=false;
  const update=nextSettings=>{
   const next=normalizeMasteringSettings(nextSettings);
-  setParam(inputTrim.gain,10**(next.inputGainDb/20),ctx);
+  // A new graph starts at its committed settings; only subsequent live edits ramp.
+  const apply=(param,value)=>setParam(param,value,ctx,!initialized);
+  apply(inputTrim.gain,10**(next.inputGainDb/20));
   const chainEnabled=!next.chainBypass;
   eqActive=chainEnabled&&next.eq.enabled;
   const filters=masterEqFilters(next,ctx.sampleRate);
-  eqFilters.forEach((node,index)=>{const band=filters[index];node.type=band.type;setParam(node.frequency,band.frequency,ctx);setParam(node.Q,band.q,ctx);setParam(node.gain,band.gain,ctx)});
-  setParam(dry.gain,chainEnabled&&next.saturation.enabled?1-next.saturation.mix:1,ctx);
-  setParam(wet.gain,chainEnabled&&next.saturation.enabled?next.saturation.mix:0,ctx);
+  eqFilters.forEach((node,index)=>{const band=filters[index];node.type=band.type;apply(node.frequency,band.frequency);apply(node.Q,band.q);apply(node.gain,band.gain)});
+  apply(dry.gain,chainEnabled&&next.saturation.enabled?1-next.saturation.mix:1);
+  apply(wet.gain,chainEnabled&&next.saturation.enabled?next.saturation.mix:0);
   if(saturationDrive!==next.saturation.drive){saturator.curve=makeSaturationCurve(next.saturation.drive);saturationDrive=next.saturation.drive}
-  setParam(side.gain,.5*(chainEnabled&&next.imager.enabled?next.imager.width:1),ctx);
+  apply(side.gain,.5*(chainEnabled&&next.imager.enabled?next.imager.width:1));
   if(chainEnabled&&next.multiband.enabled&&!multiband)throw new Error('The mastering multiband processor requires AudioWorklet support in this browser.');
   multiband?.port.postMessage({type:'settings',settings:{...next.multiband,enabled:chainEnabled&&next.multiband.enabled}});
   if(next.limiter.enabled&&!limiter)throw new Error('The mastering limiter requires AudioWorklet support in this browser.');
   latencyFrames=limiter?Math.round(next.limiter.lookaheadMs/1000*ctx.sampleRate)+8:0;
   limiter?.port.postMessage({type:'settings',settings:{enabled:next.limiter.enabled,ceilingDbtp:next.limiter.ceiling,releaseSeconds:next.limiter.release,lookaheadMs:next.limiter.lookaheadMs}});
-  setParam(outputGain.gain,10**(next.outputGainDb/20),ctx);
+  apply(outputGain.gain,10**(next.outputGainDb/20));
   const orderKey=`${next.chainOrder.join('|')}:${eqActive}`;
   if(orderKey!==lastOrder){connectOrder(next.chainOrder);lastOrder=orderKey}
+  initialized=true;
  };
  update(current);
  limiter?.port.start?.();

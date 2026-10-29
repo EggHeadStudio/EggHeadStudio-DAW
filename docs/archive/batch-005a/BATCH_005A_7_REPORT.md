@@ -19,7 +19,7 @@ See [BATCH_005A_7B_REPORT.md](./BATCH_005A_7B_REPORT.md) for the latest results.
 - Dynamic Drum Rack, key column and clip workflow from the earlier 005A.7-UX segment are unchanged.
 
 ## 2. Modified files
-`src/piano-layout.js`, `src/sampler-ui.js`, `src/sampler.css`, `tests/velocity-lane.test.js` (new), plus the files listed in `BATCH_005A_7_UX_REPORT.md`.
+`src/piano-layout.js`, `src/sampler-ui.js`, `src/sampler.css`, `tests/velocity-lane.test.js` (new), plus the files listed in [BATCH_005A_7_UX_REPORT.md](./BATCH_005A_7_UX_REPORT.md).
 
 ## 3. Automated tests
 `node --test tests/*.test.js`: **241 / 241 pass** (234 baseline + 7 velocity-lane). `node --check` on changed JS passes. `git diff --check` reports only CRLF notices.

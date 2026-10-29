@@ -35,7 +35,7 @@ graph instead.
 
 ## Shared modular-device parameter inventory
 
-The definitions live in [device-ui.js](./src/device-ui.js). Track and Sample
+The definitions live in [device-ui.js](../../../src/device-ui.js). Track and Sample
 Studio consume them; no second DSP implementation or sample-only defaults.
 
 | Device | Supported controls | Presentation / behavior |
@@ -82,7 +82,7 @@ the intended processing. Save uses the same current project tempo.
 
 ## Live-preview routing and lifecycle
 
-[sample-preview.js](./src/sample-preview.js) owns only source/graph lifetime,
+[sample-preview.js](../../../src/sample-preview.js) owns only source/graph lifetime,
 audio-clock position, pause offset, loop phase and tail disposal. It reads
 editor settings; it does not persist another effect model.
 
@@ -116,8 +116,8 @@ remain at that EQ's boundaries, not at the final-output analyzer.
 
 ## Central keyboard routing
 
-[transport-shortcuts.js](./src/transport-shortcuts.js) mounts one document
-listener. [app.js](./src/app.js) routes to the current workspace and serializes
+[transport-shortcuts.js](../../../src/transport-shortcuts.js) mounts one document
+listener. [app.js](../../../src/app.js) routes to the current workspace and serializes
 asynchronous starts. Auto-repeat and Ctrl/Meta/Alt are excluded. Inputs,
 textareas, selects, buttons, links, summaries, dialogs, editable descendants
 and slider/button/textbox roles keep their native Space behavior.

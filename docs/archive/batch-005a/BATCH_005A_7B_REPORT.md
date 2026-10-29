@@ -114,7 +114,7 @@ Default runner workloads are small, medium and large with audio export; each wor
 - Production: `src/app.js`, `src/audio.js`, `src/mastering.js`, `src/mastering-dsp.js`, `src/portable-project.js`, `src/archive-worker.js`, `src/sampler-ui.js`; new `src/archive-zip.js`, `src/project-storage.js`.
 - Node tests: new `tests/archive-chunks.test.js`, `tests/project-storage.test.js`, `tests/processor-recovery.test.js`, `tests/multiband-performance.test.js`.
 - Browser/benchmark fixtures: updated `tests/instrument-workflow-ui.js`, `tests/performance-fixture.js`; new `tests/recording-browser-acceptance.js`, `tests/storage-fault-browser.js`, `tests/audio-fault-browser.js`, `tests/run-performance-browser.mjs`.
-- Docs: `README.md`, `IDEA.md`, `EHS_FORMAT_SPEC.md`, `BATCH_005A_7_REPORT.md`, `BATCH_005A_7_UX_REPORT.md`, this report.
+- Docs: `README.md`, `IDEA.md`, `EHS_FORMAT_SPEC.md`, [BATCH_005A_7_REPORT.md](./BATCH_005A_7_REPORT.md), [BATCH_005A_7_UX_REPORT.md](./BATCH_005A_7_UX_REPORT.md), this report.
 
 ## 9. Specific remaining blockers
 

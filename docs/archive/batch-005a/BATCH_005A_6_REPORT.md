@@ -18,7 +18,7 @@ schema 2. Legacy whole-track patterns are migrated safely on loading.
 
 ### Separate instruments, patterns and Arrangement instances
 
-[src/instrument-clips.js](./src/instrument-clips.js) defines:
+[src/instrument-clips.js](../../../src/instrument-clips.js) defines:
 
 - Instrument configuration remains on `track.sampler` / `track.drumRack`.
 - `track.patterns` contains track-scoped stable pattern IDs, names, lengths
@@ -43,7 +43,7 @@ fixtures had zero maximum/RMS PCM error and unchanged render durations
 
 ### Unified editing helpers
 
-[src/arrangement.js](./src/arrangement.js) now supports typed clips in split,
+[src/arrangement.js](../../../src/arrangement.js) now supports typed clips in split,
 duplicate, move, beat-based resize, range copy/paste/delete and history.
 
 - Partial copies retain source offset rather than destructively truncating
@@ -84,8 +84,8 @@ report an error before changing any tracks.
 
 ### Shared live/offline scheduling
 
-[src/instrument-playback.js](./src/instrument-playback.js) replaces duplicated
-instrument scheduling in [src/audio.js](./src/audio.js).
+[src/instrument-playback.js](../../../src/instrument-playback.js) replaces duplicated
+instrument scheduling in [src/audio.js](../../../src/audio.js).
 
 - One event generator resolves patterns, clip boundaries, loop cycles,
   source offsets, notes, velocities and pad/sample configuration.
@@ -189,7 +189,7 @@ schedule comparison passed, but output is **not claimed sample-identical**.
 
 ### Actual interface, touch and encoded exports
 
-[tests/instrument-ui-acceptance.js](./tests/instrument-ui-acceptance.js)
+[tests/instrument-ui-acceptance.js](../../../tests/instrument-ui-acceptance.js)
 exports Playwright functions accepting a Page:
 
 1. On a freshly served disposable origin, run
@@ -325,43 +325,43 @@ older builds understand the new model.
 Typed clips validate pattern references/geometry instead of requiring audio
 clip source fields. Sampler/pad/audio asset references, ZIP paths/checksums,
 size/entry limits and import staging remain enforced. Audio stays deduplicated
-in the existing asset store. See [EHS_FORMAT_SPEC.md](./EHS_FORMAT_SPEC.md).
+in the existing asset store. See [EHS_FORMAT_SPEC.md](../../../EHS_FORMAT_SPEC.md).
 
 ## Changed files
 
-- [src/instrument-clips.js](./src/instrument-clips.js): model, validation,
+- [src/instrument-clips.js](../../../src/instrument-clips.js): model, validation,
   migration, identity and source-phase helpers.
-- [src/instrument-playback.js](./src/instrument-playback.js): shared event
+- [src/instrument-playback.js](../../../src/instrument-playback.js): shared event
   expansion and voice scheduling.
-- [src/arrangement.js](./src/arrangement.js): typed editing, snapshots,
+- [src/arrangement.js](../../../src/arrangement.js): typed editing, snapshots,
   clipboard, destination checks and history.
-- [src/audio.js](./src/audio.js): shared scheduling integration, duration and
+- [src/audio.js](../../../src/audio.js): shared scheduling integration, duration and
   playback-signature support from the initial milestone, preserved here.
-- [src/app.js](./src/app.js), [src/arrangement-workspace.js](./src/arrangement-workspace.js),
-  [src/arrangement.css](./src/arrangement.css): actual clip UI, gestures,
+- [src/app.js](../../../src/app.js), [src/arrangement-workspace.js](../../../src/arrangement-workspace.js),
+  [src/arrangement.css](../../../src/arrangement.css): actual clip UI, gestures,
   previews, mixed selection and safe project activation.
-- [src/pattern-editor.js](./src/pattern-editor.js),
-  [src/sampler-ui.js](./src/sampler-ui.js),
-  [src/drum-rack-ui.js](./src/drum-rack-ui.js),
-  [src/piano-model.js](./src/piano-model.js): exact pattern binding, pattern
+- [src/pattern-editor.js](../../../src/pattern-editor.js),
+  [src/sampler-ui.js](../../../src/sampler-ui.js),
+  [src/drum-rack-ui.js](../../../src/drum-rack-ui.js),
+  [src/piano-model.js](../../../src/piano-model.js): exact pattern binding, pattern
   length/velocity/history and sustained-note quantization.
-- [src/project-state.js](./src/project-state.js),
-  [src/portable-project.js](./src/portable-project.js): schema/feature
+- [src/project-state.js](../../../src/project-state.js),
+  [src/portable-project.js](../../../src/portable-project.js): schema/feature
   signaling, migration, typed validation and portable media references.
-- [tests/instrument-clips.test.js](./tests/instrument-clips.test.js): 23 tests.
-- [tests/instrument-fixture.js](./tests/instrument-fixture.js): deterministic
+- [tests/instrument-clips.test.js](../../../tests/instrument-clips.test.js): 23 tests.
+- [tests/instrument-fixture.js](../../../tests/instrument-fixture.js): deterministic
   three-track/two-sample composition.
-- [tests/instrument-browser-acceptance.js](./tests/instrument-browser-acceptance.js):
+- [tests/instrument-browser-acceptance.js](../../../tests/instrument-browser-acceptance.js):
   Web Audio/WAV/routing, migration equivalence and fractional-offset checks.
-- [tests/pattern-editor.test.js](./tests/pattern-editor.test.js),
-  [tests/persistence-migration.test.js](./tests/persistence-migration.test.js):
+- [tests/pattern-editor.test.js](../../../tests/pattern-editor.test.js),
+  [tests/persistence-migration.test.js](../../../tests/persistence-migration.test.js):
   selected-editor, schema, archive and migration regressions.
-- [tests/instrument-ui-acceptance.js](./tests/instrument-ui-acceptance.js),
-  [tests/instrument-clean-browser.js](./tests/instrument-clean-browser.js),
-  [tests/run-clean-browser.mjs](./tests/run-clean-browser.mjs): reproducible
+- [tests/instrument-ui-acceptance.js](../../../tests/instrument-ui-acceptance.js),
+  [tests/instrument-clean-browser.js](../../../tests/instrument-clean-browser.js),
+  [tests/run-clean-browser.mjs](../../../tests/run-clean-browser.mjs): reproducible
   full UI, five-width touch and isolated native-browser acceptance.
-- [README.md](./README.md), [IDEA.md](./IDEA.md),
-  [EHS_FORMAT_SPEC.md](./EHS_FORMAT_SPEC.md), this report: honest capability,
+- [README.md](../../../README.md), [IDEA.md](../../../IDEA.md),
+  [EHS_FORMAT_SPEC.md](../../../EHS_FORMAT_SPEC.md), this report: honest capability,
   compatibility and continuation documentation.
 
 ## Next milestone

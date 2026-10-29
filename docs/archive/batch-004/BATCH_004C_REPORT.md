@@ -4,7 +4,7 @@
 
 **PHASE 6 FUNCTIONALLY COMPLETE — READY FOR BATCH 005**
 
-Phase 1 sidechain stabilization passed 59/59 tests at that boundary. Phase 2 implemented loudness analysis, oversampled peak estimation and a shared lookahead limiter; independent true-peak/LRA reference validation and physical live-output checks remain release-validation tasks. Phase 3 adds multiband dynamics, spectrum and stereo monitoring, loudness-matched A/B, mastering-chain management and Worker-based analysis. Phase 4 adds shared offline rendering, WAV/MP3 encoding, resampling, analysis, progress and cancellation. Phase 5 adds versioned `.EHS` project archives, release metadata/artwork, and Release ZIPs. Phase 6 locally accepted the deterministic project-to-release workflow; the current full Node suite passes **110/110**. See `BATCH_004_FINAL_ACCEPTANCE.md` for test evidence and remaining gates.
+Phase 1 sidechain stabilization passed 59/59 tests at that boundary. Phase 2 implemented loudness analysis, oversampled peak estimation and a shared lookahead limiter; independent true-peak/LRA reference validation and physical live-output checks remain release-validation tasks. Phase 3 adds multiband dynamics, spectrum and stereo monitoring, loudness-matched A/B, mastering-chain management and Worker-based analysis. Phase 4 adds shared offline rendering, WAV/MP3 encoding, resampling, analysis, progress and cancellation. Phase 5 adds versioned `.EHS` project archives, release metadata/artwork, and Release ZIPs. Phase 6 locally accepted the deterministic project-to-release workflow; the current full Node suite passes **110/110**. See [BATCH_004_FINAL_ACCEPTANCE.md](./BATCH_004_FINAL_ACCEPTANCE.md) for test evidence and remaining gates.
 
 ## Phase 2 acceptance matrix
 
@@ -152,8 +152,8 @@ Archive version 1 and import limits are documented in `EHS_FORMAT_SPEC.md`. It s
 
 ## Files changed across Phases 1–6
 
-- `BATCH_004C_REPORT.md`
-- `BATCH_004_REPORT.md`
+- [BATCH_004C_REPORT.md](./BATCH_004C_REPORT.md)
+- [BATCH_004_REPORT.md](./BATCH_004_REPORT.md)
 - `IDEA.md`
 - `README.md`
 - `src/sidechain-processor.js` (new)
@@ -183,6 +183,6 @@ Archive version 1 and import limits are documented in `EHS_FORMAT_SPEC.md`. It s
 
 ## Phase 6 closeout and next phase boundary
 
-The eight-track acceptance fixture was imported into a clean browser project/media store, played, edited, saved as a second `.EHS`, reopened, and exported in four audio formats. All seven restored audio assets retained their SHA-256 values across the edited archive. Corrupt import, replacement cancellation, New Project, autosave recovery, mastering output, and Release ZIP contents were also exercised. The verified limits and full matrix are recorded in `BATCH_004_FINAL_ACCEPTANCE.md`; Phase 6 is functionally complete for the tested fixture.
+The eight-track acceptance fixture was imported into a clean browser project/media store, played, edited, saved as a second `.EHS`, reopened, and exported in four audio formats. All seven restored audio assets retained their SHA-256 values across the edited archive. Corrupt import, replacement cancellation, New Project, autosave recovery, mastering output, and Release ZIP contents were also exercised. The verified limits and full matrix are recorded in [BATCH_004_FINAL_ACCEPTANCE.md](./BATCH_004_FINAL_ACCEPTANCE.md); Phase 6 is functionally complete for the tested fixture.
 
 This changed worktree was not pushed or deployed. Local static requests passed but are not a GitHub Pages deployment test. Independent BS.1770/EBU R128 reference-vector validation, physical live-output/device and touch checks, and 12-track/3-minute plus 24-track/5-minute performance baselines remain explicit release/Batch 005 tasks. The existing roadmap for automation, further effects, sampler improvements, plugin architecture and optional VST bridging remains intact.

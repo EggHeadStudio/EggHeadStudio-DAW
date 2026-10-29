@@ -134,7 +134,7 @@ These are emulated layout checks, not physical iOS/Android audio or touch tests.
 
 ## Known gaps / next development priorities
 
-- Phase 6 local functional acceptance is complete; see `BATCH_004_FINAL_ACCEPTANCE.md`.
+- Phase 6 local functional acceptance is complete; see [BATCH_004_FINAL_ACCEPTANCE.md](./BATCH_004_FINAL_ACCEPTANCE.md).
 - Independent published EBU/ITU loudness/LRA/true-peak reference audio, formal true-peak certification, physical live-output/device testing, and long-duration mobile memory/performance remain release-validation tasks. The 4× true-peak measurement is an estimate, not certification.
 - Live sidechain signal level and real-time acoustic loopback were not measured in this browser automation route. The offline ghost-trigger fixture verifies signal routing but does not replace physical-device testing.
 - MP3 output is CBR and has about 43–45 ms frame delay/padding in Chromium decode; gapless metadata is not implemented. Offline render cannot be interrupted mid-render, and long-project mobile memory/time remain unmeasured.
@@ -154,7 +154,7 @@ The application remains static and backend-free, and all application/vendor asse
 - `src/sampler.css`
 - `tests/mastering.test.js` (new)
 - `tests/production-acceptance.test.js` (new)
-- `BATCH_004_FINAL_ACCEPTANCE.md` (new)
+- [BATCH_004_FINAL_ACCEPTANCE.md](./BATCH_004_FINAL_ACCEPTANCE.md) (new)
 
 ## Phase 6 — Full production acceptance
 
@@ -202,5 +202,5 @@ At 360, 390, 430, 768 and 1280 CSS px, Arrangement, Sample Studio, Mastering and
 - `package.json`, `package-lock.json`
 - `README.md`
 - `IDEA.md`
-- `BATCH_004C_REPORT.md`
-- `BATCH_004_REPORT.md` (new)
+- [BATCH_004C_REPORT.md](./BATCH_004C_REPORT.md)
+- [BATCH_004_REPORT.md](./BATCH_004_REPORT.md) (new)

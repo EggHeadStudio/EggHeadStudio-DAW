@@ -1,7 +1,7 @@
 # Batch 005B.2 - Comic-Tech Lite design system
 
 This is the implemented vanilla-JavaScript foundation, not a new UI framework.
-The source of truth is [workspace.css](./src/workspace.css). Existing workspaces,
+The source of truth is [workspace.css](../../../src/workspace.css). Existing workspaces,
 native controls, parameter state, audio routing and local-first project storage
 remain in place.
 
@@ -38,7 +38,7 @@ controls retain their own rendering/interaction implementations.
 
 ## Parameter controls
 
-[ui-controls.js](./src/ui-controls.js) exports:
+[ui-controls.js](../../../src/ui-controls.js) exports:
 
 - `parameterValue`: finite-value validation, clamp and minimum-relative step
   quantization.
@@ -103,7 +103,7 @@ introduce effect-parameter Undo history or parameter automation.
 
 ## Device composition
 
-[device-ui.js](./src/device-ui.js) supplies the reusable shell and migrations:
+[device-ui.js](../../../src/device-ui.js) supplies the reusable shell and migrations:
 
 1. Stable effect ID and device family on the article.
 2. Named enabled checkbox, type and explicit Active/Bypassed status.
@@ -137,7 +137,7 @@ Master volume remains in its header. Clip warnings retain the engine's existing
 one-second hold. The added dBFS text is current sample peak, not LUFS or certified
 true peak. Compressor reduction is the existing measured reduction in dB.
 
-[meter-ui.js](./src/meter-ui.js) only updates DOM from actual engine measurements.
+[meter-ui.js](../../../src/meter-ui.js) only updates DOM from actual engine measurements.
 It uses the existing callback, not a new timer/render loop. Hidden-document,
 hidden-element and outside-viewport DOM updates are skipped. Meter bars have a
 short CSS transition, not simulated activity. Measurement computation and native

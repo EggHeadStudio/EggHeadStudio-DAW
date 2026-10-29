@@ -6,7 +6,7 @@
 
 ### Transport / live-control follow-up
 
-The original checkpoint below recorded 141 passing tests. The follow-up now passes **152/152** with 11 added regressions in [live-transport.test.js](./tests/live-transport.test.js); changed-JavaScript syntax checks and `git diff --check` passed.
+The original checkpoint below recorded 141 passing tests. The follow-up now passes **152/152** with 11 added regressions in [live-transport.test.js](../../../tests/live-transport.test.js); changed-JavaScript syntax checks and `git diff --check` passed.
 
 - Non-loop transport no longer stops at the last audio clip; it advances through silence until stopped, with ruler extension as needed.
 - Enabled loops clamp playback into the selected range and repeat independently of audio presence or last-clip duration.
@@ -34,7 +34,7 @@ These are local Chromium and synthetic audio/touch checks, not physical-device e
 
 ### Track setup / elapsed-time follow-up
 
-The current full suite passes **159/159**, with seven added regressions in [track-setup.test.js](./tests/track-setup.test.js). Syntax checks for changed JavaScript and `git diff --check` passed.
+The current full suite passes **159/159**, with seven added regressions in [track-setup.test.js](../../../tests/track-setup.test.js). Syntax checks for changed JavaScript and `git diff --check` passed.
 
 - New tracks can be named, colored and configured as Audio, Sampler or Drum Rack through a keyboard/touch-sized dialog. Existing + Sampler/+ Drum Rack shortcuts preselect the appropriate type. As confirmed by the user, Bass/Synth remain names, not new engine types.
 - Sampler requires a decoded sample and uses existing pitch detection. Drum Rack supports empty pads or an optional starting sample. Shared factory defaults retain the direct Sample Studio instrument workflows.
@@ -46,7 +46,7 @@ Executed Chromium checks created a colored Audio track, renamed/recolored it fro
 
 Clock verification sought to about 65.125 seconds, displayed `01:05.135`, advanced to `01:05.346` while playing, froze at `01:05.455` after Stop, and reset to `00:00.000`. This uses current playhead position, not cumulative listening time. Original project tracks were restored exactly afterward; shared audio assets were not deleted. Browser measurements are not physical-device verification.
 
-Additional changed files: [track-ui.js](./src/track-ui.js), [track-setup.test.js](./tests/track-setup.test.js), plus the existing app/model/timeline/workspace/styles/documentation surfaces.
+Additional changed files: [track-ui.js](../../../src/track-ui.js), [track-setup.test.js](../../../tests/track-setup.test.js), plus the existing app/model/timeline/workspace/styles/documentation surfaces.
 
 This is a tested audio-editing checkpoint, not completion of the entire requested workspace. Existing Sampler/Drum Rack patterns remain functional, but independent instrument Arrangement clips and instrument time-range editing are not implemented. No commit, push or deployment was performed. Earlier Batch 005A performance changes in the worktree were preserved.
 
@@ -89,13 +89,13 @@ Instrument-containing time ranges and incompatible audio destinations report a w
 
 ## Architecture and compatibility
 
-[timeline.js](./src/timeline.js) owns shared beat/time/pixel conversion and quantization helpers. Pointer coordinates use the ruler's current bounding rectangle, including scroll displacement exactly once. Dragging subtracts the original grab offset before quantizing the clip start.
+[timeline.js](../../../src/timeline.js) owns shared beat/time/pixel conversion and quantization helpers. Pointer coordinates use the ruler's current bounding rectangle, including scroll displacement exactly once. Dragging subtracts the original grab offset before quantizing the clip start.
 
-[arrangement.js](./src/arrangement.js) owns non-destructive audio slicing, range clipboard operations, resize calculations and bounded clip/loop history. Workspace state contains a normalized beat/track rectangle and its intersections; the clipboard contains duration, track count and relative entries. Paste validates destinations before adding clips. Delete splits intersections without ripple.
+[arrangement.js](../../../src/arrangement.js) owns non-destructive audio slicing, range clipboard operations, resize calculations and bounded clip/loop history. Workspace state contains a normalized beat/track rectangle and its intersections; the clipboard contains duration, track count and relative entries. Paste validates destinations before adding clips. Delete splits intersections without ripple.
 
-[arrangement-workspace.js](./src/arrangement-workspace.js) mounts the gestures and workspace onto the existing application instead of replacing its audio engine, mixer handlers or instrument editors.
+[arrangement-workspace.js](../../../src/arrangement-workspace.js) mounts the gestures and workspace onto the existing application instead of replacing its audio engine, mixer handlers or instrument editors.
 
-[audio.js](./src/audio.js) uses one clip-source scheduling helper in live/offline paths. Optional `loopOffset`, `envelopeOffset` and `envelopeDuration` preserve loop phase and original fade position after slicing. Legacy defaults and older-renderer caveats are documented in [EHS_FORMAT_SPEC.md](./EHS_FORMAT_SPEC.md). Archive/schema version remains 1; limits were not increased.
+[audio.js](../../../src/audio.js) uses one clip-source scheduling helper in live/offline paths. Optional `loopOffset`, `envelopeOffset` and `envelopeDuration` preserve loop phase and original fade position after slicing. Legacy defaults and older-renderer caveats are documented in [EHS_FORMAT_SPEC.md](../../../EHS_FORMAT_SPEC.md). Archive/schema version remains 1; limits were not increased.
 
 Audio edits do not replace the source buffer or delete library assets. Shared samples/IndexedDB were not cleared during this checkpoint. The pre-existing sidechain/mastering pipeline remains in use.
 
@@ -111,7 +111,7 @@ cancelled 0
 skipped 0
 ```
 
-All 119 prior tests remain, plus 22 editing regressions in [arrangement-editing.test.js](./tests/arrangement-editing.test.js). Coverage includes:
+All 119 prior tests remain, plus 22 editing regressions in [arrangement-editing.test.js](../../../tests/arrangement-editing.test.js). Coverage includes:
 
 - Exact 0/N endpoints, numeric frames and complete-frame render/WAV.
 - Zoom/scroll coordinates, grab offsets, snap and loop edits.
@@ -127,7 +127,7 @@ JavaScript syntax checks passed for all top-level `src` and `tests` JavaScript f
 
 ## Executed Chromium checks
 
-Tests ran against a local static server on Windows. The deterministic browser fixture uses four **audio tracks** named Drums/Bass/Synth/Audio and an eight-second 220 Hz source; these names do not imply actual instrument-pattern coverage. Fixture module: [arrangement-browser-fixture.js](./tests/arrangement-browser-fixture.js).
+Tests ran against a local static server on Windows. The deterministic browser fixture uses four **audio tracks** named Drums/Bass/Synth/Audio and an eight-second 220 Hz source; these names do not imply actual instrument-pattern coverage. Fixture module: [arrangement-browser-fixture.js](../../../tests/arrangement-browser-fixture.js).
 
 | Workflow | Measured result |
 |---|---|
@@ -198,10 +198,10 @@ These are not all external certification gates: the instrument and live-edit/wor
 
 ## Changed files for this checkpoint
 
-- UI integration/styles: [app.js](./src/app.js), [arrangement-workspace.js](./src/arrangement-workspace.js), [arrangement.css](./src/arrangement.css), [index.html](./index.html), [sampler.css](./src/sampler.css).
-- Editing/DSP/persistence: [sample-editor.js](./src/sample-editor.js), [arrangement.js](./src/arrangement.js), [timeline.js](./src/timeline.js), [audio.js](./src/audio.js), [project-state.js](./src/project-state.js), [portable-project.js](./src/portable-project.js).
-- Tests: [arrangement-editing.test.js](./tests/arrangement-editing.test.js), [arrangement-browser-fixture.js](./tests/arrangement-browser-fixture.js).
-- Documentation: [README.md](./README.md), [IDEA.md](./IDEA.md), [EHS_FORMAT_SPEC.md](./EHS_FORMAT_SPEC.md), this report.
+- UI integration/styles: [app.js](../../../src/app.js), [arrangement-workspace.js](../../../src/arrangement-workspace.js), [arrangement.css](../../../src/arrangement.css), [index.html](../../../index.html), [sampler.css](../../../src/sampler.css).
+- Editing/DSP/persistence: [sample-editor.js](../../../src/sample-editor.js), [arrangement.js](../../../src/arrangement.js), [timeline.js](../../../src/timeline.js), [audio.js](../../../src/audio.js), [project-state.js](../../../src/project-state.js), [portable-project.js](../../../src/portable-project.js).
+- Tests: [arrangement-editing.test.js](../../../tests/arrangement-editing.test.js), [arrangement-browser-fixture.js](../../../tests/arrangement-browser-fixture.js).
+- Documentation: [README.md](../../../README.md), [IDEA.md](../../../IDEA.md), [EHS_FORMAT_SPEC.md](../../../EHS_FORMAT_SPEC.md), this report.
 
 Some listed files also contain the preserved earlier 005A changes. Archive Worker/waveform-cache/sidechain performance changes and their tests/report belong to that earlier checkpoint; this report does not reattribute or overwrite them.
 

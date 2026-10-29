@@ -111,7 +111,7 @@ Export cancellation stops the ZIP Worker (or checks between chunks in the no-Wor
 
 ## Verification
 
-`tests/release-package.test.js` covers metadata validation, Unicode ID3 frames and cover art, WAV LIST/INFO preservation, archive asset deduplication and checksum verification, float-WAV fallback, schema migration, traversal and tampering rejection, artwork validation, compression-ratio rejection, and Release ZIP contents. Browser round-trip behavior and responsive UI are acceptance checks recorded in `BATCH_004C_REPORT.md`; independent media-player tag interoperability and physical-device memory/performance remain release validation.
+`tests/release-package.test.js` covers metadata validation, Unicode ID3 frames and cover art, WAV LIST/INFO preservation, archive asset deduplication and checksum verification, float-WAV fallback, schema migration, traversal and tampering rejection, artwork validation, compression-ratio rejection, and Release ZIP contents. Browser round-trip behavior and responsive UI are acceptance checks recorded in [BATCH_004C_REPORT.md](./docs/archive/batch-004/BATCH_004C_REPORT.md); independent media-player tag interoperability and physical-device memory/performance remain release validation.
 
 ## Batch 005A.7-UX additive fields (format version stays 1)
 

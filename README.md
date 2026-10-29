@@ -2,6 +2,10 @@
 
 A static, local-first browser DAW foundation with Arrangement View, sample folder import, multi-track playback, per-track mixer, sample recording/editing, basic master bus and offline WAV rendering. **This is not yet a full Ableton/Ozone equivalent.** Read `IDEA.md` for the full implementation roadmap.
 
+Historical batch reports, audits and design notes are indexed in the
+[documentation archive](./docs/archive/README.md). Current mobile milestone
+reports remain in the repository root.
+
 ## Run locally
 
 Option A (Python, no packages):
@@ -72,19 +76,30 @@ capture. Explicit Stop/recovery actions remain separate. Background/suspended
 capture is not promised: existing Recording Studio interruption handling saves
 buffered dry audio where possible.
 
-This is a **tested foundation, not completed smartphone production acceptance**.
-The 005B.5B follow-up verifies zoomed Arrangement touch operations, mixed-track
-section duplication/paste, Mixer/device controls and a 1-32-pad Drum Rack.
-Phone-width actual WAV/MP3 downloads and empty-origin .EHS restoration now pass
-in independently launched Chromium; this is not the complete connected
-22-step phone workflow. The full gesture/responsive matrix, remaining
-Sample/Recording/Master/Export phone review and that connected workflow remain
-open. Musical pinch zoom has visible zoom-button alternatives but no dedicated
+Clip Edit/Range modes let pointer gestures pass through the playhead line;
+seek using the ruler or return to Scroll/select to drag the playhead.
+Repeated Sample Studio opening no longer invokes stale teardown callbacks.
+Opening another library sample asks before discarding unsaved sample edits.
+New mastering graphs start at committed parameters; live edits retain smoothing.
+
+This is **not completed smartphone production acceptance**. The 005B.5C
+connected 390px workflow now runs from sample import/edit/save through two
+instruments, section duplication, synthetic overdub, take trim/fades/placement,
+mobile mastering and actual WAV/MP3/.EHS downloads. The recorded tone is present
+in both decoded outputs. Empty-origin settings and source PCM hashes restore,
+but repeated/restored mastering renders **fail the unchanged RMS-error bound**,
+including repeats without an archive round trip. Do not advance to 005B.6.
+The Node baseline is **321/321**. Seven-size representative editing checks
+are recorded separately from remaining full gesture, recording and export
+variants. Musical timeline pinch zoom has visible zoom-button alternatives but no dedicated
 pinch handler. No Android/iPhone,
 Firefox or Safari verification is claimed. See the
 [mobile audit](./BATCH_005B_5_MOBILE_UX_AUDIT.md) and
 [milestone report](./BATCH_005B_5_REPORT.md) and
-[005B.5B follow-up](./BATCH_005B_5B_REPORT.md) for precise evidence and next steps.
+[005B.5B follow-up](./BATCH_005B_5B_REPORT.md) for historical evidence; the current
+[005B.5C report](./BATCH_005B_5C_REPORT.md) and
+[interaction matrix](./BATCH_005B_5C_ACCEPTANCE_MATRIX.md) identify exact results
+and blockers.
 
 The global transport stays at the top. **Project** groups New Project, portable
 Save/Open .EHS and legacy JSON operations. **Download JSON** is the former
@@ -113,8 +128,8 @@ mouse/touch dragging, Shift-fine rotary adjustment and double-click/double-tap
 rotary reset all edit the existing DSP parameters. No new parameter or project
 schema is introduced.
 
-See [the concrete UX audit](./BATCH_005B_1_UX_AUDIT.md) and
-[implementation / acceptance report](./BATCH_005B_1_REPORT.md). This is a focused
+See [the concrete UX audit](./docs/archive/batch-005b/BATCH_005B_1_UX_AUDIT.md) and
+[implementation / acceptance report](./docs/archive/batch-005b/BATCH_005B_1_REPORT.md). This is a focused
 foundation, not the complete 005B redesign, graphical EQ or mobile redesign.
 
 ## Batch 005B.2 design system and audio controls
@@ -135,8 +150,8 @@ scroll and focus survive structural rerenders by stable device identity.
 Track dialogs restore opener focus; device/dialog typing does not invoke
 Arrangement shortcuts. No project/archive schema or audio-quality change.
 
-See the [design-system/API guide](./BATCH_005B_2_DESIGN_SYSTEM.md) and
-[exact acceptance report](./BATCH_005B_2_REPORT.md). Batch 005B.3 adds compact
+See the [design-system/API guide](./docs/archive/batch-005b/BATCH_005B_2_DESIGN_SYSTEM.md) and
+[exact acceptance report](./docs/archive/batch-005b/BATCH_005B_2_REPORT.md). Batch 005B.3 adds compact
 Mixer density below; dedicated phone layouts remain staged work. The shared
 graphical EQ is described in Batch 005B.4 below. Chromium emulation is not
 physical-device or all-browser certification.
@@ -169,8 +184,8 @@ portable editable **.EHS** remains in **Project**.
 300/84 px rows, Device Panel touch/cancel, Piano Roll note move/resize/scroll/
 Undo/Redo, synthetic recording, clean-origin instrument .EHS restoration and
 decoded WAV/MP3. No DSP, scheduler, recording placement or archive schema change.
-See the [workflow audit](./BATCH_005B_3_WORKFLOW_AUDIT.md) and
-[exact results/limitations](./BATCH_005B_3_UX_REPORT.md).
+See the [workflow audit](./docs/archive/batch-005b/BATCH_005B_3_WORKFLOW_AUDIT.md) and
+[exact results/limitations](./docs/archive/batch-005b/BATCH_005B_3_UX_REPORT.md).
 Graphical EQ/spectrum follows in 005B.4 below; dedicated phone architecture and
 physical-device acceptance remain 005B.5 work.
 
@@ -204,8 +219,8 @@ Batch 005B.4 reached **298/298 Node tests**, retaining all 283 previous tests.
 Native signal tests verify boost/cut/cuts, actual master taps under reordering,
 bypass and analyzer audio invariance. Five-width synthetic mouse/touch checks
 and empty-origin .EHS/WAV/MP3 verification are detailed in the
-[acceptance report](./BATCH_005B_4_REPORT.md) and
-[EQ architecture guide](./BATCH_005B_4_EQ_ARCHITECTURE.md).
+[acceptance report](./docs/archive/batch-005b/BATCH_005B_4_REPORT.md) and
+[EQ architecture guide](./docs/archive/batch-005b/BATCH_005B_4_EQ_ARCHITECTURE.md).
 These are Windows Chromium results, not physical-device or all-engine
 certification. No new framework, dependency, service, recording/scheduler
 rewrite or Session View.
@@ -267,8 +282,8 @@ controls remain separate from keyboard playback.
 
 Batch 005B.4B finished at **310/310**, preserving its 298-test starting
 baseline. The mobile foundation added five tests (315/315); the 005B.5B
-Arrangement/cancellation follow-up adds another five (**320/320**). See the [effect inventory](./BATCH_005B_4B_EFFECT_AUDIT.md) and
-[execution / audio / portability report](./BATCH_005B_4B_REPORT.md) for precise
+Arrangement/cancellation follow-up adds another five (**320/320**). See the [effect inventory](./docs/archive/batch-005b/BATCH_005B_4B_EFFECT_AUDIT.md) and
+[execution / audio / portability report](./docs/archive/batch-005b/BATCH_005B_4B_REPORT.md) for precise
 browser evidence and limitations. Five-width synthetic touch is not
 physical-device verification or the complete 005B.5 mobile architecture.
 
@@ -295,9 +310,9 @@ physical-device verification or the complete 005B.5 mobile architecture.
 
 ## Important limitations
 
-- Batch 005A.6 instrument-clip integration is functionally complete: **198/198 Node tests**, real UI composition, five-width browser touch checks, decoded WAV/MP3 exports and a fresh native-browser-profile `.EHS` round trip passed. This is not physical-device validation. Fractional-rate audio slice restarts retain a measured native source-offset quantization discrepancy (maximum 0.001567 at 1.25x in the controlled fixture); output is not claimed sample-identical. Long-project memory/scheduling, streamed archives, recovery and real-device acceptance remain Batch 005A.7 work. See [BATCH_005A_6_REPORT.md](./BATCH_005A_6_REPORT.md).
-- Batch 004 Phases 1–6 are functionally complete with local automated and Chromium acceptance evidence; see `BATCH_004_FINAL_ACCEPTANCE.md`. Independent EBU/ITU loudness/LRA/true-peak reference vectors, physical live-output/device tests, GitHub Pages deployment of this unpushed worktree, and medium/large long-project performance remain release-validation or Batch 005 tasks. The 4× true-peak meter/limiter detector is an estimate, not formal compliance. The limiter is optional; aggressive EQ/output gain can clip when bypassed.
-- MP3 encoding is CBR and the current encoder output is not gapless: Chromium decoding adds encoder delay/padding (1,257–2,193 frames in the latest workloads). Metadata support is ID3v2.3 and RIFF LIST/INFO, not BWF, RF64 or a complete broadcast metadata implementation. `.EHS` builds ZIP output in 1 MiB input chunks into a Blob, but payload collection and import decompression remain buffered, not end-to-end streamed. Limits remain 256 MiB compressed / 512 MiB expanded and 4,096 entries. Offline render is bounded to 10 minutes; estimated memory use above 192 MiB prompts a warning and above 768 MiB is blocked. Offline cancellation retires the graph at the next approximately one-second audio scheduling boundary, then drains the disconnected context as silence because the browser has no offline `close()` API. Worker resampling/encoding is cancellable. Desktop measurements are in `BATCH_005A_7C_REPORT.md`; physical-device memory remains unmeasured.
+- Batch 005A.6 instrument-clip integration is functionally complete: **198/198 Node tests**, real UI composition, five-width browser touch checks, decoded WAV/MP3 exports and a fresh native-browser-profile `.EHS` round trip passed. This is not physical-device validation. Fractional-rate audio slice restarts retain a measured native source-offset quantization discrepancy (maximum 0.001567 at 1.25x in the controlled fixture); output is not claimed sample-identical. Long-project memory/scheduling, streamed archives, recovery and real-device acceptance remain Batch 005A.7 work. See [BATCH_005A_6_REPORT.md](./docs/archive/batch-005a/BATCH_005A_6_REPORT.md).
+- Batch 004 Phases 1–6 are functionally complete with local automated and Chromium acceptance evidence; see [BATCH_004_FINAL_ACCEPTANCE.md](./docs/archive/batch-004/BATCH_004_FINAL_ACCEPTANCE.md). Independent EBU/ITU loudness/LRA/true-peak reference vectors, physical live-output/device tests, GitHub Pages deployment of this unpushed worktree, and medium/large long-project performance remain release-validation or Batch 005 tasks. The 4× true-peak meter/limiter detector is an estimate, not formal compliance. The limiter is optional; aggressive EQ/output gain can clip when bypassed.
+- MP3 encoding is CBR and the current encoder output is not gapless: Chromium decoding adds encoder delay/padding (1,257–2,193 frames in the latest workloads). Metadata support is ID3v2.3 and RIFF LIST/INFO, not BWF, RF64 or a complete broadcast metadata implementation. `.EHS` builds ZIP output in 1 MiB input chunks into a Blob, but payload collection and import decompression remain buffered, not end-to-end streamed. Limits remain 256 MiB compressed / 512 MiB expanded and 4,096 entries. Offline render is bounded to 10 minutes; estimated memory use above 192 MiB prompts a warning and above 768 MiB is blocked. Offline cancellation retires the graph at the next approximately one-second audio scheduling boundary, then drains the disconnected context as silence because the browser has no offline `close()` API. Worker resampling/encoding is cancellable. Desktop measurements are in [BATCH_005A_7C_REPORT.md](./docs/archive/batch-005a/BATCH_005A_7C_REPORT.md); physical-device memory remains unmeasured.
 - Sample speed/pitch processing uses a lightweight waveform-similarity overlap-add stretch, not a production phase vocoder; only synthetic sine behavior was checked here, so transient quality and long-recording performance are not established. No warp markers, automation, waveform thumbnails on timeline, or account sync yet. Loudness analysis and encoding use cancellable Workers and copy channel data for transfer; long-project mobile memory/time behavior has not been measured. Piano-roll events drive the app's sample instruments; MIDI is not part of the workflow.
 - Automatic pitch estimation is intended for clear, sustained, single-note samples; it is not reliable for chords, noisy recordings or most drum hits. Always audition and adjust the root key by ear. The piano roll spans five octaves and stores a 16-bar pattern.
 - The sampler is not a full multisample/key-zone instrument. Drum Rack sequencing is one bar wide in the step-sequencer view; longer duplicated patterns can be edited in the piano roll. Touch-first editing still needs physical-device verification.
@@ -311,7 +326,7 @@ See `IDEA.md` for architecture, full requirements, acceptance tests, agent workf
 
 ## Verification
 
-Run `npm test` with Node.js installed. Batch 005A.7C preserves all 253 previous tests and adds continuous offline-window, cancellation/disposal and static-version regressions. See `BATCH_005A_7C_REPORT.md` for exact results and browser reproduction commands. `.github/workflows/test.yml` runs `npm test` on Node.js 22. This batch has not been committed, pushed or deployed.
+Run `npm test` with Node.js installed. Batch 005A.7C preserves all 253 previous tests and adds continuous offline-window, cancellation/disposal and static-version regressions. See [BATCH_005A_7C_REPORT.md](./docs/archive/batch-005a/BATCH_005A_7C_REPORT.md) for exact results and browser reproduction commands. `.github/workflows/test.yml` runs `npm test` on Node.js 22. This batch has not been committed, pushed or deployed.
 
 ### Batch 005A.7C rendering and reliability closure
 
@@ -319,7 +334,7 @@ Offline export now schedules source nodes in approximately one-second, render-qu
 
 The controlled 12-track/180-second context render fell from **546.25 s to 66.18 s**. The 24-track/300-second context render completed in **192.70 s**, with WAV/MP3 independently decoded. All effects and quality settings stayed enabled. These are desktop Chromium measurements, not mobile performance promises. The optimization has measured small floating-point summation differences, not sample-identical output. A separately verified stereo-imager wiring repair restores the correct right-side polarity; old projects may therefore sound different from the previously incorrect duplicated-left output.
 
-Native browser termination/relaunch preserved the previous project and audio at tested autosave/import/export boundaries. A two-minute dense looping/seek/suspension/BPM/sidechain stress run ended with no duplicate or stuck sources. Physical microphones/devices, independent browser engines, standards certification and actual Pages deployment remain acceptance gates for 005B/release. See [BATCH_005A_7C_REPORT.md](./BATCH_005A_7C_REPORT.md).
+Native browser termination/relaunch preserved the previous project and audio at tested autosave/import/export boundaries. A two-minute dense looping/seek/suspension/BPM/sidechain stress run ended with no duplicate or stuck sources. Physical microphones/devices, independent browser engines, standards certification and actual Pages deployment remain acceptance gates for 005B/release. See [BATCH_005A_7C_REPORT.md](./docs/archive/batch-005a/BATCH_005A_7C_REPORT.md).
 
 ### Batch 005A.7B reliability checkpoint
 
@@ -327,11 +342,11 @@ Synthetic Chromium recording acceptance covers count-in, pre-roll, exact punch f
 
 Autosave failures now display an explicit warning while retaining the previous saved snapshot. JSON and .EHS export remain available for in-memory recovery even when metadata storage is full. A corrupt recovered snapshot is backed up under `pulse-project-recovery-<timestamp>` before later edits can replace it; if that backup cannot be written, replacement is refused. Portable import storage failures leave the active project unchanged. Project export has cancellation and snapshots metadata before asynchronous packaging.
 
-This historical 7B checkpoint was incomplete. Its long-export and remaining reliability gates are superseded by `BATCH_005A_7C_REPORT.md`; the measurements and limitations below remain historical evidence, not new certification.
+This historical 7B checkpoint was incomplete. Its long-export and remaining reliability gates are superseded by [BATCH_005A_7C_REPORT.md](./docs/archive/batch-005a/BATCH_005A_7C_REPORT.md); the measurements and limitations below remain historical evidence, not new certification.
 
-Chromium browser acceptance used generated audio and a browser-emulated microphone stream. It covered Sample Studio editing and processed-WAV saving, Sampler/Piano Roll and Drum Rack pattern creation, multiple arranged tracks with independent effects, mute/solo routing, WAV export/decode, and project reload. The final mix decoded as stereo 48 kHz audio, 34.25 seconds long, with nonzero signal (RMS 0.116) and peak 0.928. EQ-on/off exports differed, confirming the effect changed rendered audio. Browser-emulated viewport checks at 360, 390, 430, 768 and 1280 CSS pixels found no page-level horizontal overflow; timeline seeking matched 2.0 seconds at 120 BPM across all widths and 2.4 seconds for a four-beat span at 100 BPM/125% zoom. These checks are not physical-device tests. Real microphone hardware, physical iPhone/Android behavior, remote GitHub Actions, and the unpushed changes on GitHub Pages remain unverified; see `BATCH_003_FINAL_REPORT.md`.
+Chromium browser acceptance used generated audio and a browser-emulated microphone stream. It covered Sample Studio editing and processed-WAV saving, Sampler/Piano Roll and Drum Rack pattern creation, multiple arranged tracks with independent effects, mute/solo routing, WAV export/decode, and project reload. The final mix decoded as stereo 48 kHz audio, 34.25 seconds long, with nonzero signal (RMS 0.116) and peak 0.928. EQ-on/off exports differed, confirming the effect changed rendered audio. Browser-emulated viewport checks at 360, 390, 430, 768 and 1280 CSS pixels found no page-level horizontal overflow; timeline seeking matched 2.0 seconds at 120 BPM across all widths and 2.4 seconds for a four-beat span at 100 BPM/125% zoom. These checks are not physical-device tests. Real microphone hardware, physical iPhone/Android behavior, remote GitHub Actions, and the unpushed changes on GitHub Pages remain unverified; see [BATCH_003_FINAL_REPORT.md](./docs/archive/batch-003/BATCH_003_FINAL_REPORT.md).
 
-Mastering browser checks rendered and A/B auditioned a 34.25-second arrangement, applied the Electronic / EDM preset, and exported/inspected a stereo WAV. The RMS readout changed from -18.7 dBFS (pre-mastering chain) to -17.8 dBFS (processed); sample peak changed from 0.9280 (-0.6 dBFS) to 0.9646 (-0.3 dBFS). The exported WAV header measured 44.1 kHz, 16-bit PCM, stereo; its PCM peak was 0.9646 and RMS 0.1287. It was non-silent and the before/after signals differed measurably. Mastering settings and preset selection survived reload. At 360, 390, 430, 768 and 1280 CSS pixels, the advanced panel had no page-level horizontal overflow and playback/export controls remained touch-sized in emulation. These are local Chromium checks, not physical-device or standards-compliance tests; details and limitations are in `BATCH_004_REPORT.md`.
+Mastering browser checks rendered and A/B auditioned a 34.25-second arrangement, applied the Electronic / EDM preset, and exported/inspected a stereo WAV. The RMS readout changed from -18.7 dBFS (pre-mastering chain) to -17.8 dBFS (processed); sample peak changed from 0.9280 (-0.6 dBFS) to 0.9646 (-0.3 dBFS). The exported WAV header measured 44.1 kHz, 16-bit PCM, stereo; its PCM peak was 0.9646 and RMS 0.1287. It was non-silent and the before/after signals differed measurably. Mastering settings and preset selection survived reload. At 360, 390, 430, 768 and 1280 CSS pixels, the advanced panel had no page-level horizontal overflow and playback/export controls remained touch-sized in emulation. These are local Chromium checks, not physical-device or standards-compliance tests; details and limitations are in [BATCH_004_REPORT.md](./docs/archive/batch-004/BATCH_004_REPORT.md).
 
 Phase 2 Chromium checks loaded the mastering AudioWorklet, rendered an impulse at a -3 dBTP ceiling, and measured **-3.085 dBTP** with the application's 4× estimate (0.085 dB below the target). An arrangement render with a -2 dBTP setting was encoded to WAV, decoded by Chromium, and measured at **-2.099 dBTP**. Offline latency trimming retained the expected 8.30-second duration. The mastering panel displayed and rendered at 360, 390, 430, 768 and 1280 CSS pixels without page-level horizontal overflow. Browser emulation and OfflineAudioContext are not physical-device or live-output tests; the 4× estimator is not independently certified.
 
@@ -339,17 +354,17 @@ Phase 4 Chromium exports verified 16-bit/44.1 kHz WAV, dithered 24-bit/48 kHz WA
 
 A final Basic-mode MP3 export from the saved 34-second project completed at 320 kbps/44.1 kHz stereo; encoded-file analysis reported **-17.7 LUFS**, **-8.8 dBFS sample peak**, and **-8.8 dBTP estimated**. Advanced bitrate/rate settings persisted after reload, and switching to Basic restored the recommended defaults.
 
-Batch 004 Phase 6 used a deterministic eight-track production fixture and browser workflow. Chromium imported an `.EHS` after the app's project localStorage and asset IndexedDB were cleared, restored all seven referenced assets, played the arrangement without missing samples, and reopened a second edited archive with identical audio hashes. A 34.586-second stereo/44.1 kHz mix exported as 16-bit PCM, 24-bit PCM, float32 WAV and 320 kbps MP3; all four decoded-file analyses reported **-21.1 LUFS**, **-7.5 dBFS sample peak** and **-7.5 dBTP estimated**. The Release ZIP contained both mastered formats, matching metadata, notes and artwork. Browser-emulated layout checks covered all four primary workspaces at five widths; the browser context did not enable touch input. Microphone hardware, physical mobile devices, deployed Pages, independent standards vectors and 3-/5-minute projects remain unverified. See `BATCH_004_FINAL_ACCEPTANCE.md` for measured results and reproduction steps.
+Batch 004 Phase 6 used a deterministic eight-track production fixture and browser workflow. Chromium imported an `.EHS` after the app's project localStorage and asset IndexedDB were cleared, restored all seven referenced assets, played the arrangement without missing samples, and reopened a second edited archive with identical audio hashes. A 34.586-second stereo/44.1 kHz mix exported as 16-bit PCM, 24-bit PCM, float32 WAV and 320 kbps MP3; all four decoded-file analyses reported **-21.1 LUFS**, **-7.5 dBFS sample peak** and **-7.5 dBTP estimated**. The Release ZIP contained both mastered formats, matching metadata, notes and artwork. Browser-emulated layout checks covered all four primary workspaces at five widths; the browser context did not enable touch input. Microphone hardware, physical mobile devices, deployed Pages, independent standards vectors and 3-/5-minute projects remain unverified. See [BATCH_004_FINAL_ACCEPTANCE.md](./docs/archive/batch-004/BATCH_004_FINAL_ACCEPTANCE.md) for measured results and reproduction steps.
 
 ## Batch 005A optimization checkpoint
 
-Batch 005A is **incomplete**, with a tested archive/waveform/voice-lifecycle checkpoint recorded in [BATCH_005A_REPORT.md](./BATCH_005A_REPORT.md). `.EHS` validation/unpacking/checksums run in a cancellable module Worker when supported; the UI can cancel before the final asset transaction. Duplicate packaged assets share immutable Blobs and decoded buffers, and matching local audio with verified decode provenance is reused without another decode. Sampler/pad previews now use transport-stop and natural-end cleanup. Cached waveform range queries preserve exact pixel extrema; sidechain attack/release coefficients are computed once per block with sample-exact regression coverage.
+Batch 005A is **incomplete**, with a tested archive/waveform/voice-lifecycle checkpoint recorded in [BATCH_005A_REPORT.md](./docs/archive/batch-005a/BATCH_005A_REPORT.md). `.EHS` validation/unpacking/checksums run in a cancellable module Worker when supported; the UI can cancel before the final asset transaction. Duplicate packaged assets share immutable Blobs and decoded buffers, and matching local audio with verified decode provenance is reused without another decode. Sampler/pad previews now use transport-stop and natural-end cleanup. Cached waveform range queries preserve exact pixel extrema; sidechain attack/release coefficients are computed once per block with sample-exact regression coverage.
 
 The controlled approximately 102 MiB archive comparison reduced worst main-thread heartbeat delay from 5,347 ms to 15 ms; total import time increased slightly. Warm waveform redraws of the tested 30-second/3-minute/5-minute samples were 84–97% faster with identical pixels. These are desktop Chromium measurements, not mobile guarantees. ZIP processing is still buffered, overall native/Worker memory is unmeasured, and archive limits are unchanged. Streaming/chunked archives, reference-aware cache eviction, complete long-project exports, scheduling/virtualization, storage-failure recovery and physical-device validation remain open.
 
 ## Batch 005A.6C instrument workflow and Recording Studio
 
-Sampler and Drum Rack tracks now start empty; the track dialog only chooses name, color and type. Samples are assigned from the instrument editor (searchable picker, drag-drop, Preview/Replace/Clear, per-pad Add/Replace/Remove), patterns are created with **+ Pattern** (1/2/4/8 bars or custom beats), and track effects plus a sample browser live inside the instrument editors. Pad-level effect chains are not implemented. A new **Recording Studio** workspace captures one microphone input as AudioWorklet float PCM with count-in, metronome, offset compensation, session-only backing selection and multiple takes; takes are ordinary Audio-track clips and round-trip through `.EHS`. Punch in/out and multi-input recording are not implemented. Recording was verified with a synthetic oscillator input in Chromium, not a physical microphone. See [BATCH_005A_6C_REPORT.md](./BATCH_005A_6C_REPORT.md).
+Sampler and Drum Rack tracks now start empty; the track dialog only chooses name, color and type. Samples are assigned from the instrument editor (searchable picker, drag-drop, Preview/Replace/Clear, per-pad Add/Replace/Remove), patterns are created with **+ Pattern** (1/2/4/8 bars or custom beats), and track effects plus a sample browser live inside the instrument editors. Pad-level effect chains are not implemented. A new **Recording Studio** workspace captures one microphone input as AudioWorklet float PCM with count-in, metronome, offset compensation, session-only backing selection and multiple takes; takes are ordinary Audio-track clips and round-trip through `.EHS`. Punch in/out and multi-input recording are not implemented. Recording was verified with a synthetic oscillator input in Chromium, not a physical microphone. See [BATCH_005A_6C_REPORT.md](./docs/archive/batch-005a/BATCH_005A_6C_REPORT.md).
 
 ## Batch 005A.5 precise editing checkpoint
 
@@ -357,7 +372,7 @@ Sample Studio now preserves exact Start frame 0 and exclusive End frame N with z
 
 Arrangement adds a beat ruler, separate insertion marker, movable/resizable loop brace, Follow, grab-offset-correct clip snapping, source-aware audio trims, full-height waveforms and rectangular audio time selection across tracks. Range copy/paste/duplicate/cut/delete preserve partial clips, track spacing, empty gaps, loop phase and original fade positions without copying audio bytes. Overlapping clips remain separate audible layers. Undo includes loop edits and is cleared on project replacement. The aligned right mixer shares each track's scroll row; the collapsible bottom panel retains the selected track's effects. On touch screens, enable **Select Range** or **Edit Clips (touch)** to edit without turning ordinary scrolling into a drag.
 
-Chromium checks covered mouse and synthetic touch, five viewport widths, processed-sample saving, offline sliced-loop comparison, actual WAV export/decode and `.EHS` save/reopen. Clip waveform canvases now cover only the visible viewport portion, redraw on scroll/resize and release offscreen bitmap storage instead of allocating song-wide canvases. The full Node suite passes **141/141**. See [BATCH_005A_5_REPORT.md](./BATCH_005A_5_REPORT.md) for measurements and reproduction.
+Chromium checks covered mouse and synthetic touch, five viewport widths, processed-sample saving, offline sliced-loop comparison, actual WAV export/decode and `.EHS` save/reopen. Clip waveform canvases now cover only the visible viewport portion, redraw on scroll/resize and release offscreen bitmap storage instead of allocating song-wide canvases. The full Node suite passes **141/141**. See [BATCH_005A_5_REPORT.md](./docs/archive/batch-005a/BATCH_005A_5_REPORT.md) for measurements and reproduction.
 
 **Batch 005A.5 remains incomplete.** Sampler/Drum Rack tracks still repeat whole-track patterns rather than independent Arrangement pattern clips; instrument-range edits explicitly warn. Instrument controls still open their existing editor, not a fully inline device. Fractional-rate split equivalence, a full mobile mixer sheet, physical devices, other browsers and the complete release-format matrix remain unverified or unfinished. Optional clip metadata retains `.EHS` v1; older app revisions may ignore sliced-loop/fade offsets. The earlier Batch 005A performance backlog remains open.
 

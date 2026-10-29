@@ -8,7 +8,11 @@ import {mountTrackEqs} from './eq-workspace.js';
 
 let activeSamplePreviewStop=()=>{};
 let activeSampleUiDispose=()=>{},activePreview=null,activeEditor=null,sampleTransport=null,sampleDeviceUi=null;
-export function stopSampleStudioPreview(){activeSamplePreviewStop();activeSampleUiDispose();activePreview=null;activeEditor=null;sampleTransport=null}
+export function stopSampleStudioPreview(){
+  activeSamplePreviewStop();activeSampleUiDispose();
+  activeSamplePreviewStop=()=>{};activeSampleUiDispose=()=>{};
+  activePreview=null;activeEditor=null;sampleTransport=null;
+}
 export function toggleSampleStudioPreview(){return sampleTransport?.()}
 export function sampleStudioPreviewPlaying(){return activePreview?.state==='playing'}
 

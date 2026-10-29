@@ -36,6 +36,7 @@
 .workspace .ruler>span{top:42px;height:30px;padding:4px 3px;border-left:1px solid #72818f;pointer-events:none;white-space:nowrap;font-size:10px}
 .workspace .ruler>.beat-tick{border-left-color:#485266}
 .workspace .playhead{top:72px;z-index:5}
+.workspace .clip-edit-mode .playhead,.workspace .range-mode .playhead{pointer-events:none}
 .arrangement-loop{position:absolute;top:3px;height:32px;min-width:2px;display:flex;align-items:center;justify-content:space-between;background:#a5b0bf25;border:1px solid #718197;touch-action:none;cursor:grab;color:#aab8c8}
 .arrangement-loop.loop-enabled{background:#75d7c34d;border-color:#76d8c3;color:#b8ffed}
 .arrangement-loop>span{overflow:hidden;font-size:10px;pointer-events:none;white-space:nowrap}

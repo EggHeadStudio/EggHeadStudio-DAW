@@ -25,21 +25,21 @@ audio. Active filter topology and existing cut defaults remain unchanged.
 
 ## Modules and authoritative state
 
-- [eq-model.js](./src/eq-model.js): logarithmic mappings, native filter
+- [eq-model.js](../../../src/eq-model.js): logarithmic mappings, native filter
   descriptors, drag conversion, response composition/probes.
-- [eq-visualizer.js](./src/eq-visualizer.js): SVG grid/curve/points, Canvas FFT,
+- [eq-visualizer.js](../../../src/eq-visualizer.js): SVG grid/curve/points, Canvas FFT,
   selected-band controls, interaction and visibility/resource lifecycle.
-- [eq-analyzer.js](./src/eq-analyzer.js): lazy native analysis side branch,
+- [eq-analyzer.js](../../../src/eq-analyzer.js): lazy native analysis side branch,
   reusable FFT storage, explicit targeted disposal.
-- [eq-workspace.js](./src/eq-workspace.js): adapters for the independent track
+- [eq-workspace.js](../../../src/eq-workspace.js): adapters for the independent track
   effect and mastering settings, existing save/sync handlers and live taps.
-- [audio.js](./src/audio.js), [mastering.js](./src/mastering.js): actual audible
+- [audio.js](../../../src/audio.js), [mastering.js](../../../src/mastering.js): actual audible
   graph construction and the matching local EQ tap references.
 
 No second stored EQ model exists. Track edits mutate the selected stable effect's
 `params`; master edits use the existing normalized mastering mutation path.
 Transient descriptors and native response probes are projections of those
-objects. Numeric controls reuse [ui-controls.js](./src/ui-controls.js).
+objects. Numeric controls reuse [ui-controls.js](../../../src/ui-controls.js).
 Original EQ DOM controls are replaced synchronously by the adapter, so only one
 EQ editor is visible. Legacy template generation is not a second parameter store.
 The old exported pure `masteringEqResponse` helper remains for API compatibility;

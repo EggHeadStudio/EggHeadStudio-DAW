@@ -39,18 +39,18 @@ No new dependency, framework, service or Session View. No commit/push/deployment
 
 | Files | Purpose |
 |---|---|
-| [ui-controls.js](./src/ui-controls.js) | Shared parameter mapping, presentation and interactions |
-| [device-ui.js](./src/device-ui.js) (new) | Device shell, migration, stable focus/fold lifecycle |
-| [meter-ui.js](./src/meter-ui.js) (new) | Visible actual-measurement DOM updates |
-| [workspace-ui.js](./src/workspace-ui.js), [workspace.css](./src/workspace.css) | Mixer/device integration, tokens, responsive studio styling |
-| [app.js](./src/app.js) | Meter and device lifecycle, shortcut guard, preset validation |
-| [sampler-ui.js](./src/sampler-ui.js), [track-ui.js](./src/track-ui.js) | Existing filter/delay controls and modal focus |
-| [audio.js](./src/audio.js) | Initialization-only track-sync guard |
-| [design-controls.test.js](./tests/design-controls.test.js) (new) | Seven pure mapping/format/default tests |
-| [live-transport.test.js](./tests/live-transport.test.js) | Pending-initialization control regression |
-| [design-system-ui.js](./tests/design-system-ui.js) (new) | Maintained Page-based control/device/touch/contrast acceptance |
-| [design-system-audio.js](./tests/design-system-audio.js) (new) | Edited-project archive/encoded audio, live gain and real meter checks |
-| [README.md](./README.md), [IDEA.md](./IDEA.md), this report and design guide | Workflow, evidence and next-stage handoff |
+| [ui-controls.js](../../../src/ui-controls.js) | Shared parameter mapping, presentation and interactions |
+| [device-ui.js](../../../src/device-ui.js) (new) | Device shell, migration, stable focus/fold lifecycle |
+| [meter-ui.js](../../../src/meter-ui.js) (new) | Visible actual-measurement DOM updates |
+| [workspace-ui.js](../../../src/workspace-ui.js), [workspace.css](../../../src/workspace.css) | Mixer/device integration, tokens, responsive studio styling |
+| [app.js](../../../src/app.js) | Meter and device lifecycle, shortcut guard, preset validation |
+| [sampler-ui.js](../../../src/sampler-ui.js), [track-ui.js](../../../src/track-ui.js) | Existing filter/delay controls and modal focus |
+| [audio.js](../../../src/audio.js) | Initialization-only track-sync guard |
+| [design-controls.test.js](../../../tests/design-controls.test.js) (new) | Seven pure mapping/format/default tests |
+| [live-transport.test.js](../../../tests/live-transport.test.js) | Pending-initialization control regression |
+| [design-system-ui.js](../../../tests/design-system-ui.js) (new) | Maintained Page-based control/device/touch/contrast acceptance |
+| [design-system-audio.js](../../../tests/design-system-audio.js) (new) | Edited-project archive/encoded audio, live gain and real meter checks |
+| [README.md](../../../README.md), [IDEA.md](../../../IDEA.md), this report and design guide | Workflow, evidence and next-stage handoff |
 
 ## Automated and browser acceptance
 
@@ -179,7 +179,7 @@ cancellation with closed context/zero sources, repeated sidechain ducking
   occlusion; the existing audio meter computation still runs.
 - Large-project timing/memory benchmarks were not repeated: no render/scheduling
   algorithm changed. Keep the measurements and limits in
-  [005A.7C](./BATCH_005A_7C_REPORT.md), not a new performance claim.
+  [005A.7C](../batch-005a/BATCH_005A_7C_REPORT.md), not a new performance claim.
 - Firefox/WebKit, physical iOS/Android, low-memory devices, real microphone
   latency and assistive-technology testing were not executed here.
 - Local versioned subpath smoke is not remote GitHub Pages deployment.

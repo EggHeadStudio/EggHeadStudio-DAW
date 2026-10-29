@@ -235,7 +235,7 @@ New tests/measurement fixtures:
 - `tests/offline-render-acceptance.js`, `tests/scheduler-stress-browser.js`.
 - `tests/crash-recovery-browser.js`, `tests/run-browser-check.mjs`.
 
-Documentation: this report, `README.md`, `IDEA.md`, `BATCH_005A_7_REPORT.md`, `EHS_FORMAT_SPEC.md`.
+Documentation: this report, `README.md`, `IDEA.md`, [BATCH_005A_7_REPORT.md](./BATCH_005A_7_REPORT.md), `EHS_FORMAT_SPEC.md`.
 
 Full Node regression suite: **265 passed, 0 failed, 0 skipped**, preserving all 253 previous tests. Eight scheduling tests cover continuous windows, tail coverage, 180-/300-second scheduling, cancellation, failure cleanup and a short native-render rejection without an orphaned rejected Promise; three disposal tests cover all processors; one build test covers determinism, transitive assets, version changes, subpaths and preservation of old generated versions.
 

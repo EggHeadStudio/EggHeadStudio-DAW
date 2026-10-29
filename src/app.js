@@ -443,6 +443,7 @@ function mountInstrumentDevices(){
 }
 function openInstrumentSample(id){
  const buffer=buffers.get(id);if(!buffer)return notify('Select a loaded sample first.');
+ if(shouldConfirmSampleDiscard({hasBuffer:Boolean(sampleEditor),saved:Boolean(savedSampleId)})&&!confirm('Discard the current unsaved sample and open this library sample?'))return;
  resetSampleEditor(buffer,assets.get(id)?.name||'Sample.wav');view='sample';render();
 }
 function mountPatternControls(context){

@@ -79,7 +79,7 @@ recovery, independent clips, sample precision, archive faults and export.
 
 ## Sample Studio browser and audio acceptance
 
-The maintained [Sample Studio fixture](./tests/cross-workspace-browser.js)
+The maintained [Sample Studio fixture](../../../tests/cross-workspace-browser.js)
 imports a deterministic stereo 1 kHz file, plays a loop, edits actual controls,
 measures native graph output and retains source identity through live edits.
 
@@ -109,7 +109,7 @@ dedicated Batch 005B.5 phone workspace architecture.
 
 ## Cross-workspace and recording acceptance
 
-The [transport fixture](./tests/workspace-transport-browser.js) used the saved
+The [transport fixture](../../../tests/workspace-transport-browser.js) used the saved
 sample in both a Sampler and Drum Rack, created a real Piano Roll note and drum
 step, and persisted attack 0.02 s, fine tune 10 cents and pad gain 0.7.
 
@@ -141,7 +141,7 @@ microphone latency, hardware loopback or acoustic monitoring.
 
 ## Portable project and encoded audio integrity
 
-The [mixed-project fixture](./tests/workspace-portable-browser.js) verifies
+The [mixed-project fixture](../../../tests/workspace-portable-browser.js) verifies
 track/master settings, exact decoded source PCM SHA-256 hashes, clip/pattern/
 instrument data, full rendered-channel numerical comparison, restored live
 playback and actual downloaded WAV/MP3 decoding. The target origin is checked
@@ -178,25 +178,25 @@ The clean-origin test is not a separate browser context/profile claim.
 
 ## Modified files
 
-- Runtime/lifecycle: [sample-preview.js](./src/sample-preview.js),
-  [transport-shortcuts.js](./src/transport-shortcuts.js),
-  [audio.js](./src/audio.js), [app.js](./src/app.js),
-  [sample-editor.js](./src/sample-editor.js).
-- Shared presentation/bindings: [device-ui.js](./src/device-ui.js),
-  [eq-workspace.js](./src/eq-workspace.js),
-  [eq-visualizer.js](./src/eq-visualizer.js),
-  [sampler-ui.js](./src/sampler-ui.js),
-  [drum-rack-ui.js](./src/drum-rack-ui.js),
-  [studio-workflows.js](./src/studio-workflows.js),
-  [recording-studio.js](./src/recording-studio.js),
-  [workspace.css](./src/workspace.css).
-- New acceptance: [sample-preview.test.js](./tests/sample-preview.test.js),
-  [cross-workspace-browser.js](./tests/cross-workspace-browser.js),
-  [workspace-transport-browser.js](./tests/workspace-transport-browser.js),
-  [workspace-portable-browser.js](./tests/workspace-portable-browser.js).
+- Runtime/lifecycle: [sample-preview.js](../../../src/sample-preview.js),
+  [transport-shortcuts.js](../../../src/transport-shortcuts.js),
+  [audio.js](../../../src/audio.js), [app.js](../../../src/app.js),
+  [sample-editor.js](../../../src/sample-editor.js).
+- Shared presentation/bindings: [device-ui.js](../../../src/device-ui.js),
+  [eq-workspace.js](../../../src/eq-workspace.js),
+  [eq-visualizer.js](../../../src/eq-visualizer.js),
+  [sampler-ui.js](../../../src/sampler-ui.js),
+  [drum-rack-ui.js](../../../src/drum-rack-ui.js),
+  [studio-workflows.js](../../../src/studio-workflows.js),
+  [recording-studio.js](../../../src/recording-studio.js),
+  [workspace.css](../../../src/workspace.css).
+- New acceptance: [sample-preview.test.js](../../../tests/sample-preview.test.js),
+  [cross-workspace-browser.js](../../../tests/cross-workspace-browser.js),
+  [workspace-transport-browser.js](../../../tests/workspace-transport-browser.js),
+  [workspace-portable-browser.js](../../../tests/workspace-portable-browser.js).
 - Documentation: this report, [effect audit](./BATCH_005B_4B_EFFECT_AUDIT.md),
-  [README](./README.md), [IDEA](./IDEA.md),
-  [format specification](./EHS_FORMAT_SPEC.md).
+  [README](../../../README.md), [IDEA](../../../IDEA.md),
+  [format specification](../../../EHS_FORMAT_SPEC.md).
 
 Other dirty EQ files/reports belong to the preserved preceding 005B.4 work.
 

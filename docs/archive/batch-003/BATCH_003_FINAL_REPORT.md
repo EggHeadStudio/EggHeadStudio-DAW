@@ -77,7 +77,7 @@ The application remains a static, local-first browser app with relative applicat
 - `tests/project-state.test.js` (new)
 - `README.md`
 - `IDEA.md`
-- `BATCH_003_FINAL_REPORT.md`
+- [BATCH_003_FINAL_REPORT.md](./BATCH_003_FINAL_REPORT.md)
 
 ## Next development priorities
 

@@ -35,15 +35,15 @@ official Live 12 functional references.
 
 | Files | Purpose |
 |---|---|
-| [eq-model.js](./src/eq-model.js), [eq-analyzer.js](./src/eq-analyzer.js) (new) | Shared native descriptors/response and disposable FFT branches |
-| [eq-visualizer.js](./src/eq-visualizer.js), [eq-workspace.js](./src/eq-workspace.js) (new) | Shared interactive view and existing-model adapters |
-| [audio.js](./src/audio.js), [mastering.js](./src/mastering.js) | Matching actual EQ configuration, local taps, true master EQ bypass |
-| [app.js](./src/app.js), [workspace.css](./src/workspace.css) | Device/master integration, lifecycle and responsive styling |
-| [eq-visualizer.test.js](./tests/eq-visualizer.test.js) (new) | Fifteen additive deterministic tests |
-| [eq-audio-acceptance.js](./tests/eq-audio-acceptance.js) (new) | Native offline/live fixtures and reordered master tap verification |
-| [eq-workspace-ui.js](./tests/eq-workspace-ui.js) (new) | Maintained five-width graphical/analyzer/lifecycle Page fixtures |
-| [eq-project-browser.js](./tests/eq-project-browser.js) (new) | UI .EHS restoration, actual playback, render hashes, WAV/MP3 decoding |
-| [README.md](./README.md), [IDEA.md](./IDEA.md), [EHS_FORMAT_SPEC.md](./EHS_FORMAT_SPEC.md), this report and architecture guide | Workflow, compatibility, evidence and next-stage handoff |
+| [eq-model.js](../../../src/eq-model.js), [eq-analyzer.js](../../../src/eq-analyzer.js) (new) | Shared native descriptors/response and disposable FFT branches |
+| [eq-visualizer.js](../../../src/eq-visualizer.js), [eq-workspace.js](../../../src/eq-workspace.js) (new) | Shared interactive view and existing-model adapters |
+| [audio.js](../../../src/audio.js), [mastering.js](../../../src/mastering.js) | Matching actual EQ configuration, local taps, true master EQ bypass |
+| [app.js](../../../src/app.js), [workspace.css](../../../src/workspace.css) | Device/master integration, lifecycle and responsive styling |
+| [eq-visualizer.test.js](../../../tests/eq-visualizer.test.js) (new) | Fifteen additive deterministic tests |
+| [eq-audio-acceptance.js](../../../tests/eq-audio-acceptance.js) (new) | Native offline/live fixtures and reordered master tap verification |
+| [eq-workspace-ui.js](../../../tests/eq-workspace-ui.js) (new) | Maintained five-width graphical/analyzer/lifecycle Page fixtures |
+| [eq-project-browser.js](../../../tests/eq-project-browser.js) (new) | UI .EHS restoration, actual playback, render hashes, WAV/MP3 decoding |
+| [README.md](../../../README.md), [IDEA.md](../../../IDEA.md), [EHS_FORMAT_SPEC.md](../../../EHS_FORMAT_SPEC.md), this report and architecture guide | Workflow, compatibility, evidence and next-stage handoff |
 
 No dependency or framework added. Live scheduling remains 25 ms / 150 ms;
 continuous-context offline scheduling, sidechain, instrument clips, Drum Rack,
@@ -188,7 +188,7 @@ No full app render occurs per frame. Native response probes/FFT arrays are bound
 per editor, and old branches are explicitly removed. This run does not measure
 retained browser-process memory, audio-thread CPU, battery or phone thermal load.
 Prior whole-project export benchmarks remain in
-[005A.7C](./BATCH_005A_7C_REPORT.md); they were not relabeled as new EQ benchmarks.
+[005A.7C](../batch-005a/BATCH_005A_7C_REPORT.md); they were not relabeled as new EQ benchmarks.
 
 ## Limitations and 005B.5 handoff
 

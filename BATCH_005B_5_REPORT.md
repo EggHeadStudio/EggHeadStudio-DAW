@@ -8,7 +8,18 @@ This is a coherent, tested mobile navigation and editing milestone, not full
 mobile production acceptance. Do not advance to 005B.6 on this evidence alone.
 No commit, push or deployment was performed.
 
-### Follow-up: Batch 005B.5B
+### Latest checkpoint: Batch 005B.5C
+
+The [005B.5C report](./BATCH_005B_5C_REPORT.md) and
+[acceptance matrix](./BATCH_005B_5C_ACCEPTANCE_MATRIX.md) now contain connected
+390px production evidence through take review, mastering and actual downloads,
+plus seven-size representative interactions. Sample re-entry, unsaved sample
+replacement and playhead gesture interception were fixed. The Node suite is
+**321/321**. Overall acceptance remains **INCOMPLETE**: repeated/restored audio
+exceeds the unchanged RMS-error bound even before archive round trip. Do not
+start 005B.6. Earlier sections below remain historical milestone evidence.
+
+### Earlier follow-up: Batch 005B.5B
 
 The [005B.5B report](./BATCH_005B_5B_REPORT.md) supersedes the remaining-work
 inventory below where explicitly verified: section touch editing, selected-track

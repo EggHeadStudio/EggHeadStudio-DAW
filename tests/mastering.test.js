@@ -99,6 +99,28 @@ test('master presets change real DSP parameters and are independent of defaults'
   assert.equal(MASTERING_PRESETS['Electronic / EDM'].eq.bands[0].gain,1.2);
 });
 
+test('mastering graph starts at committed parameters and smooths only live edits',()=>{
+  const context=fakeContext(),scheduled=[];
+  for(const name of ['createGain','createBiquadFilter']){
+    const create=context[name].bind(context);
+    context[name]=()=>{
+      const node=create();
+      for(const key of ['gain','frequency','Q'])node[key].setTargetAtTime=value=>{scheduled.push({key,value});node[key].value=value};
+      return node;
+    };
+  }
+  const settings=normalizeMasteringSettings({inputGainDb:-3,outputGainDb:-6,eq:{bands:[{frequency:1000,gain:6}]}});
+  const graph=createMasteringGraph(context,settings,context.createGain());
+  assert.equal(scheduled.length,0);
+  assert.equal(graph.bands[0].frequency.value,1000);
+  assert.equal(graph.bands[0].gain.value,6);
+  assert.equal(graph.inputTrim.gain.value,10**(-3/20));
+  graph.update({...settings,outputGainDb:-9});
+  assert.ok(scheduled.length>0);
+  assert.ok(scheduled.some(({key,value})=>key==='gain'&&value===10**(-9/20)));
+  graph.disconnect();
+});
+
 test('mastering controls persist through the existing project JSON format',()=>{
   const project={name:'Master Test',bpm:120,tracks:[],mastering:normalizeMasteringSettings({...DEFAULT_MASTERING_SETTINGS,preset:'Electronic / EDM',inputGainDb:2,outputGainDb:-2,limiter:{enabled:true,ceiling:-2.5,lookaheadMs:8,release:.2}})};
   const restored=parseProject(serializeProject(project));

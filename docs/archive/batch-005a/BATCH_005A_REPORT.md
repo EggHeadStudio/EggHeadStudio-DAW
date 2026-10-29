@@ -14,7 +14,7 @@ The integrated browser reported `document.visibilityState === 'hidden'`, even af
 
 ## 2. Deterministic workloads
 
-[tests/performance-fixture.js](./tests/performance-fixture.js) defines:
+[tests/performance-fixture.js](../../../tests/performance-fixture.js) defines:
 
 | Workload | Tracks | Program duration | Song-length stereo PCM |
 |---|---:|---:|---:|
@@ -83,7 +83,7 @@ The cache adds two float32 extrema per 256 source frames for each requested chan
 
 ### Sidechain CPU microbenchmark
 
-[tests/benchmark-sidechain.js](./tests/benchmark-sidechain.js) processes 30 seconds of stereo 48 kHz audio six times. Both versions ended with checksum **7.017781529575586**.
+[tests/benchmark-sidechain.js](../../../tests/benchmark-sidechain.js) processes 30 seconds of stereo 48 kHz audio six times. Both versions ended with checksum **7.017781529575586**.
 
 | Metric | Baseline | Optimized | Interpretation |
 |---|---:|---:|---|
@@ -123,7 +123,7 @@ The next step is a foreground standalone-browser profile with a retained determi
 
 ## 6. Audio-quality and compatibility evidence
 
-The full Node suite passes **119/119**, retaining all 110 existing tests and adding nine regressions in [tests/performance.test.js](./tests/performance.test.js):
+The full Node suite passes **119/119**, retaining all 110 existing tests and adding nine regressions in [tests/performance.test.js](../../../tests/performance.test.js):
 
 1. Exact cached range extrema, edge buckets, over-full-scale data, empty ranges and cache identity.
 2. Lazy requested-channel construction.
@@ -186,11 +186,11 @@ Syntax checks passed for all six modified production JavaScript modules and thre
 
 ## 9. Changed files and next steps
 
-- [src/portable-project.js](./src/portable-project.js), [src/archive-worker.js](./src/archive-worker.js): background validation, cancellation and Blob reuse.
-- [src/app.js](./src/app.js): import UI/staging cancellation and decode reuse.
-- [src/audio.js](./src/audio.js), [src/waveform.js](./src/waveform.js): cached exact waveform ranges and preview cleanup.
-- [src/sidechain-processor.js](./src/sidechain-processor.js): block-rate coefficient calculation.
-- [tests/performance.test.js](./tests/performance.test.js), [tests/performance-fixture.js](./tests/performance-fixture.js), [tests/benchmark-sidechain.js](./tests/benchmark-sidechain.js): regression and reproducible benchmark coverage.
-- [README.md](./README.md), [IDEA.md](./IDEA.md), [EHS_FORMAT_SPEC.md](./EHS_FORMAT_SPEC.md), this report: current status, evidence, architecture and limitations.
+- [src/portable-project.js](../../../src/portable-project.js), [src/archive-worker.js](../../../src/archive-worker.js): background validation, cancellation and Blob reuse.
+- [src/app.js](../../../src/app.js): import UI/staging cancellation and decode reuse.
+- [src/audio.js](../../../src/audio.js), [src/waveform.js](../../../src/waveform.js): cached exact waveform ranges and preview cleanup.
+- [src/sidechain-processor.js](../../../src/sidechain-processor.js): block-rate coefficient calculation.
+- [tests/performance.test.js](../../../tests/performance.test.js), [tests/performance-fixture.js](../../../tests/performance-fixture.js), [tests/benchmark-sidechain.js](../../../tests/benchmark-sidechain.js): regression and reproducible benchmark coverage.
+- [README.md](../../../README.md), [IDEA.md](../../../IDEA.md), [EHS_FORMAT_SPEC.md](../../../EHS_FORMAT_SPEC.md), this report: current status, evidence, architecture and limitations.
 
 Finish 005A before declaring readiness for 005B: establish valid completed medium/large profiles, implement a bounded archive/cache memory strategy, improve scheduling and recovery, then re-run audio/format and full-workflow regressions. Recommended 005B priorities remain physical iOS/Android touch/audio, browser compatibility, latency and synchronization, background/resume behavior, accessibility and responsive workflow usability. Preserve the long-term roadmap and separate deployment/independent audio-standard release gates.
