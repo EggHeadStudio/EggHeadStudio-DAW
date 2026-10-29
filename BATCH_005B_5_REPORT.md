@@ -2,34 +2,52 @@
 
 ## Status
 
-**BATCH 005B.5 INCOMPLETE - SPECIFIC REQUIREMENTS REMAIN**
+**BATCH 005B.5D COMPLETE — AUDIO REPEATABILITY VERIFIED**
 
-This is a coherent, tested mobile navigation and editing milestone, not full
-mobile production acceptance. Do not advance to 005B.6 on this evidence alone.
-No commit, push or deployment was performed.
+The connected and high-value variant workflows now pass for the documented
+Windows Chromium scope. Physical-device, other-engine and exhaustive gesture
+acceptance remain separate gates. No commit, push or deployment was performed.
 
-### Latest checkpoint: Batch 005B.5C
+### Latest checkpoint: Batch 005B.5D
+
+The [005B.5D report](./BATCH_005B_5D_REPORT.md) supersedes the earlier numerical
+blocker. Deterministic native pairwise sums for offline voices/tracks remove
+small variable polyphonic fan-in errors that the 20 Hz high-pass magnified.
+Reusable slots bound added nodes by peak window polyphony. Native EQ, filter
+settings, live smoothing, FFT routing, sidechain, limiter and schemas remain
+unchanged. Repeated/restored comparisons retain max 1e-4 / RMS 1e-6 bounds.
+The built inspector now loads the actual versioned renderer rather than source.
+
+The source/built connected 22-step workflow, seven-size representative matrix
+and additional take/sample/export/project variants are verified separately.
+These include metered take switching, Cancel/New Recording, scrolled Sample
+preview, numerical export progress/cancel, tagged release ZIPs and
+Save-then-New/import/reload safety. The Node suite is **324/324**, including
+all 321 prior tests. PWA planning may follow review; it was not implemented.
+
+### Historical checkpoint: Batch 005B.5C
 
 The [005B.5C report](./BATCH_005B_5C_REPORT.md) and
-[acceptance matrix](./BATCH_005B_5C_ACCEPTANCE_MATRIX.md) now contain connected
+[acceptance matrix](./BATCH_005B_5C_ACCEPTANCE_MATRIX.md) contain historical connected
 390px production evidence through take review, mastering and actual downloads,
 plus seven-size representative interactions. Sample re-entry, unsaved sample
 replacement and playhead gesture interception were fixed. The Node suite is
-**321/321**. Overall acceptance remains **INCOMPLETE**: repeated/restored audio
-exceeds the unchanged RMS-error bound even before archive round trip. Do not
-start 005B.6. Earlier sections below remain historical milestone evidence.
+**321/321** at that checkpoint. Overall acceptance was **INCOMPLETE**: repeated/restored audio
+exceeded the unchanged RMS-error bound even before archive round trip. Do not
+start 005B.6 on that failed evidence. Earlier sections below remain historical
+milestone evidence; the 005B.5D report records the resolution.
 
 ### Earlier follow-up: Batch 005B.5B
 
 The [005B.5B report](./BATCH_005B_5B_REPORT.md) supersedes the remaining-work
 inventory below where explicitly verified: section touch editing, selected-track
 Mixer/devices, 1-32-pad acceptance, actual phone-width WAV/MP3 downloads and
-empty-origin .EHS restoration now pass. The current Node baseline is **320/320**.
+empty-origin .EHS restoration passed. The Node baseline then was **320/320**.
 The original hidden-browser and large-payload harness blockers have been
 resolved using independently launched Edge and lossless binary test transport.
 The complete connected 22-step phone workflow and full gesture/responsive matrix
-are still open, so the overall status remains **INCOMPLETE**. Measurements below
-remain historical 005B.5 results; the follow-up contains the new exact evidence.
+were still open, so that checkpoint remained **INCOMPLETE**. Measurements below
+remain historical 005B.5 results; the latest checkpoint above records the closure.
 
 The [before/after audit](./BATCH_005B_5_MOBILE_UX_AUDIT.md) records the prioritized
 findings. Existing DSP, project schemas, .EHS v1, independent clips, Recording

@@ -1,7 +1,7 @@
 import {createTrackEffect,createTrackGraph} from '../src/audio.js';
 import {createMasteringGraph,normalizeMasteringSettings} from '../src/mastering.js';
 import {createEqAnalyzer} from '../src/eq-analyzer.js';
-import {createEqResponse,trackEqFilters} from '../src/eq-model.js';
+import {createEqResponse,masterEqFilters,trackEqFilters} from '../src/eq-model.js';
 
 const check=(condition,message)=>{if(!condition)throw new Error(message)};
 const rms=(data,start=12000)=>Math.sqrt(data.slice(start).reduce((sum,value)=>sum+value*value,0)/(data.length-start));
@@ -57,7 +57,19 @@ export async function runEqAudioAcceptance(){
   check(maximumDifference(master.getChannelData(0),masterTaps.getChannelData(0))<1e-7,'Master taps changed audio');
   const expected=eqFixture(responseContext),bypassError=maximumDifference(masterDry.getChannelData(0).subarray(12000),expected.getChannelData(0).subarray(12000));
   check(bypassError<1e-7,`Master EQ bypass is not unity: ${bypassError}`);
-  return{boostDb,cutDb,highpassDb,lowpassDb,responseDb,fixtures,masteringBoostDb,masterBypassError:bypassError};
+  const masterFixtures=[];
+  for(const kind of ['impulse','sweep','noise']){
+    const plain=await render(effect,{kind,master:true}),analyzed=await render(effect,{kind,master:true,taps:true});
+    const error=Math.max(...[0,1].map(channel=>maximumDifference(plain.getChannelData(channel),analyzed.getChannelData(channel))));
+    const stereo=maximumDifference(plain.getChannelData(1),Float32Array.from(plain.getChannelData(0),value=>-.5*value));
+    check(error<1e-7&&stereo<1e-7,`Master ${kind} taps/stereo changed: ${error}, ${stereo}`);
+    masterFixtures.push({kind,tapError:error,stereoError:stereo});
+  }
+  const masterResponse=createEqResponse(responseContext,512);
+  masterResponse.update(masterEqFilters(normalizeMasteringSettings({eq:{lowCut:10,highCut:22000,bands:[{type:'peaking',frequency:1000,gain:6,q:1}]}})));
+  const masterResponseDb=masterResponse.db[nearest];masterResponse.dispose();
+  check(Math.abs(masterResponseDb-masteringBoostDb)<.05,'Master graph disagrees with rendered boost.');
+  return{boostDb,cutDb,highpassDb,lowpassDb,responseDb,fixtures,masteringBoostDb,masterBypassError:bypassError,masterFixtures,masterResponseDb};
 }
 
 export async function runEqLiveAcceptance(){

@@ -334,7 +334,34 @@ Update this checklist only after relevant test evidence is recorded. A feature e
 
 ## 13. NEXT IMMEDIATE ACTION
 
-Continue **005B.5**, not 005B.6, from the current [005B.5C report](./BATCH_005B_5C_REPORT.md) and [interaction matrix](./BATCH_005B_5C_ACCEPTANCE_MATRIX.md), retaining [the mobile milestone report](./BATCH_005B_5_REPORT.md), [005B.5B follow-up](./BATCH_005B_5B_REPORT.md) and [prioritized audit](./BATCH_005B_5_MOBILE_UX_AUDIT.md). The connected 390px session now reaches sample Save/reuse, instruments, section duplication, synthetic recording, take trim/fades/placement, mobile mastering, actual WAV/MP3 downloads and empty-origin .EHS restoration. Source assets and settings restore, but repeated/restored renders exceed the unchanged RMS-error gate, including repeats without an archive. Resolve that mastering-EQ-path numerical blocker before claiming acceptance; do not lower signal levels or relax thresholds to pass. The current Node baseline is **321/321**. Sample re-entry/discard protection, edit-mode playhead interception and initial master parameter values were fixed; seven-size representative interactions pass, with full variants documented separately. Retain [BATCH_005B_4B_REPORT.md](./docs/archive/batch-005b/BATCH_005B_4B_REPORT.md), [BATCH_005B_4B_EFFECT_AUDIT.md](./docs/archive/batch-005b/BATCH_005B_4B_EFFECT_AUDIT.md), [BATCH_005B_4_EQ_ARCHITECTURE.md](./docs/archive/batch-005b/BATCH_005B_4_EQ_ARCHITECTURE.md), the 005B.3 workflow reports, [BATCH_005B_2_DESIGN_SYSTEM.md](./docs/archive/batch-005b/BATCH_005B_2_DESIGN_SYSTEM.md) and [BATCH_005A_7C_REPORT.md](./docs/archive/batch-005a/BATCH_005A_7C_REPORT.md) for established DSP/reliability. Continuous-context bounded offline scheduling and existing measured medium/large exports remain unchanged. ZIP output is chunked but input collection/extraction remain buffered. Physical-device/cross-engine acceptance and an explicitly approved deployment remain gates.
+Review the [005B.5D closure](./BATCH_005B_5D_REPORT.md) before planning PWA work.
+The connected source/built 22-step mobile workflow now passes the unchanged
+max 1e-4 / RMS 1e-6 repeated/restored audio gates. The cause was variable native
+polyphonic summation entering a numerically sensitive low-cut path, not archive
+corruption or changed EQ settings. Reusable, deterministic offline voice/track
+sum slots preserve native filters, live smoothing, stereo, sidechain and limiter.
+The built test resolves the actual versioned modules. All **324/324** Node
+tests pass, preserving the previous 321.
+
+Additional phone take switching/metered preview, Sample Cancel/New and protected
+replacement, visible shared sample transport, numerical export progress/cancel,
+metadata/artwork release packaging and New/import/reload safety are verified.
+Seven-size representative interactions remain distinct from exhaustive gesture
+and physical-device acceptance. No PWA or new instrument was implemented.
+Retain the historical [005B.5C report](./BATCH_005B_5C_REPORT.md),
+[interaction matrix](./BATCH_005B_5C_ACCEPTANCE_MATRIX.md),
+[mobile milestone](./BATCH_005B_5_REPORT.md),
+[005B.5B follow-up](./BATCH_005B_5B_REPORT.md),
+[prioritized audit](./BATCH_005B_5_MOBILE_UX_AUDIT.md),
+[shared-effects report](./docs/archive/batch-005b/BATCH_005B_4B_REPORT.md),
+[effect audit](./docs/archive/batch-005b/BATCH_005B_4B_EFFECT_AUDIT.md),
+[EQ architecture](./docs/archive/batch-005b/BATCH_005B_4_EQ_ARCHITECTURE.md),
+[design system](./docs/archive/batch-005b/BATCH_005B_2_DESIGN_SYSTEM.md) and
+[005A.7C reliability](./docs/archive/batch-005a/BATCH_005A_7C_REPORT.md).
+Continuous-context bounded scheduling and earlier medium/large measurements
+remain the foundation; only the 4-track workload was remeasured in 005B.5D.
+ZIP output is chunked but input collection/extraction remain buffered.
+Physical-device/cross-engine acceptance and approved deployment remain gates.
 
 
 ## Batch 005A.7-UX — Instrument Workflow Cleanup
@@ -465,7 +492,7 @@ gesture rollback tests bring the Node suite to 315. This milestone adds:
   the OS permits background recording.
 - Hidden/obscured EQ analyzers detach while another expanded editor covers them.
 
-The complete smartphone song-production workflow is **not yet verified**.
+At the 005B.5B checkpoint the complete smartphone workflow was not yet verified.
 005B.5B adds shared section actions with exact track/time bounds, scroll-safe
 clip edges, pointer cancellation/lost-capture handling and an expanded
 selected-track Mixer that retains state through Mute/Solo rerenders. Five more
@@ -477,8 +504,10 @@ isolated native Chromium. Large test payloads use lossless base64 transport
 instead of expensive numeric arrays; this is a harness fix, not an archive/DSP
 or audio-quality change.
 
-Continue the connected 22-step workflow, remaining Sample/Recording/Master/
-Export phone review and gesture/responsive matrix before 005B.6. Visible zoom
+The later [005B.5D closure](./BATCH_005B_5D_REPORT.md) verifies the connected
+22-step workflow, numerical repeatability/restoration and high-value
+Sample/Recording/Master/Export/project variants in Chromium, plus the
+representative seven-size matrix. Exhaustive gestures remain separate. Visible zoom
 controls remain the musical pinch alternative; there is no dedicated pinch
 handler. Android, iPhone, Firefox and Safari remain untested.
 See [the milestone report](./BATCH_005B_5_REPORT.md) for actual browser/audio

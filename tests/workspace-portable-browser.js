@@ -1,7 +1,8 @@
 // Browser-side PCM evidence; compression bounds host/browser transfer overhead.
 export async function inspectWorkspacePcm(reference=null){
   globalThis.ehsPcmStage='decode';
-  const {AudioEngine}=await import('../src/audio.js'),{getProjectAssetIds}=await import('../src/portable-project.js');
+  const entry=document.querySelector('script[type=module]').src;
+  const {AudioEngine}=await import(new URL('./audio.js',entry)),{getProjectAssetIds}=await import(new URL('./portable-project.js',entry));
   const project=JSON.parse(localStorage.getItem('pulse-project')),context=new OfflineAudioContext(2,1,48000),buffers=new Map(),assets=[];
   const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('pulse-studio-v1',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
   try{

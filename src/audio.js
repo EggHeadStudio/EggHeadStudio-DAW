@@ -5,6 +5,7 @@ import {isInstrumentClip} from './instrument-clips.js';
 import {instrumentEvents,scheduleInstrumentEvent} from './instrument-playback.js';
 import {renderOfflineWindows} from './offline-scheduler.js';
 import {trackEqFilters} from './eq-model.js';
+import {createOrderedAudioBus} from './ordered-audio-bus.js';
 
 export const uid=()=>crypto.randomUUID();
 export function patternLengthBeats(track){
@@ -354,16 +355,18 @@ export class AudioEngine{
   const sr=44100,masteringSettings=normalizeMasteringSettings(project.mastering||this.masteringSettings);
   const hasMasteringLimiter=!bypassMastering&&typeof globalThis.AudioWorkletNode==='function',latencyFrames=hasMasteringLimiter?Math.round(masteringSettings.limiter.lookaheadMs/1000*sr)+8:0,ctx=new OfflineAudioContext(2,Math.ceil((end+tail)*sr)+latencyFrames,sr),eq=ctx.createBiquadFilter(),comp=ctx.createDynamicsCompressor(),master=ctx.createGain();
   const hasSidechain=project.tracks.some(track=>(track.fx?.effects||[]).some(effect=>effect.enabled&&effect.type==='compressor'&&effect.params?.sidechain?.enabled));
-  const offlineTrackNodes=new Map(),voices=new Set();let masteringGraph=null,disposed=false;
+  const offlineTrackNodes=new Map(),voiceBuses=new Map(),masterBus=createOrderedAudioBus(ctx,eq),voices=new Set();let masteringGraph=null,disposed=false;
   const releaseVoices=(time=Infinity)=>{
    for(const voice of voices)if(voice.endTime<=time){
-    voice.source.disconnect();for(const node of voice.nodes)node.disconnect();voices.delete(voice);
+    voice.source.disconnect();for(const node of voice.nodes)node.disconnect();voice.busInput.disconnect();voices.delete(voice);
    }
   };
   const dispose=()=>{
    if(disposed)return;disposed=true;
    releaseVoices();
    for(const graph of offlineTrackNodes.values())graph.disconnect();
+   for(const bus of voiceBuses.values())bus.disconnect();
+   masterBus.disconnect();
    masteringGraph?.disconnect();eq.disconnect();comp.disconnect();master.disconnect();
   };
   try{
@@ -383,8 +386,9 @@ export class AudioEngine{
   const processorFailure=new Promise((_,reject)=>{rejectProcessor=reject});
   if(masteringGraph)watchGraphProcessors(masteringGraph,rejectProcessor);
   for(const track of project.tracks){
-   const graph=createTrackGraph(ctx,track,eq,null,project.bpm);
+   const graph=createTrackGraph(ctx,track,masterBus.addInput().input,null,project.bpm);
    offlineTrackNodes.set(track.id,graph);
+   voiceBuses.set(track.id,createOrderedAudioBus(ctx,graph.input));
    watchGraphProcessors(graph,rejectProcessor);
    graph.update(track,project.tracks.some(item=>item.solo),project.bpm,isTrackAudible(track,project.tracks));
   }
@@ -392,19 +396,19 @@ export class AudioEngine{
   const schedule=(from,to)=>{
    if(signal?.aborted)throw signal.reason||new DOMException('Offline rendering cancelled.','AbortError');
    for(const track of project.tracks){
-    const graph=offlineTrackNodes.get(track.id);
     for(const clip of track.clips){
      const when=clip.bar*bar,buffer=buffers.get(clip.asset);
      if(!buffer||clip.mute||when<from||when>=to)continue;
      const source=ctx.createBufferSource(),clipGain=ctx.createGain(),duration=clipDurationSeconds(clip);
-     source.buffer=buffer;source.playbackRate.value=clip.rate||1;source.connect(clipGain).connect(graph.input);
-     const voice={source,nodes:[clipGain],endTime:when+duration};voices.add(voice);
+     const busInput=voiceBuses.get(track.id).addInput();
+     source.buffer=buffer;source.playbackRate.value=clip.rate||1;source.connect(clipGain).connect(busInput.input);
+     const voice={source,nodes:[clipGain],busInput,endTime:when+duration};voices.add(voice);
      scheduleClipSource(ctx,source,clipGain,clip,when,0,duration);
     }
     if(from>=end)continue;
     for(const event of instrumentEvents(track,buffers,project.bpm,end/beat,from/beat,Math.min(end,to)/beat,patternBeats)){
-     const voice=scheduleInstrumentEvent(ctx,graph.input,event,from,Math.min(end,to),from,from===0);
-     if(voice)voices.add(voice);
+     const busInput=voiceBuses.get(track.id).addInput(),voice=scheduleInstrumentEvent(ctx,busInput.input,event,from,Math.min(end,to),from,from===0);
+     if(voice){voice.busInput=busInput;voices.add(voice)}else busInput.disconnect();
     }
    }
   };

@@ -82,24 +82,36 @@ Repeated Sample Studio opening no longer invokes stale teardown callbacks.
 Opening another library sample asks before discarding unsaved sample edits.
 New mastering graphs start at committed parameters; live edits retain smoothing.
 
-This is **not completed smartphone production acceptance**. The 005B.5C
-connected 390px workflow now runs from sample import/edit/save through two
+The [005B.5D closure](./BATCH_005B_5D_REPORT.md) verifies the connected
+390px workflow from sample import/edit/save through two
 instruments, section duplication, synthetic overdub, take trim/fades/placement,
 mobile mastering and actual WAV/MP3/.EHS downloads. The recorded tone is present
-in both decoded outputs. Empty-origin settings and source PCM hashes restore,
-but repeated/restored mastering renders **fail the unchanged RMS-error bound**,
-including repeats without an archive round trip. Do not advance to 005B.6.
-The Node baseline is **321/321**. Seven-size representative editing checks
-are recorded separately from remaining full gesture, recording and export
-variants. Musical timeline pinch zoom has visible zoom-button alternatives but no dedicated
+in both decoded outputs. Repeated and empty-origin restored renders now pass
+the unchanged max 1e-4 / RMS 1e-6 gates. Native polyphonic summation order,
+not damaged project audio or changed EQ settings, caused the earlier failure:
+offline voice/track inputs now use reusable, deterministic pairwise unity sums.
+Native EQ, live smoothing, FFT, sidechain and limiter DSP remain unchanged.
+The portable-audio test now uses the actual versioned modules on built pages.
+The Node baseline is **324/324**, preserving all 321 previous tests.
+
+Additional phone acceptance covers multiple saved takes and metered previews,
+Sample Cancel/New and unsaved-edit protection, real export progress/cancel,
+tagged WAV/MP3/artwork release ZIPs, Save-then-New and portable replacement/reload.
+The existing Sample Studio phone transport stays visible while scrolling;
+expanded editors return with Done. This is **tested Chromium acceptance, not
+physical smartphone certification**. Seven-size representative editing checks
+remain distinct from every possible gesture variant.
+Musical timeline pinch zoom has visible zoom-button alternatives but no dedicated
 pinch handler. No Android/iPhone,
 Firefox or Safari verification is claimed. See the
 [mobile audit](./BATCH_005B_5_MOBILE_UX_AUDIT.md) and
 [milestone report](./BATCH_005B_5_REPORT.md) and
 [005B.5B follow-up](./BATCH_005B_5B_REPORT.md) for historical evidence; the current
-[005B.5C report](./BATCH_005B_5C_REPORT.md) and
+[005B.5C report](./BATCH_005B_5C_REPORT.md) records the historical numerical failure;
+the [005B.5D report](./BATCH_005B_5D_REPORT.md) and
 [interaction matrix](./BATCH_005B_5C_ACCEPTANCE_MATRIX.md) identify exact results
-and blockers.
+and remaining device/gesture limits. PWA planning can follow review of this
+closure; no PWA or new instrument work is included here.
 
 The global transport stays at the top. **Project** groups New Project, portable
 Save/Open .EHS and legacy JSON operations. **Download JSON** is the former

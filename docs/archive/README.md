@@ -6,6 +6,7 @@ they are not the current project status.
 
 The current mobile milestone remains in the repository root:
 
+- [Batch 005B.5D repeatability and mobile closure](../../BATCH_005B_5D_REPORT.md)
 - [Batch 005B.5C report](../../BATCH_005B_5C_REPORT.md)
 - [Batch 005B.5C acceptance matrix](../../BATCH_005B_5C_ACCEPTANCE_MATRIX.md)
 - [Batch 005B.5B verification report](../../BATCH_005B_5B_REPORT.md)
