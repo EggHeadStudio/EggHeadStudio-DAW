@@ -8,6 +8,18 @@ This is a coherent, tested mobile navigation and editing milestone, not full
 mobile production acceptance. Do not advance to 005B.6 on this evidence alone.
 No commit, push or deployment was performed.
 
+### Follow-up: Batch 005B.5B
+
+The [005B.5B report](./BATCH_005B_5B_REPORT.md) supersedes the remaining-work
+inventory below where explicitly verified: section touch editing, selected-track
+Mixer/devices, 1-32-pad acceptance, actual phone-width WAV/MP3 downloads and
+empty-origin .EHS restoration now pass. The current Node baseline is **320/320**.
+The original hidden-browser and large-payload harness blockers have been
+resolved using independently launched Edge and lossless binary test transport.
+The complete connected 22-step phone workflow and full gesture/responsive matrix
+are still open, so the overall status remains **INCOMPLETE**. Measurements below
+remain historical 005B.5 results; the follow-up contains the new exact evidence.
+
 The [before/after audit](./BATCH_005B_5_MOBILE_UX_AUDIT.md) records the prioritized
 findings. Existing DSP, project schemas, .EHS v1, independent clips, Recording
 Studio, live Sample Studio effects and Mastering audition are preserved.

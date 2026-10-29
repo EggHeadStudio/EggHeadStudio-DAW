@@ -21,11 +21,12 @@ export class WorkspaceNavigation {
 let disposeShell=()=>{},expanded=null;
 export function closeExpandedEditor({focus=true}={}){
   if(!expanded)return false;
-  const {element,button,scroll,role,modal,onChange}=expanded;
+  const {element,button,scroll,role,modal,hidden,onAction,onChange}=expanded;
   button.setAttribute('aria-expanded','false');
   if(role===null)element.removeAttribute('role');else element.setAttribute('role',role);
   if(modal===null)element.removeAttribute('aria-modal');else element.setAttribute('aria-modal',modal);
   element.classList.remove('mobile-expanded-editor');element.querySelector('.mobile-editor-exit')?.remove();
+  element.hidden=hidden;element.removeEventListener('click',onAction,true);
   document.body.classList.remove('mobile-editor-open');expanded=null;
   if(focus&&button.isConnected)button.focus({preventScroll:true});
   window.scrollTo({top:scroll});onChange();return true;
@@ -93,25 +94,29 @@ export function mountExpandedEditors(root,{blocked,onBlocked,onChange=()=>{}}){
   const entries=[
     ['.piano-editor','Piano Roll'],['.step-scroll','Step Sequencer'],
     ['.selected-pad-editor','Pad inspector'],['.workflow-stage','Sample stage'],
-    ['.graphical-eq','EQ'],['.bottom-panel','Devices']
+    ['.graphical-eq','EQ'],['.bottom-panel','Devices'],['.right-mixer.track-selected','Track Mixer']
   ];
   for(const [selector,name]of entries)for(const [index,element]of [...root.querySelectorAll(selector)].entries()){
-    if(element.closest('[hidden]'))continue;
+    const mixer=selector==='.right-mixer.track-selected';
+    const key=`${selector}:${element.closest('[data-device-id]')?.dataset.deviceId||element.dataset.mobileEditorId||index}`;
+    if(element.closest('[hidden]')&&!mixer)continue;
     if(element.dataset.mobileExpandable)continue;
     element.dataset.mobileExpandable='true';
     const button=document.createElement('button');button.type='button';button.className='mobile-expand';button.textContent=`Expand ${element.querySelector('h3')?.textContent||name}`;
     button.setAttribute('aria-expanded','false');
-    element.before(button);
+    if(mixer){button.textContent='Selected track Mixer';root.querySelector('.editor-tools').append(button)}else element.before(button);
     button.onclick=()=>{
       if(blocked()){onBlocked();return}
       closeExpandedEditor({focus:false});
-      const scroll=window.scrollY,exit=document.createElement('button');exit.type='button';exit.className='mobile-editor-exit';exit.textContent='Done - return to workspace';
+      const scroll=window.scrollY,hidden=element.hidden,exit=document.createElement('button');exit.type='button';exit.className='mobile-editor-exit';exit.textContent='Done - return to workspace';
       exit.onclick=()=>{button.setAttribute('aria-expanded','false');closeExpandedEditor();onChange()};
       element.prepend(exit);element.classList.add('mobile-expanded-editor');document.body.classList.add('mobile-editor-open');
-      expanded={element,button,scroll,key:`${selector}:${index}`,role:element.getAttribute('role'),modal:element.getAttribute('aria-modal'),onChange};
+      const onAction=event=>{if(event.target.closest('[data-fx],[data-track-settings]'))closeExpandedEditor({focus:false})};
+      element.addEventListener('click',onAction,true);element.hidden=false;
+      expanded={element,button,scroll,hidden,onAction,key,role:element.getAttribute('role'),modal:element.getAttribute('aria-modal'),onChange};
       element.setAttribute('role','dialog');element.setAttribute('aria-modal','true');
       button.setAttribute('aria-expanded','true');exit.focus({preventScroll:true});onChange();
     };
-    if(restore===`${selector}:${index}`)button.click();
+    if(restore===key)button.click();
   }
 }

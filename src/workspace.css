@@ -228,19 +228,19 @@ button:disabled,.parameter-disabled{opacity:.55}
 .workspace .track-label .track-actions{gap:2px;margin:2px 0}
 .workspace .track-label .track-actions button,.workspace .track-label [data-new-pattern]{min-height:24px;padding:2px 4px;font-size:10px}
 .workspace .right-mixer:not(.master-strip){height:100%;min-height:0;box-sizing:border-box}
-.workspace .track-row:not(.track-expanded) .right-mixer{
+.workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor){
   padding:2px 4px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:38px 38px;gap:1px 4px;align-content:center;
 }
-.track-row:not(.track-expanded) .right-mixer>.strip-title{display:none}
-.workspace .track-row:not(.track-expanded) .right-mixer>label{grid-row:1;grid-column:auto;display:flex;flex-direction:column;gap:0;line-height:12px}
-.track-row:not(.track-expanded) .right-mixer .parameter-control{display:flex;gap:2px;align-items:center;height:26px}
-.track-row:not(.track-expanded) .right-mixer .parameter-control>input[type=range]{width:100%;min-width:28px;min-height:26px;height:26px;padding:0}
-.track-row:not(.track-expanded) .right-mixer .parameter-number,.track-row:not(.track-expanded) .right-mixer .parameter-control>button{display:none}
-.track-row:not(.track-expanded) .right-mixer .parameter-control>output{font-size:10px;min-width:34px}
-.workspace .track-row:not(.track-expanded) .right-mixer .stereo-meter{grid-row:2;grid-column:2;min-height:0;gap:2px}
-.track-row:not(.track-expanded) .meter-peak{display:none}
-.workspace .track-row:not(.track-expanded) .right-mixer .track-actions{grid-row:2;grid-column:1;display:grid;grid-template-columns:repeat(4,1fr);gap:1px;align-content:center}
-.workspace .track-row:not(.track-expanded) .right-mixer .track-actions button{min-width:0;min-height:32px;padding:1px;font-size:10px}
+.track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor)>.strip-title{display:none}
+.workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor)>label{grid-row:1;grid-column:auto;display:flex;flex-direction:column;gap:0;line-height:12px}
+.track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .parameter-control{display:flex;gap:2px;align-items:center;height:26px}
+.track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .parameter-control>input[type=range]{width:100%;min-width:28px;min-height:26px;height:26px;padding:0}
+.track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .parameter-number,.track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .parameter-control>button{display:none}
+.track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .parameter-control>output{font-size:10px;min-width:34px}
+.workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .stereo-meter{grid-row:2;grid-column:2;min-height:0;gap:2px}
+.track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .meter-peak{display:none}
+.workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .track-actions{grid-row:2;grid-column:1;display:grid;grid-template-columns:repeat(4,1fr);gap:1px;align-content:center}
+.workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .track-actions button{min-width:0;min-height:32px;padding:1px;font-size:10px}
 .workspace .bottom-panel{height:var(--device-panel-height,320px);min-height:160px;max-height:65%;resize:none;position:relative;padding-top:12px}
 .device-panel-resize{height:10px;position:absolute;top:0;left:0;right:0;cursor:ns-resize;touch-action:none;border-top:2px solid var(--border)}
 .device-panel-controls{display:flex;gap:4px;flex-wrap:wrap}
@@ -253,10 +253,10 @@ button:disabled,.parameter-disabled{opacity:.55}
 .devices-compact .device-chain-scroll>.effect-device header{gap:2px}
 .workspace .clip-selected{outline:2px solid var(--focus);outline-offset:-2px}
 @media(max-width:850px){
-  .workspace .track-row:not(.track-expanded) .right-mixer .parameter-control>input[type=range]{min-height:28px}
+  .workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .parameter-control>input[type=range]{min-height:28px}
   .workspace .track-label .track-actions button,.workspace .track-label [data-new-pattern]{min-height:26px}
   .track-layout-controls button{min-height:26px}
-  .workspace .track-row:not(.track-expanded) .right-mixer .track-actions button{min-height:36px}
+  .workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .track-actions button{min-height:36px}
 }
 .workflow-nav{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
 .workflow-nav button{min-height:40px}

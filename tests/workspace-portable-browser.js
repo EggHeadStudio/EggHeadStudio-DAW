@@ -1,5 +1,6 @@
 // Browser-side PCM evidence; compression bounds host/browser transfer overhead.
 export async function inspectWorkspacePcm(reference=null){
+  globalThis.ehsPcmStage='decode';
   const {AudioEngine}=await import('../src/audio.js'),{getProjectAssetIds}=await import('../src/portable-project.js');
   const project=JSON.parse(localStorage.getItem('pulse-project')),context=new OfflineAudioContext(2,1,48000),buffers=new Map(),assets=[];
   const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('pulse-studio-v1',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
@@ -12,10 +13,15 @@ export async function inspectWorkspacePcm(reference=null){
       assets.push({id,frames:buffer.length,sampleRate:buffer.sampleRate,hashes});buffers.set(id,buffer);
     }
   }finally{db.close()}
+  globalThis.ehsPcmStage='render';
   const buffer=await new AudioEngine().render(project,buffers),shape={frames:buffer.length,sampleRate:buffer.sampleRate,channels:buffer.numberOfChannels};
+  globalThis.ehsPcmStage='rendered';
   if(reference){
     if(JSON.stringify(shape)!==JSON.stringify(reference.shape)||JSON.stringify(assets)!==JSON.stringify(reference.assets))throw new Error('Portable shape or source PCM changed.');
-    const bytes=await new Response(new Blob([new Uint8Array(reference.compressed)]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer(),original=new Float32Array(bytes);
+    globalThis.ehsPcmStage='decompress-reference';
+    const compressed=Uint8Array.from(atob(reference.compressedBase64),character=>character.charCodeAt(0));
+    const bytes=await new Response(new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer(),original=new Float32Array(bytes);
+    globalThis.ehsPcmStage='compare';
     let maximum=0,square=0,energy=0,peak=0;
     for(let channel=0;channel<buffer.numberOfChannels;channel++){
       const data=buffer.getChannelData(channel);for(let frame=0;frame<data.length;frame++){
@@ -31,23 +37,29 @@ export async function inspectWorkspacePcm(reference=null){
   const pcm=new Float32Array(buffer.length*buffer.numberOfChannels);
   for(let channel=0;channel<buffer.numberOfChannels;channel++)pcm.set(buffer.getChannelData(channel),channel*buffer.length);
   const compressed=new Uint8Array(await new Response(new Blob([pcm]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
-  return{shape,assets,compressed:Array.from(compressed)};
+  let binary='';for(let offset=0;offset<compressed.length;offset+=32768)binary+=String.fromCharCode(...compressed.subarray(offset,offset+32768));
+  return{shape,assets,compressedBase64:btoa(binary)};
 }
 
 // Host-side fixture: use a genuinely empty origin; no separate-context claim.
-export async function runWorkspacePortableAcceptance(page,{cleanOrigin}){
+export async function runWorkspacePortableAcceptance(page,{cleanOrigin,width=1280,onStage=()=>{}}){
   const check=(condition,message)=>{if(!condition)throw new Error(message)};
+  await page.setViewportSize({width,height:1100});
+  check(await page.evaluate(()=>document.visibilityState==='visible'),'Portable playback requires a genuinely visible browser document.');
   const capture=async action=>{
-    await page.evaluate(()=>{
-      globalThis.ehs4bDownload=null;globalThis.ehs4bDownloadError=null;globalThis.ehs4bAnchor=HTMLAnchorElement.prototype.click;
-      HTMLAnchorElement.prototype.click=function(){if(this.download){const name=this.download;fetch(this.href).then(r=>r.arrayBuffer()).then(bytes=>globalThis.ehs4bDownload={name,bytes:Array.from(new Uint8Array(bytes))}).catch(error=>globalThis.ehs4bDownloadError=error.message);return}globalThis.ehs4bAnchor.call(this)};
-    });
-    try{
-      await action();await page.waitForFunction(()=>globalThis.ehs4bDownload||globalThis.ehs4bDownloadError,null,{timeout:60000});
-      return await page.evaluate(()=>{if(globalThis.ehs4bDownloadError)throw new Error(globalThis.ehs4bDownloadError);return globalThis.ehs4bDownload});
-    }finally{await page.evaluate(()=>{HTMLAnchorElement.prototype.click=globalThis.ehs4bAnchor;delete globalThis.ehs4bAnchor;delete globalThis.ehs4bDownload;delete globalThis.ehs4bDownloadError})}
+    onStage('download-start');
+    const [download]=await Promise.all([page.waitForEvent('download',{timeout:60000}),action()]);
+    onStage('download-received');
+    const failure=await download.failure();check(!failure,`Download failed: ${failure}`);
+    onStage('download-complete');
+    const path=await download.path();check(path,'Downloaded file could not be read.');
+    const {readFile}=await import('node:fs/promises'),bytes=await readFile(path);
+    onStage('download-read');
+    return{name:download.suggestedFilename(),base64:bytes.toString('base64'),byteLength:bytes.length};
   };
+  onStage('reference-render');
   const reference=await page.evaluate(async()=>await(await import('./tests/workspace-portable-browser.js')).inspectWorkspacePcm());
+  onStage('repeated-render');
   const repeated=await page.evaluate(async reference=>await(await import('./tests/workspace-portable-browser.js')).inspectWorkspacePcm(reference),reference);
   const snapshot=await page.evaluate(()=>JSON.parse(localStorage.getItem('pulse-project')));
   if(await page.locator('.project-menu').getAttribute('open')===null)await page.locator('.project-menu>summary').click();
@@ -59,23 +71,26 @@ export async function runWorkspacePortableAcceptance(page,{cleanOrigin}){
       try{return{autosave:localStorage.getItem('pulse-project'),assets:await new Promise((resolve,reject)=>{const r=db.transaction('assets').objectStore('assets').count();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}}finally{db.close()}
     });
     check(initial.autosave===null&&initial.assets===0,'Portable target was not empty.');
-    await page.evaluate(({name,bytes})=>{const input=document.querySelector('#importEhs'),transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array(bytes)],name,{type:'application/zip'}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}))},archive);
+    await page.evaluate(({name,base64})=>{const input=document.querySelector('#importEhs'),transfer=new DataTransfer();transfer.items.add(new File([Uint8Array.from(atob(base64),character=>character.charCodeAt(0))],name,{type:'application/zip'}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}))},archive);
     await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Portable project opened'),null,{timeout:60000});
     const restored=await page.evaluate(()=>JSON.parse(localStorage.getItem('pulse-project')));
     check(JSON.stringify(restored.tracks)===JSON.stringify(snapshot.tracks)&&JSON.stringify(restored.mastering)===JSON.stringify(snapshot.mastering),'Portable instruments/clips/effects changed.');
     const after=await page.evaluate(async reference=>await(await import('./tests/workspace-portable-browser.js')).inspectWorkspacePcm(reference),reference);
+    onStage('restored-playback');
     await page.locator('#play').click();await page.locator('.eq-plot').scrollIntoViewIfNeeded();
     await page.waitForFunction(()=>Number(document.querySelector('.graphical-eq')?.dataset.spectrumPeakHz)>950&&Number(document.querySelector('.graphical-eq')?.dataset.spectrumPeakHz)<1050);
     const playbackHz=await page.evaluate(()=>Number(document.querySelector('.graphical-eq').dataset.spectrumPeakHz));
-    await page.locator('#stop').click();await page.locator('[data-view=export]').click();
+    await page.locator('#stop').click();
+    if(width<=850){await page.locator('[data-mobile-switch]').click();await page.locator('[data-mobile-workspace=export]').click()}
+    else await page.locator('[data-view=export]').click();
     const outputs=[];
     for(const format of ['wav','mp3']){
       await page.locator('#exportFormat').selectOption(format);
       const file=await capture(()=>page.locator('#exportStart').click());
-      const audio=await page.evaluate(async bytes=>await(await import('./tests/eq-project-browser.js')).inspectDownloadedEqAudio(bytes),file.bytes);
+      const audio=await page.evaluate(async base64=>await(await import('./tests/eq-project-browser.js')).inspectDownloadedEqAudio(Uint8Array.from(atob(base64),character=>character.charCodeAt(0))),file.base64);
       check(Math.abs(20*Math.log10(audio.rms/after.rms))<.15,`${format} output did not match committed mix level.`);
       outputs.push({format,...audio});
     }
-    return{initial,isolatedOrigin:true,isolatedContext:false,archiveBytes:archive.bytes.length,settingsEqual:true,sourcePcmIdentical:true,repeated,after,playbackHz,outputs};
+    return{width,actualDownloads:true,initial,isolatedOrigin:true,isolatedContext:false,archiveBytes:archive.byteLength,settingsEqual:true,sourcePcmIdentical:true,repeated,after,playbackHz,outputs};
   }finally{await page.goto(original);await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'))}
 }

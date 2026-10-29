@@ -472,8 +472,8 @@ function renderSamplerBlocks(){
 }
 function render(){
  workspaceNavigation.sync(view);
- closeExpandedEditor({focus:false});
  if(renderedWorkspace!==view){
+  closeExpandedEditor({focus:false});
   stopLibraryPreview();
   if(renderedWorkspace==='sample')stopSampleStudioPreview();
   if(renderedWorkspace==='master')stopMasteringPlayback();

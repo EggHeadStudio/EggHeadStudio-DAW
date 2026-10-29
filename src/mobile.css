@@ -10,6 +10,9 @@
 .sampler-studio button:is(.piano-key,.piano-note,.velocity-bar){min-height:0}
 .piano-world[data-touch-mode=scroll] .piano-note,.piano-world[data-touch-mode=select] .piano-note{touch-action:pan-x pan-y}
 .piano-world[data-touch-mode=scroll] .piano-note{cursor:grab}
+.section-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%}
+.range-edge{padding:0;border:0;border-radius:0}
+.range-edge:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 @media(max-width:850px){
   :root{--mobile-nav-height:calc(56px + env(safe-area-inset-bottom))}
   body{padding-bottom:var(--mobile-nav-height)}
@@ -52,4 +55,17 @@
   .step-grid{grid-template-columns:75px repeat(var(--step-count),minmax(36px,1fr))}
   .step-scroll.mobile-expanded-editor .step-grid{width:max-content}
   .recording-studio .recording-controls{top:0}
+  .range-toolbar{max-height:40dvh;overflow:auto}
+  .range-toolbar :is(button,input,select){min-height:44px}
+  .range-toolbar select{max-width:180px}
+  .workspace .arrangement:not(.clip-edit-mode):not(.range-mode) .clip-handle{pointer-events:none}
+  .workspace .arrangement-loop{height:40px}
+  .workspace .arrangement-loop button{width:32px;min-height:40px}
+  .right-mixer.mobile-expanded-editor{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:16px}
+  .right-mixer.mobile-expanded-editor .strip-title{font-size:16px;flex:none}
+  .right-mixer.mobile-expanded-editor label{font-size:14px}
+  .right-mixer.mobile-expanded-editor .parameter-control{max-width:100%;width:100%}
+  .right-mixer.mobile-expanded-editor .track-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .right-mixer.mobile-expanded-editor .track-actions button{min-height:44px;padding:8px 12px;font-size:14px}
+  .right-mixer.mobile-expanded-editor .stereo-meter{min-height:28px;flex:none}
 }

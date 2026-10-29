@@ -68,13 +68,28 @@ do not close the full phone production workflow or hardware/browser gates.
 
 ## Cross-workspace regression checklist
 
-- [ ] Arrangement gestures, range/section editing and selected-track Mixer.
+005B.5B follow-up: the mixed Audio/Sampler/Drum Arrangement fixture now passes
+at 390px in both source and built-subpath application. It verifies movement at
+31.19921875/39/48.75 px per beat, both trims, scrolled ruler seek, loop edges,
+cancel rollback, mixed section duplication/Undo/Redo/paste, selected Mixer,
+actual meter activity and device bypass/order/removal. A separate actual mobile
+Rack fixture passes one through 32 pads, different samples, safe removal,
+orphan-note mapping, velocity/length and exact reload.
+
+The portability follow-up uses an independently launched native Edge browser
+with genuine visible document state, not a visibility override. Actual downloads
+and empty-origin restoration passed at 390px. A separate large numeric-array
+automation transfer stall was resolved using base64 without changing audio or
+error thresholds. See [005B.5B](./BATCH_005B_5B_REPORT.md). These are not a
+connected 22-step mobile production acceptance or physical-device certification.
+
+- [x] Tested 390px Arrangement gestures, range/section editing and selected-track Mixer; full interaction matrix remains open.
 - [x] Sampler/Piano Roll Draw/Select/Scroll, velocity, cancellation and source.
-- [ ] Drum Rack pad/sample/step/velocity workflow.
+- [x] Drum Rack 1-32-pad/sample/step/velocity/removal/reload workflow at 390px; seven layout sizes.
 - [x] Sample waveform, live effects, Save once and instrument reuse (shared regression scope).
 - [x] Recording guarded navigation, dry capture and suspended-context recovery (synthetic).
 - [x] Mastering live audition, EQ/FFT and preserved analysis semantics (shared regression scope).
-- [ ] Export WAV/MP3 and clean-origin .EHS restoration.
+- [x] Actual 390px WAV/MP3 downloads and clean-origin .EHS restoration; full connected phone workflow remains open.
 - [x] Six widths plus one landscape layout; physical-device/cross-engine gates documented.
 
 Execution results and remaining requirements will be recorded in

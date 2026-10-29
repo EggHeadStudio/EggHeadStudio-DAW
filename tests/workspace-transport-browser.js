@@ -20,7 +20,7 @@ export async function runWorkspaceTransportAcceptance(page){
     await page.locator('#emptyPattern').click();await page.locator('.track-setup button[type=submit]').click();
     await page.locator('.source-configuration>summary').click();
     await numeric('#samplerAttack',.02);await numeric('#samplerFineTune',10);
-    const lane=page.locator('.piano-lane[data-midi="60"]');await lane.scrollIntoViewIfNeeded();await lane.click({position:{x:10,y:8},force:true});
+    const lane=page.locator('.piano-lane[data-midi="60"]');await lane.hover({position:{x:10,y:8}});await lane.click({position:{x:10,y:8}});
     await songSpace();await page.locator('[data-view=sample]').click();await page.locator('#makeRack').click();
     await page.locator('#emptyPattern').click();await page.locator('.track-setup button[type=submit]').click();
     await page.locator('[data-step-pad="0"][data-step="0"]').click();await numeric('[data-pad-volume]',.7);await page.locator('#previewPad').click();await songSpace();

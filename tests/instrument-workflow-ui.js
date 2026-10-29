@@ -48,7 +48,7 @@ export async function runInstrumentWorkflowAcceptance(page){
   await pick('#chooseSamplerSample','tone');await click('#previewSamplerSample');
   await click('#backArrange');await click('[data-new-pattern="1"]');await click('dialog button[type=submit]');
   await click('#openPiano');
-  const lane=page.locator('.piano-lane[data-midi="60"]');await lane.scrollIntoViewIfNeeded();await lane.click({position:{x:10,y:8},force:true});
+  const lane=page.locator('.piano-lane[data-midi="60"]');await lane.hover({position:{x:10,y:8}});await lane.click({position:{x:10,y:8}});
   track=(await read()).tracks[1];check(track.patterns[0].notes.length===1,'Selected pattern note missing.');
   await click('#openTrackDevices');await page.locator('#addTrackEffect').selectOption('utility');
   await page.getByRole('spinbutton',{name:'Gain (dB), numeric entry (dB)',exact:true}).fill('-6');

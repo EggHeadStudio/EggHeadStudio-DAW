@@ -329,7 +329,7 @@ Update this checklist only after relevant test evidence is recorded. A feature e
 
 ## 13. NEXT IMMEDIATE ACTION
 
-Continue **005B.5**, not 005B.6, from [the mobile milestone report](./BATCH_005B_5_REPORT.md) and [prioritized audit](./BATCH_005B_5_MOBILE_UX_AUDIT.md). Compact mobile navigation, guarded Back/workspace switching, expanded existing editors and explicit Piano Roll modes are implemented. Complete the remaining Arrangement/Mixer/gesture and 22-step phone production acceptance before claiming mobile completion. Retain `BATCH_005B_4B_REPORT.md`, `BATCH_005B_4B_EFFECT_AUDIT.md`, `BATCH_005B_4_EQ_ARCHITECTURE.md`, the 005B.3 workflow reports, `BATCH_005B_2_DESIGN_SYSTEM.md` and `BATCH_005A_7C_REPORT.md` for established DSP/reliability. Continuous-context bounded offline scheduling and existing measured medium/large exports remain unchanged. ZIP output is chunked but input collection/extraction remain buffered. Physical-device/cross-engine acceptance and an explicitly approved deployment remain gates.
+Continue **005B.5**, not 005B.6, from [the mobile milestone report](./BATCH_005B_5_REPORT.md), [005B.5B follow-up](./BATCH_005B_5B_REPORT.md) and [prioritized audit](./BATCH_005B_5_MOBILE_UX_AUDIT.md). Compact mobile navigation, guarded Back/workspace switching, expanded existing editors and explicit Piano Roll modes are implemented. The follow-up verifies mixed section editing, selected-track Mixer/devices, 1-32 pads and phone-width portable/audio downloads. Finish the connected 22-step phone production workflow and remaining gesture/responsive acceptance before claiming completion. Retain `BATCH_005B_4B_REPORT.md`, `BATCH_005B_4B_EFFECT_AUDIT.md`, `BATCH_005B_4_EQ_ARCHITECTURE.md`, the 005B.3 workflow reports, `BATCH_005B_2_DESIGN_SYSTEM.md` and `BATCH_005A_7C_REPORT.md` for established DSP/reliability. Continuous-context bounded offline scheduling and existing measured medium/large exports remain unchanged. ZIP output is chunked but input collection/extraction remain buffered. Physical-device/cross-engine acceptance and an explicitly approved deployment remain gates.
 
 
 ## Batch 005A.7-UX — Instrument Workflow Cleanup
@@ -461,9 +461,21 @@ gesture rollback tests bring the Node suite to 315. This milestone adds:
 - Hidden/obscured EQ analyzers detach while another expanded editor covers them.
 
 The complete smartphone song-production workflow is **not yet verified**.
-Continue pinch/two-finger interaction, selected-track mobile Mixer, Arrangement
-section-edit acceptance and remaining Drum/Sample/Recording/Master/Export mobile
-workflows before 005B.6. Android, iPhone, Firefox and Safari remain untested.
+005B.5B adds shared section actions with exact track/time bounds, scroll-safe
+clip edges, pointer cancellation/lost-capture handling and an expanded
+selected-track Mixer that retains state through Mute/Solo rerenders. Five more
+tests bring the suite to **320/320**. Real 390px touch acceptance covers zoomed
+move/trim, loop/seek, mixed section duplication/paste and Mixer/device controls.
+A 1-32-pad test covers safe removal, orphan mappings and exact reload.
+Actual phone-width .EHS/WAV/MP3 downloads pass numerical restoration checks in
+isolated native Chromium. Large test payloads use lossless base64 transport
+instead of expensive numeric arrays; this is a harness fix, not an archive/DSP
+or audio-quality change.
+
+Continue the connected 22-step workflow, remaining Sample/Recording/Master/
+Export phone review and gesture/responsive matrix before 005B.6. Visible zoom
+controls remain the musical pinch alternative; there is no dedicated pinch
+handler. Android, iPhone, Firefox and Safari remain untested.
 See [the milestone report](./BATCH_005B_5_REPORT.md) for actual browser/audio
 measurements, phase status and cross-workspace regression checklist.
 

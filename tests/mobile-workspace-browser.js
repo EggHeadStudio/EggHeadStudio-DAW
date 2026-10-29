@@ -60,8 +60,9 @@ export async function runMobileWorkspaceAcceptance(page){
     const tapLane=async(midi,beat)=>{
       const lane=page.locator(`.piano-lane[data-midi="${midi}"]`);await lane.scrollIntoViewIfNeeded();
       await page.locator('#pianoScroll').evaluate(element=>{element.scrollLeft=0});
+      await lane.hover({position:{x:beat*40+3,y:11}});
       const box=await lane.boundingBox();await touch(cdp,box.x+beat*40+3,box.y+box.height/2);
-      await page.waitForTimeout(100);
+      await page.waitForFunction(({midi,beat})=>[...document.querySelectorAll(`.piano-lane[data-midi="${midi}"] .piano-note`)].some(e=>Math.abs(parseFloat(e.style.left)-beat*40)<1),{midi,beat});
     };
     await tapLane(60,1);await tapLane(62,2);
     check(await page.locator('.piano-note').count()===2,'Touch drawing created missing/extra notes.');
@@ -91,6 +92,7 @@ export async function runMobileWorkspaceAcceptance(page){
     const velocityBefore=await velocity.evaluate(e=>e.style.height),velocityBox=await velocity.boundingBox();
     await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:velocityBox.x+velocityBox.width/2,y:velocityBox.y+velocityBox.height/2}]});
     await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:velocityBox.x+velocityBox.width/2,y:velocityBox.y-15}]});
+    await page.waitForFunction(before=>document.querySelector('.velocity-bar')?.style.height!==before,velocityBefore);
     check(await velocity.evaluate(e=>e.style.height)!==velocityBefore,'Velocity cancellation fixture did not actually edit a bar.');
     await cdp.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});
     check(await velocity.evaluate(e=>e.style.height)===velocityBefore,'Cancelled velocity did not restore bar.');
@@ -154,7 +156,7 @@ export async function runMobileRecordingSafety(page){
       check(await page.locator('#stop').isEnabled(),'Emergency Stop was disabled.');
       await page.evaluate(()=>globalThis.mobileResolveMic());await page.waitForFunction(()=>globalThis.mobileStudio.state==='recording');
       check(await page.locator('[data-mobile-arrange]').isDisabled(),'Navigation escaped active capture.');
-      await page.waitForTimeout(500);
+      await page.waitForFunction(()=>globalThis.mobileStudio.capture?.frames>=16384,null,{timeout:15000});
       await page.evaluate(()=>globalThis.mobileStudio.engine.ctx.suspend());
       await page.waitForFunction(()=>globalThis.mobileStudio.state==='idle',null,{timeout:15000});
       const result=await page.evaluate(()=>{

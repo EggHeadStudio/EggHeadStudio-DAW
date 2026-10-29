@@ -43,7 +43,10 @@ musical-position, Loop and Return-to-Start controls; Project retains JSON/.EHS.
 Desktop navigation and transport controls return at larger widths.
 
 **Expand** opens the existing Piano Roll, Step Sequencer, pad inspector, sample
-stage, graphical EQ or Device Panel in a phone-sized editor. **Done**, Back or
+stage, graphical EQ or Device Panel in a phone-sized editor. Arrangement's
+**Selected track Mixer** opens the selected track's actual fader, pan, Mute/Solo,
+meters and FX access without scrolling to the right-side desktop Mixer.
+**Done**, Back or
 Escape closes it; controls are not cloned and no new DSP graph is created.
 The Piano Roll includes:
 
@@ -53,7 +56,16 @@ The Piano Roll includes:
 - Cancelled note/velocity gestures restore their pre-gesture data, selection
   and Undo/Redo history. Normal commits retain existing velocity/model behavior.
 
-Arrangement's Range and Clip Edit modes are mutually exclusive. Mobile
+Arrangement's **Scroll / select**, **Select Range** and **Edit Clips (touch)**
+modes are mutually exclusive. Scroll mode does not trim a clip accidentally
+when panning over its edge. Range selection exposes touch/keyboard boundary
+handles, exact Start/End beats, First/Last track selectors, **Copy section**,
+**Duplicate section** and **Paste at beat**. Duplicate places the complete
+section immediately after its end; Paste uses the chosen beat and the range's
+first track, preserving relative timing, gaps, source phase and patterns.
+These commands reuse the shared clipboard and Arrangement Undo/Redo, not audio
+asset copies. Cancelled range, clip, loop and seek drags restore the valid
+pre-gesture state. Mobile
 navigation is guarded during Recording Studio permission requests, recording,
 calibration and unsaved recovery, plus Sample Studio microphone requests and
 capture. Explicit Stop/recovery actions remain separate. Background/suspended
@@ -61,12 +73,18 @@ capture is not promised: existing Recording Studio interruption handling saves
 buffered dry audio where possible.
 
 This is a **tested foundation, not completed smartphone production acceptance**.
-Pinch zoom, expanded selected-track Mixer ergonomics, comprehensive Arrangement
-touch/section editing, remaining workspace optimizations and the complete
-22-step phone production/.EHS/WAV/MP3 workflow remain open. No Android/iPhone,
+The 005B.5B follow-up verifies zoomed Arrangement touch operations, mixed-track
+section duplication/paste, Mixer/device controls and a 1-32-pad Drum Rack.
+Phone-width actual WAV/MP3 downloads and empty-origin .EHS restoration now pass
+in independently launched Chromium; this is not the complete connected
+22-step phone workflow. The full gesture/responsive matrix, remaining
+Sample/Recording/Master/Export phone review and that connected workflow remain
+open. Musical pinch zoom has visible zoom-button alternatives but no dedicated
+pinch handler. No Android/iPhone,
 Firefox or Safari verification is claimed. See the
 [mobile audit](./BATCH_005B_5_MOBILE_UX_AUDIT.md) and
-[milestone report](./BATCH_005B_5_REPORT.md) for precise evidence and next steps.
+[milestone report](./BATCH_005B_5_REPORT.md) and
+[005B.5B follow-up](./BATCH_005B_5B_REPORT.md) for precise evidence and next steps.
 
 The global transport stays at the top. **Project** groups New Project, portable
 Save/Open .EHS and legacy JSON operations. **Download JSON** is the former
@@ -248,7 +266,8 @@ Master Stop reset their own preview. Explicit recording Finish/Stop/Cancel
 controls remain separate from keyboard playback.
 
 Batch 005B.4B finished at **310/310**, preserving its 298-test starting
-baseline. The mobile foundation adds five tests (**315/315**). See the [effect inventory](./BATCH_005B_4B_EFFECT_AUDIT.md) and
+baseline. The mobile foundation added five tests (315/315); the 005B.5B
+Arrangement/cancellation follow-up adds another five (**320/320**). See the [effect inventory](./BATCH_005B_4B_EFFECT_AUDIT.md) and
 [execution / audio / portability report](./BATCH_005B_4B_REPORT.md) for precise
 browser evidence and limitations. Five-width synthetic touch is not
 physical-device verification or the complete 005B.5 mobile architecture.

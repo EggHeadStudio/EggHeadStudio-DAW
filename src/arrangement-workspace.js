@@ -44,20 +44,20 @@ function drawClipWave(canvas,buffer,clip,window,height){
   }
 }
 
-function gesture(element,event,move,finish,cancel){
-  if(event.button!==0)return;
+export function arrangementGesture(element,event,move,finish,cancel){
+  if(event.button!==0||event.isPrimary===false)return;
   event.preventDefault();event.stopPropagation();
   const pointerId=event.pointerId;
   element.setPointerCapture(pointerId);
   const onMove=next=>{if(next.pointerId===pointerId)move(next)};
   const end=(next,aborted)=>{
     if(next.pointerId!==pointerId)return;
-    element.removeEventListener('pointermove',onMove);element.removeEventListener('pointerup',onUp);element.removeEventListener('pointercancel',onCancel);
+    element.removeEventListener('pointermove',onMove);element.removeEventListener('pointerup',onUp);element.removeEventListener('pointercancel',onCancel);element.removeEventListener('lostpointercapture',onCancel);
     if(element.hasPointerCapture(pointerId))element.releasePointerCapture(pointerId);
     if(aborted)cancel?.();else finish(next);
   };
   const onUp=next=>end(next,false),onCancel=next=>end(next,true);
-  element.addEventListener('pointermove',onMove);element.addEventListener('pointerup',onUp);element.addEventListener('pointercancel',onCancel);
+  element.addEventListener('pointermove',onMove);element.addEventListener('pointerup',onUp);element.addEventListener('pointercancel',onCancel);element.addEventListener('lostpointercapture',onCancel);
 }
 
 export function mountArrangementWorkspace(options){
@@ -115,7 +115,10 @@ export function mountArrangementWorkspace(options){
   };
   tools.insertAdjacentHTML('beforeend',`<button id="selectRange" aria-pressed="${state.selectMode}">Select Range</button><button id="editClips" aria-pressed="${Boolean(state.editMode)}">Edit Clips (touch)</button><button id="clearRange">Clear Range</button><button id="cutRange">Cut</button><button id="deleteRange">Delete Selection</button><button id="setLoopRange">Loop from Range</button><button id="selectLoopRange">Select Loop</button><button id="playInsertion">Play from Marker</button><button id="followPlayhead" aria-pressed="${state.follow}">Follow</button><button id="toggleBrowser" aria-expanded="${state.browserOpen}">Samples</button><button id="toggleMixer" aria-expanded="${state.mixerOpen}">Mixer</button><button id="toggleDevices" aria-expanded="${state.devicesOpen}">Devices</button>`);
   const selectionToolbar=document.createElement('div');selectionToolbar.className='range-toolbar';
-  selectionToolbar.innerHTML='<output id="rangeSummary" aria-live="polite">No time range</output><label>Start beat <input id="rangeStart" type="number" min="0" step="any"></label><label>End beat <input id="rangeEnd" type="number" min="0" step="any"></label>';
+  selectionToolbar.innerHTML='<output id="rangeSummary" aria-live="polite">No time range</output><label>Start beat <input id="rangeStart" type="number" min="0" step="any"></label><label>End beat <input id="rangeEnd" type="number" min="0" step="any"></label><label>First track <select id="rangeFirstTrack"></select></label><label>Last track <select id="rangeLastTrack"></select></label><div class="section-actions"><button id="copySection">Copy section</button><button id="duplicateSection">Duplicate section</button><label>Paste at beat <input id="sectionPasteBeat" type="number" min="0" step="any"></label><button id="pasteSection">Paste section here</button></div>';
+  for(const id of ['rangeFirstTrack','rangeLastTrack'])for(const [index,track]of project.tracks.entries()){
+    const option=document.createElement('option');option.value=String(index);option.textContent=`${index+1}: ${track.name}`;selectionToolbar.querySelector(`#${id}`).append(option);
+  }
   tools.after(selectionToolbar);
   const insertion=document.createElement('i');insertion.className='insertion-marker';ruler.append(insertion);
   const showInsertion=()=>insertion.style.left=`${scale.beatsToPixels(state.insertionBeat)}px`;
@@ -134,10 +137,13 @@ export function mountArrangementWorkspace(options){
     const range=state.selection;
     if(range){
       range.firstTrack=Math.min(range.firstTrack,Math.max(0,project.tracks.length-1));range.lastTrack=Math.min(range.lastTrack,Math.max(0,project.tracks.length-1));
-      range.intersections=copyTimeRange(project.tracks,range,project.bpm).entries.map(entry=>({clipId:entry.clip.id,track:range.firstTrack+entry.trackOffset,startBeat:range.startBeat+entry.relativeBeat,endBeat:range.startBeat+entry.relativeBeat+scale.secondsToBeats(clipDurationSeconds(entry.clip))}));
+      range.intersections=copyTimeRange(project.tracks,range,project.bpm).entries.map(entry=>({clipId:entry.clip.id,track:range.firstTrack+entry.trackOffset,startBeat:range.startBeat+entry.relativeBeat,endBeat:range.startBeat+entry.relativeBeat+scale.secondsToBeats(clipDurationSeconds(entry.clip,project.bpm))}));
     }
     $('#rangeSummary').textContent=range?`Beats ${range.startBeat.toFixed(3)} - ${range.endBeat.toFixed(3)} | Tracks ${range.firstTrack+1} - ${range.lastTrack+1}`:'No time range';
     $('#rangeStart').value=range?.startBeat??'';$('#rangeEnd').value=range?.endBeat??'';
+    $('#rangeFirstTrack').value=String(range?.firstTrack??selectedTrack);$('#rangeLastTrack').value=String(range?.lastTrack??selectedTrack);
+    $('#sectionPasteBeat').value=String(state.insertionBeat);
+    $('#pasteSection').disabled=!state.clipboard;
     syncArrangementActions(root,project.tracks[selectedTrack],project.tracks[selectedTrack]?.clips.find(clip=>clip.id===selectedClip),range);
     if(!range)return;
     for(let index=range.firstTrack;index<=range.lastTrack;index++){
@@ -145,10 +151,16 @@ export function mountArrangementWorkspace(options){
       const overlay=document.createElement('div');overlay.className='time-range';
       overlay.style.left=`${scale.beatsToPixels(range.startBeat)}px`;overlay.style.width=`${scale.beatsToPixels(range.endBeat-range.startBeat)}px`;
       for(const edge of ['start','end']){
-        const handle=document.createElement('i');handle.className=`range-edge range-edge-${edge}`;handle.setAttribute('aria-label',`Selection ${edge}`);
+        const handle=document.createElement('button');handle.type='button';handle.className=`range-edge range-edge-${edge}`;handle.setAttribute('aria-label',`Selection ${edge}`);handle.title=`Drag selection ${edge}; exact beats are above the timeline`;
+        handle.onkeydown=event=>{
+          if(!['ArrowLeft','ArrowRight'].includes(event.key))return;
+          event.preventDefault();event.stopPropagation();
+          const range=state.selection,key=edge==='start'?'startBeat':'endBeat',beat=quantizeBeat(range[key]+(event.key==='ArrowRight'?1:-1)*(grid()||.25),grid());
+          state.selection=normalizeTimeSelection(edge==='start'?beat:range.startBeat,edge==='end'?beat:range.endBeat,range.firstTrack,range.lastTrack);paintSelection();lane.querySelector(`.range-edge-${edge}`)?.focus({preventScroll:true});
+        };
         handle.onpointerdown=event=>{
           const original={...state.selection};let draft={...original};
-          gesture(handle,event,next=>{
+          arrangementGesture(handle,event,next=>{
             const beat=beatAt(next.clientX);draft=normalizeTimeSelection(edge==='start'?beat:original.startBeat,edge==='end'?beat:original.endBeat,original.firstTrack,original.lastTrack);
             for(const item of all('.time-range')){item.style.left=`${scale.beatsToPixels(draft.startBeat)}px`;item.style.width=`${scale.beatsToPixels(draft.endBeat-draft.startBeat)}px`}
           },()=>{state.selection=draft;paintSelection()},()=>paintSelection());
@@ -167,7 +179,7 @@ export function mountArrangementWorkspace(options){
   const copy=()=>{
     if(!hasRange()){state.clipboard=null;return options.copyClip()}
     if(!validateRange())return false;
-    state.clipboard=copyTimeRange(project.tracks,state.selection,project.bpm);notify('Range copied, including patterns, track spacing and gaps.');return true;
+    state.clipboard=copyTimeRange(project.tracks,state.selection,project.bpm);paintSelection();notify('Range copied, including patterns, track spacing and gaps.');return true;
   };
   const remove=()=>{
     if(!hasRange())return options.deleteClip();
@@ -196,6 +208,20 @@ export function mountArrangementWorkspace(options){
     document.querySelector('#loop')?.classList.add('active');commit();
   };
   $('#copyClip').onclick=copy;$('#pasteClip').onclick=()=>paste();$('#duplicateClip').onclick=duplicate;$('#cutRange').onclick=cut;$('#deleteRange').onclick=remove;
+  $('#copySection').onclick=copy;$('#duplicateSection').onclick=duplicate;
+  $('#sectionPasteBeat').onchange=event=>{
+    const value=event.target.valueAsNumber;
+    if(!Number.isFinite(value)||value<0){notify('Paste position must be a non-negative beat.');event.target.value=String(state.insertionBeat);return}
+    state.insertionBeat=quantizeBeat(value,grid());event.target.value=String(state.insertionBeat);ensureBeat(state.insertionBeat+4);showInsertion();
+  };
+  $('#pasteSection').onclick=()=>paste(state.insertionBeat,state.selection?.firstTrack??selectedTrack);
+  for(const [id,key]of [['rangeFirstTrack','firstTrack'],['rangeLastTrack','lastTrack']])$(`#${id}`).onchange=event=>{
+    if(!hasRange())return;
+    const range={...state.selection,[key]:Number(event.target.value)};
+    state.selection=normalizeTimeSelection(range.startBeat,range.endBeat,range.firstTrack,range.lastTrack);paintSelection();
+  };
+  const pan=document.createElement('button');pan.id='scrollArrangement';pan.textContent='Scroll / select';pan.setAttribute('aria-pressed',String(!state.selectMode&&!state.editMode));
+  pan.onclick=()=>{state.selectMode=false;state.editMode=false;render()};$('#selectRange').before(pan);
   $('#selectRange').onclick=()=>{state.selectMode=!state.selectMode;state.editMode=false;render()};
   $('#editClips').onclick=()=>{state.editMode=!state.editMode;state.selectMode=false;render()};
   $('#clearRange').onclick=()=>{state.selection=null;paintSelection()};
@@ -209,21 +235,23 @@ export function mountArrangementWorkspace(options){
   }
   for(const [id,key]of [['rangeStart','startBeat'],['rangeEnd','endBeat']])$(`#${id}`).onchange=event=>{
     if(!hasRange())return notify('Create a range before adjusting its boundaries.');
-    const value=Number(event.target.value);
-    if(!Number.isFinite(value)||value<0)return notify('Range boundaries must be non-negative beats.');
+    const value=event.target.valueAsNumber;
+    if(!Number.isFinite(value)||value<0){notify('Range boundaries must be non-negative beats.');event.target.value=String(state.selection[key]);return}
     const range={...state.selection,[key]:quantizeBeat(value,grid())};
     state.selection=normalizeTimeSelection(range.startBeat,range.endBeat,range.firstTrack,range.lastTrack);paintSelection();
   };
   const seekGesture=(element,event)=>{
+    if(event.button!==0||event.isPrimary===false)return;
+    const original=state.insertionBeat;
     let beat=beatAt(event.clientX);state.insertionBeat=beat;showInsertion();
-    gesture(element,event,next=>{beat=beatAt(next.clientX);state.insertionBeat=beat;showInsertion()},()=>seek(scale.beatsToSeconds(beat)),()=>render());
+    arrangementGesture(element,event,next=>{beat=beatAt(next.clientX);state.insertionBeat=beat;showInsertion()},()=>{seek(scale.beatsToSeconds(beat));paintSelection()},()=>{state.insertionBeat=original;showInsertion()});
   };
   ruler.onpointerdown=event=>{if(!event.target.closest('.arrangement-loop'))seekGesture(ruler,event)};
   $('#playhead').onpointerdown=event=>seekGesture($('#playhead'),event);
   loop.onpointerdown=event=>{
     const original=loopState(),edge=event.target.closest('[data-loop-edge]')?.dataset.loopEdge||'move',offset=timelineBeatsAtClientX(event.clientX,ruler,arrangement,scale)-(edge==='end'?original.end:original.start);
     let draft=original;
-    gesture(loop,event,next=>{draft=editLoopRegion(original,edge,timelineBeatsAtClientX(next.clientX,ruler,arrangement,scale)-offset,grid());paintLoop(draft)},()=>{
+    arrangementGesture(loop,event,next=>{draft=editLoopRegion(original,edge,timelineBeatsAtClientX(next.clientX,ruler,arrangement,scale)-offset,grid());paintLoop(draft)},()=>{
       checkpoint();project.loopStart=draft.start/4;project.loopEnd=draft.end/4;commit();
     },()=>paintLoop(original));
   };
@@ -231,17 +259,19 @@ export function mountArrangementWorkspace(options){
   arrangement.classList.toggle('clip-edit-mode',Boolean(state.editMode));
   arrangement.addEventListener('click',event=>{if(state.selectMode&&event.target.closest('.sampler-block')){event.preventDefault();event.stopImmediatePropagation()}},true);
   lanes.forEach((lane,index)=>lane.onpointerdown=event=>{
+    if(event.button!==0||event.isPrimary===false)return;
     if(event.target.closest('.range-edge'))return;
     if(!state.selectMode&&!event.shiftKey){
       if(event.target!==lane)return;
       if(event.pointerType==='touch')return;
     }
     const anchor=event.shiftKey&&state.selection?{beat:state.selection.startBeat,track:state.selection.firstTrack}:{beat:beatAt(event.clientX),track:index};
+    const original=state.selection?structuredClone(state.selection):null;
     let moved=false;
-    gesture(lane,event,next=>{
+    arrangementGesture(lane,event,next=>{
       moved ||= Math.abs(next.clientX-event.clientX)>3||Math.abs(next.clientY-event.clientY)>3;
       const target=selectAt(next);state.selection=normalizeTimeSelection(anchor.beat,beatAt(next.clientX),anchor.track,target<0?index:target);paintSelection();
-    },()=>{if(!moved){state.selection=null;state.insertionBeat=beatAt(event.clientX);showInsertion();seek(scale.beatsToSeconds(state.insertionBeat))}paintSelection()},()=>{state.selection=null;paintSelection()});
+    },()=>{if(!moved){state.selection=null;state.insertionBeat=beatAt(event.clientX);showInsertion();seek(scale.beatsToSeconds(state.insertionBeat))}paintSelection()},()=>{state.selection=original;paintSelection()});
   });
   all('[data-clip]').forEach(element=>{
     const index=Number(element.dataset.trackIndex),clip=project.tracks[index].clips.find(item=>item.id===element.dataset.clip);
@@ -253,15 +283,17 @@ export function mountArrangementWorkspace(options){
       wave={element,canvas,buffer,clip,track:project.tracks[index]};waves.push(wave);
     }
     element.onpointerdown=event=>{
+      if(event.button!==0||event.isPrimary===false)return;
       if(state.selectMode||event.shiftKey)return;
-      if(event.pointerType==='touch'&&!state.editMode&&!event.target.closest('[data-resize]')){
+      if(event.pointerType==='touch'&&!state.editMode){
         const clear=()=>{element.onpointerup=null;element.onpointercancel=null};
-        element.onpointercancel=clear;
+        element.onpointercancel=next=>{if(next.pointerId===event.pointerId)clear()};
         element.onpointerup=next=>{
+          if(next.pointerId!==event.pointerId)return;
           clear();
           if(Math.abs(next.clientX-event.clientX)>6||Math.abs(next.clientY-event.clientY)>6)return;
           const now=performance.now(),last=state.lastTap;state.lastTap={id:clip.id,time:now};
-          if(isInstrumentClip(clip)&&last?.id===clip.id&&now-last.time<450)options.openClip(clip.id,index);else selectClip(clip.id,index);
+          state.selection=null;if(isInstrumentClip(clip)&&last?.id===clip.id&&now-last.time<450)options.openClip(clip.id,index);else selectClip(clip.id,index);
         };
         return;
       }
@@ -270,7 +302,7 @@ export function mountArrangementWorkspace(options){
       const original={...clip},grabOffset=timelineBeatsAtClientX(event.clientX,ruler,arrangement,scale)-clip.bar*4;
       const edgeOffset=edge==='end'?grabOffset-scale.secondsToBeats(clipDurationSeconds(clip,project.bpm)):grabOffset;
       let draft={...original},targetIndex=index,moved=false;
-      gesture(element,event,next=>{
+      arrangementGesture(element,event,next=>{
         moved ||= Math.abs(next.clientX-event.clientX)>3||Math.abs(next.clientY-event.clientY)>3;
         if(!moved)return;
         draft={...original};
@@ -296,7 +328,7 @@ export function mountArrangementWorkspace(options){
   // Keep the mixer in the same scroll row as its lane, not in a second scroller.
   const strips=all('.mixer-strip:not(.master-strip)'),actionsByTrack=all('.track-label .track-actions');
   strips.forEach((strip,index)=>{
-    strip.classList.add('right-mixer');strip.classList.toggle('track-selected',index===selectedTrack);strip.dataset.mixerTrack=String(index);
+    strip.classList.add('right-mixer');strip.classList.toggle('track-selected',index===selectedTrack);strip.dataset.mixerTrack=String(index);strip.dataset.mobileEditorId=project.tracks[index].id;
     strip.hidden=!state.mixerOpen;strip.onclick=event=>{if(!event.target.closest('input,button'))selectTrack(index)};
     for(const input of strip.querySelectorAll('input'))input.setAttribute('aria-label',`${project.tracks[index].name} ${input.hasAttribute('data-vol')?'volume':'pan'}`);
     const actions=actionsByTrack[index];strip.append(actions.cloneNode(true));
