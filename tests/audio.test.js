@@ -12,6 +12,36 @@ test('snap grid rejects invalid resolutions',()=>{assert.throws(()=>snapBeats(1,
 test('drum rack pattern length follows duplicated bars and stays within 16 bars',()=>{assert.equal(patternLengthBeats({pattern:{notes:[{beat:0,durationBeats:.25}]}}),4);assert.equal(patternLengthBeats({pattern:{notes:[{beat:4,durationBeats:1}]}}),8);assert.equal(patternLengthBeats({pattern:{notes:[{beat:63,durationBeats:4}]}}),64)});
 test('live and offline pattern cycles use the same Drum Rack length',()=>{const track={drumRack:{pads:[]},pattern:{notes:[{beat:8,durationBeats:1}]}};assert.equal(trackPatternCycleBeats(track,16),12);assert.equal(trackPatternCycleBeats({pattern:{notes:[]}},16),16)});
 test('audio engine releases scheduled source nodes on end and stop',()=>{const engine=new AudioEngine(),disconnected=[];const node=()=>({disconnect(){disconnected.push(this)}}),source={stop(){},disconnect(){disconnected.push(this)}};engine.registerSource(source,[node()]);source.onended();assert.equal(engine.sources.length,0);assert.equal(disconnected.length,2);const active={stop(){},disconnect(){disconnected.push(this)}};engine.registerSource(active,[node()]);engine.ctx={currentTime:0};engine.readMeters=()=>({});engine.stop();assert.equal(engine.sources.length,0);assert.equal(disconnected.length,4)});
+test('track removal and instrument source replacement stop only that track audio voices',()=>{
+ const engine=new AudioEngine(),stopped=[];
+ engine.ctx={currentTime:0,createGain(){throw new Error('No sidechain graph should be created')}};
+ engine.eq={};
+ const track={id:'instrument',sampler:{asset:'first-sample'},fx:{effects:[]}};
+ const graph={signature:'',input:{},disconnectSidechains(){},update(){},disconnect(){}};
+ engine.trackNodes.set(track.id,graph);
+ const makeSource=()=>({stop(){stopped.push(this)},disconnect(){},onended:null});
+ const replaced=makeSource(),otherTrack=makeSource();
+ engine.registerSource(replaced,[],track.id);engine.registerSource(otherTrack,[],'other');
+ engine.syncTracks([track]);
+ track.sampler.asset='replacement-sample';
+ engine.syncTracks([track]);
+ assert.deepEqual(stopped,[replaced]);
+ assert.deepEqual(engine.sources,[otherTrack]);
+ const rackVoice=makeSource();engine.registerSource(rackVoice,[],track.id);
+ track.sampler=null;track.drumRack={pads:[{id:'pad-1',asset:'kick'}]};
+ engine.syncTracks([track]);
+ const padVoice=makeSource();engine.registerSource(padVoice,[],track.id);
+ track.drumRack.pads[0].asset='snare';
+ engine.syncTracks([track]);
+ const removedPadVoice=makeSource();engine.registerSource(removedPadVoice,[],track.id);
+ track.drumRack.pads=[];
+ engine.syncTracks([track]);
+ assert.deepEqual(stopped,[replaced,rackVoice,padVoice,removedPadVoice]);
+ const removalSource=makeSource();engine.registerSource(removalSource,[],track.id);
+ engine.syncTracks([]);
+ assert.deepEqual(stopped,[replaced,rackVoice,padVoice,removedPadVoice,removalSource]);
+ assert.deepEqual(engine.sources,[otherTrack]);
+});
 test('track effect descriptors validate types and preserve independent EQ band defaults',()=>{const first=createTrackEffect('eq','one'),second=createTrackEffect('eq','two');first.params.bands[1].gain=6;assert.equal(second.params.bands[1].gain,0);assert.equal(first.params.bands.length,4);assert.equal(first.enabled,true);assert.throws(()=>createTrackEffect('unknown'),RangeError)});
 test('compressor makeup gain is routed after dynamics processing',()=>{
  const param=()=>({value:0}),node=()=>({connections:[],reduction:-3,connect(target){this.connections.push(target);return target},disconnect(){},gain:param(),pan:param(),frequency:param(),Q:param(),threshold:param(),ratio:param(),knee:param(),attack:param(),release:param(),delayTime:param()});

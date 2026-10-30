@@ -11,7 +11,7 @@ export async function runMobileClosureAcceptance(page,{onStage=()=>{}}={}){
     const {readFile}=await import('node:fs/promises'),bytes=await readFile(await download.path());
     return{name:download.suggestedFilename(),bytes,base64:bytes.toString('base64')};
   };
-  await page.setViewportSize({width:390,height:844});
+  await page.setViewportSize({width:390,height:844});await page.reload();await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'));
   await page.evaluate(async()=>{
     const {RecordingStudio}=await import(new URL('./recording-studio.js',document.querySelector('script[type=module]').src));
     const mount=RecordingStudio.prototype.mount,microphone=navigator.mediaDevices.getUserMedia;

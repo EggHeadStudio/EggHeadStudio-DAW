@@ -22,7 +22,7 @@ export async function runMobileWorkspaceAcceptance(page){
   };
   let cdp;
   try{
-    await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'));
+    await page.setViewportSize({width:390,height:844});await page.reload();await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'));
     check(await page.evaluate(()=>!localStorage.getItem('pulse-project')),'Use empty disposable origin.');
     const add=async(type,name)=>{
       await navigate('arrange');await page.locator('#addTrack').click();await page.locator('#trackType').selectOption(type);
@@ -136,7 +136,7 @@ export async function runMobileWorkspaceAcceptance(page){
 
 export async function runMobileRecordingSafety(page){
     const check=(value,message)=>{if(!value)throw new Error(message)};
-    await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'));
+    await page.setViewportSize({width:390,height:844});await page.reload();await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'));
     await page.evaluate(async()=>{
       const {RecordingStudio}=await import('./src/recording-studio.js'),mount=RecordingStudio.prototype.mount,mic=navigator.mediaDevices.getUserMedia;
       globalThis.mobileRestore=()=>{RecordingStudio.prototype.mount=mount;navigator.mediaDevices.getUserMedia=mic};

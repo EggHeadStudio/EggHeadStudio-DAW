@@ -218,7 +218,7 @@ export class RecordingStudio{
   async previewTake(track,clip){
     const ctx=await this.engine.init();this.engine.syncTracks(this.getProject().tracks,this.getProject().bpm);
     this.engine.stop();
-    const source=ctx.createBufferSource(),gain=ctx.createGain();source.buffer=this.buffers.get(clip.asset);source.playbackRate.value=clip.rate||1;source.connect(gain).connect(this.engine.trackNodes.get(track.id).input);scheduleClipSource(ctx,source,gain,clip,ctx.currentTime,0,(clip.end-clip.start)/(clip.rate||1));this.engine.registerSource(source,[gain]);
+    const source=ctx.createBufferSource(),gain=ctx.createGain();source.buffer=this.buffers.get(clip.asset);source.playbackRate.value=clip.rate||1;source.connect(gain).connect(this.engine.trackNodes.get(track.id).input);scheduleClipSource(ctx,source,gain,clip,ctx.currentTime,0,(clip.end-clip.start)/(clip.rate||1));this.engine.registerSource(source,[gain],track.id);
   }
   drawTimeline(){
     const container=this.root.querySelector('#recordingTimeline'),project=this.getProject();

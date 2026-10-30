@@ -149,6 +149,11 @@ export function createTrackGraph(ctx,track,output,stableInput=null,bpm=120){
  update(track);
  return{input,gain,sidechainPre,sidechainPost,sidechainConnections:[],pan,filter,legacyDelay,feedback,wet,dry,instances,eqTaps,update,readMeter(){leftMeter.getFloatTimeDomainData(leftSamples);rightMeter.getFloatTimeDomainData(rightSamples);let leftPeak=0,rightPeak=0,leftSquare=0,rightSquare=0;for(let i=0;i<leftSamples.length;i++){const left=leftSamples[i],right=rightSamples[i];leftPeak=Math.max(leftPeak,Math.abs(left));rightPeak=Math.max(rightPeak,Math.abs(right));leftSquare+=left*left;rightSquare+=right*right}const reductions={};for(const[id,instance]of instances)if(instance.type==='compressor'||instance.type==='limiter')reductions[id]=instance.externalSidechain?instance.reductionDb:Math.max(0,-Number(instance.node.reduction||0));return{leftPeak,rightPeak,leftRms:Math.sqrt(leftSquare/leftSamples.length),rightRms:Math.sqrt(rightSquare/leftSamples.length),reductions}},signature:trackGraphSignature(track),disconnectSidechains(){for(const connection of this.sidechainConnections){try{connection.source.disconnect(connection.send)}catch{}try{connection.send.disconnect()}catch{}}this.sidechainConnections.length=0},disconnect(){this.disconnectSidechains();for(const node of new Set(nodes)){disposeProcessor(node);try{node.disconnect()}catch{}}}};
 }
+function instrumentSourceSignature(track){
+ if(track.sampler)return JSON.stringify({sampler:track.sampler});
+ if(track.drumRack)return JSON.stringify({drumRack:track.drumRack});
+ return null;
+}
 export function trackGraphSignature(track){
  return(track.fx?.effects||[]).filter(effect=>effect.enabled).map(effect=>{
   const sidechain=effect.type==='compressor'&&effect.params?.sidechain?.enabled?effect.params.sidechain:null;
@@ -251,7 +256,7 @@ export class AudioEngine{
   this.masteringGraph?.disconnect();this.masteringGraph=null;this.master?.disconnect();
   if(this.onError)this.onError(error);else console.error(error);
  }
- constructor(){this.ctx=null;this.master=null;this.compressor=null;this.eq=null;this.masteringGraph=null;this.masteringSettings=normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS);this.trackNodes=new Map();this.sources=[];this.sourceNodes=new WeakMap();this.playing=false;this.startedAt=0;this.offset=0;this.timer=null;this.raf=null;this.onTick=()=>{};this.onMeter=()=>{};this.onEnd=()=>{};this.loop=false;this.bpm=120;this.masterSettings={eq:0,threshold:-12,makeup:0,volume:1};this.clipHoldUntil=new Map();this.sidechainReady=false;this.sidechainError=null;this.masteringLimiterReady=false;this.masteringLimiterError=null;}
+ constructor(){this.ctx=null;this.master=null;this.compressor=null;this.eq=null;this.masteringGraph=null;this.masteringSettings=normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS);this.trackNodes=new Map();this.sources=[];this.sourceNodes=new WeakMap();this.sourceTrackIds=new WeakMap();this.instrumentSignatures=new Map();this.playing=false;this.startedAt=0;this.offset=0;this.timer=null;this.raf=null;this.onTick=()=>{};this.onMeter=()=>{};this.onEnd=()=>{};this.loop=false;this.bpm=120;this.masterSettings={eq:0,threshold:-12,makeup:0,volume:1};this.clipHoldUntil=new Map();this.sidechainReady=false;this.sidechainError=null;this.masteringLimiterReady=false;this.masteringLimiterError=null;}
  async init(){if(!this.ctx){this.ctx=new (window.AudioContext||window.webkitAudioContext)();if(this.ctx.audioWorklet&&typeof globalThis.AudioWorkletNode==='function'){try{await this.ctx.audioWorklet.addModule(new URL('./sidechain-processor.js',import.meta.url));this.sidechainReady=true}catch(error){this.sidechainError=error;console.error('External sidechain processor could not be loaded.',error)}try{await this.ctx.audioWorklet.addModule(new URL('./mastering-processor.js',import.meta.url));this.ctx.masteringLimiterReady=true}catch(error){this.masteringLimiterError=error;console.error('Mastering limiter processor could not be loaded.',error)}}else{this.sidechainError=new Error('AudioWorklet is unavailable in this browser.');this.masteringLimiterError=this.sidechainError}this.eq=this.ctx.createBiquadFilter();this.eq.type='highshelf';this.eq.frequency.value=4500;this.compressor=this.ctx.createDynamicsCompressor();this.master=this.ctx.createGain();this.eq.connect(this.compressor).connect(this.master);this.setMaster(this.masterSettings);this.setMastering(this.masteringSettings)}await this.ctx.resume();if(!this.masteringGraph)this.setMastering(this.masteringSettings);return this.ctx}
  setMaster(s){this.masterSettings={...this.masterSettings,...s};if(!this.ctx)return;const eq=Number(this.masterSettings.eq),threshold=Number(this.masterSettings.threshold),makeup=Number(this.masterSettings.makeup),volume=Number(this.masterSettings.volume);this.eq.gain.value=Number.isFinite(eq)?eq:0;this.compressor.threshold.value=Number.isFinite(threshold)?threshold:-12;this.compressor.ratio.value=3;this.master.gain.value=Math.max(0,Number.isFinite(volume)?volume:1)*Math.pow(10,(Number.isFinite(makeup)?makeup:0)/20)}
  setMastering(settings){const next=normalizeMasteringSettings(settings);if(!this.ctx||!this.master){this.masteringSettings=next;return}this.masteringLimiterReady=Boolean(this.ctx.masteringLimiterReady);if(this.masteringGraph){this.masteringGraph.update(next);this.masteringSettings=next;return}const graph=createMasteringGraph(this.ctx,next,this.ctx.destination);this.master.connect(graph.input);this.masteringGraph=graph;watchGraphProcessors(graph,error=>this.handleProcessorError(error));this.masteringSettings=next}
@@ -263,8 +268,11 @@ export class AudioEngine{
   this.bpm=Number.isFinite(Number(bpm))&&Number(bpm)>0?Number(bpm):120;
   const ids=new Set(tracks.map(track=>track.id)),solo=tracks.some(track=>track.solo);
   for(const graph of this.trackNodes.values())graph.disconnectSidechains();
-  for(const [id,graph] of this.trackNodes)if(!ids.has(id)){graph.disconnect();this.trackNodes.delete(id);this.clipHoldUntil.delete(id)}
+  for(const [id,graph]of this.trackNodes)if(!ids.has(id)){this.releaseTrackSources(id);graph.disconnect();this.trackNodes.delete(id);this.instrumentSignatures.delete(id);this.clipHoldUntil.delete(id)}
   for(const track of tracks){
+   const sourceSignature=instrumentSourceSignature(track),previousSourceSignature=this.instrumentSignatures.get(track.id);
+   if(previousSourceSignature!==undefined&&previousSourceSignature!==sourceSignature)this.releaseTrackSources(track.id);
+   this.instrumentSignatures.set(track.id,sourceSignature);
    const signature=trackGraphSignature(track);
    let graph=this.trackNodes.get(track.id);
    if(!graph||graph.signature!==signature){const input=graph?.input;graph?.disconnect();graph=createTrackGraph(this.ctx,track,this.eq,input,this.bpm);watchGraphProcessors(graph,error=>this.handleProcessorError(error));this.trackNodes.set(track.id,graph)}
@@ -272,10 +280,18 @@ export class AudioEngine{
   }
   connectTrackSidechains(tracks,this.trackNodes,this.ctx);
  }
- registerSource(source,nodes=[]){
+ registerSource(source,nodes=[],trackId=null){
   this.sources.push(source);
   this.sourceNodes.set(source,nodes);
+  if(trackId!==null)this.sourceTrackIds.set(source,trackId);
   source.onended=()=>this.releaseSource(source);
+ }
+ releaseTrackSources(trackId){
+  for(const source of [...this.sources]){
+   if(this.sourceTrackIds.get(source)!==trackId)continue;
+   try{source.stop()}catch(error){if(error.name!=='InvalidStateError')console.error('Could not stop a track audio source.',error)}
+   this.releaseSource(source);
+  }
  }
  releaseSource(source){
   const index=this.sources.indexOf(source);
@@ -283,6 +299,7 @@ export class AudioEngine{
   this.sources.splice(index,1);
   for(const node of [source,...(this.sourceNodes.get(source)||[])])try{node.disconnect()}catch{}
   this.sourceNodes.delete(source);
+  this.sourceTrackIds.delete(source);
  }
  stop(reset=false){this.offset=reset?0:this.position();this.playing=false;clearInterval(this.timer);if(this.raf!=null)globalThis.cancelAnimationFrame?.(this.raf);for(const source of [...this.sources]){try{source.stop()}catch{}this.releaseSource(source)}this.onTick(this.offset);this.onMeter(this.readMeters())}
  position(){
@@ -291,7 +308,69 @@ export class AudioEngine{
   return this.playing&&loop&&position>=loop.end?loop.start+(position-loop.start)%(loop.end-loop.start):position;
  }
  readMeters(){const now=performance.now(),meters={};for(const[id,graph]of this.trackNodes){const levels=graph.readMeter(),clipped=levels.leftPeak>=.999||levels.rightPeak>=.999;if(clipped)this.clipHoldUntil.set(id,now+1000);meters[id]={...levels,clipped:(this.clipHoldUntil.get(id)||0)>now}}return meters}
- async previewNote(track,buffers,midi,duration=.35,tracks=[track]){await this.init();this.syncTracks(tracks);const rack=track.drumRack,pad=rack?.pads.find(item=>item.note===midi),sampler=track.sampler,asset=pad?.asset||(sampler&&!rack?sampler.asset:null),buffer=buffers.get(asset);if(!buffer||pad?.mute)return false;const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner(),rate=pad?2**((pad.pitch||0)/12):sampler.mode==='oneShot'?1:2**((midi-(sampler.rootNote||60)+(sampler.transpose||0)+(sampler.fineTune||0)/100)/12),start=pad?0:Math.max(0,sampler.start||0),end=pad?buffer.duration:Math.min(buffer.duration,sampler.end||buffer.duration),region=Math.max(.01,end-start),length=Math.min(duration,region/rate),now=this.ctx.currentTime; source.buffer=buffer;source.playbackRate.value=rate;if(sampler?.mode==='loop'&&!pad){source.loop=true;source.loopStart=start;source.loopEnd=end}pan.pan.value=pad?.pan||0;source.connect(gain).connect(pan).connect(this.trackNodes.get(track.id).input);if(pad||sampler.mode==='oneShot')gain.gain.value=(pad?.volume??1)*.8;else{const attack=Math.min(sampler.attack||.005,length*.4),decay=Math.min(sampler.decay||.1,Math.max(0,length-attack)*.4),sustain=Math.max(0,Math.min(1,sampler.sustain??.8)),release=Math.min(sampler.release||.03,length*.4),noteOff=now+length;gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.8,now+attack);gain.gain.linearRampToValueAtTime(.8*sustain,now+attack+decay);gain.gain.setValueAtTime(.8*sustain,Math.max(now+attack+decay,noteOff-release));gain.gain.linearRampToValueAtTime(0,noteOff)}source.start(now,start);source.stop(now+length);this.registerSource(source,[gain,pan]);return true}
+ async startPreviewNote(track,buffers,midi,velocity=.85,tracks=[track]){
+  if(!Number.isInteger(midi)||midi<0||midi>127)throw new RangeError('Sampler performance pitch must be a MIDI note from 0 to 127.');
+  await this.init();this.syncTracks(tracks);
+  const sampler=track.sampler,buffer=buffers.get(sampler?.asset);
+  if(!sampler||track.drumRack||!buffer)return null;
+  const start=Math.max(0,Number(sampler.start)||0),end=Math.min(buffer.duration,Number(sampler.end)||buffer.duration),region=end-start;
+  if(region<=0)return null;
+  const oneShot=sampler.mode==='oneShot',looping=sampler.mode==='loop';
+  const rate=oneShot?1:2**((midi-(sampler.rootNote||60)+(sampler.transpose||0)+(sampler.fineTune||0)/100)/12);
+  const duration=region/rate,now=this.ctx.currentTime,level=.8*Math.max(0,Math.min(1,Number(velocity)||0));
+  const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner(),graph=this.trackNodes.get(track.id);
+  if(!graph)throw new Error(`Sampler track ${track.id} has no live audio route.`);
+  source.buffer=buffer;source.playbackRate.value=rate;source.loop=looping;
+  if(looping){source.loopStart=start;source.loopEnd=end}
+  pan.pan.value=0;source.connect(gain).connect(pan).connect(graph.input);
+  if(oneShot)gain.gain.value=level;
+  else{
+   const attack=Math.min(Math.max(0,Number(sampler.attack??.005)),duration*.4);
+   const decay=Math.min(Math.max(0,Number(sampler.decay??.1)),Math.max(0,duration-attack)*.4);
+   const sustain=Math.max(0,Math.min(1,Number(sampler.sustain??.8)));
+   const decayEnd=attack+decay;
+   const envelopeAt=elapsed=>elapsed<attack&&attack>0?level*elapsed/attack:elapsed<decayEnd&&decay>0?level*(1-(1-sustain)*(elapsed-attack)/decay):level*sustain;
+   gain.gain.setValueAtTime(0,now);
+   if(attack>0)gain.gain.linearRampToValueAtTime(level,now+attack);else gain.gain.setValueAtTime(level,now);
+   if(decay>0)gain.gain.linearRampToValueAtTime(level*sustain,now+decayEnd);
+   source.start(now,start);
+   if(!looping)source.stop(now+duration);
+   this.registerSource(source,[gain,pan],track.id);
+   let released=false;
+   return{release:({cancelled=false}={})=>{
+    if(released||!this.sources.includes(source))return;
+    released=true;
+    const releaseSeconds=Math.max(.005,Number(sampler.release)||.03),at=this.ctx.currentTime,elapsed=Math.max(0,at-now);
+    const current=oneShot?level:envelopeAt(elapsed),releaseEnd=looping?at+releaseSeconds:Math.min(at+releaseSeconds,now+duration);
+    gain.gain.cancelScheduledValues(at);gain.gain.setValueAtTime(current,at);
+    if(cancelled)gain.gain.linearRampToValueAtTime(0,Math.min(releaseEnd,at+.008));
+    else gain.gain.linearRampToValueAtTime(0,releaseEnd);
+    source.stop(cancelled?Math.min(releaseEnd,at+.008):releaseEnd);
+   }};
+  }
+  source.start(now,start);source.stop(now+duration);this.registerSource(source,[gain,pan],track.id);
+  return{release:()=>{}};
+ }
+ async startPreviewPad(track,buffers,padId,tracks=[track]){
+  await this.init();this.syncTracks(tracks);
+  const pad=track.drumRack?.pads.find(item=>item.id===padId),buffer=pad?.asset&&buffers.get(pad.asset);
+  if(!pad||pad.mute||!buffer)return null;
+  const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner(),graph=this.trackNodes.get(track.id);
+  if(!graph)throw new Error(`Drum Rack track ${track.id} has no live audio route.`);
+  source.buffer=buffer;source.playbackRate.value=2**(Number(pad.pitch||0)/12);pan.pan.value=Number(pad.pan)||0;
+  gain.gain.value=Math.max(0,Number(pad.volume??1))*.8;
+  source.connect(gain).connect(pan).connect(graph.input);
+  source.start(this.ctx.currentTime);
+  this.registerSource(source,[gain,pan],track.id);
+  let cancelled=false;
+  return{release:({cancelled:wasCancelled=false}={})=>{
+   if(!wasCancelled||cancelled||!this.sources.includes(source))return;
+   cancelled=true;const at=this.ctx.currentTime;
+   gain.gain.cancelScheduledValues(at);gain.gain.setValueAtTime(gain.gain.value,at);gain.gain.linearRampToValueAtTime(0,at+.008);
+   source.stop(at+.008);
+  }};
+ }
+ async previewNote(track,buffers,midi,duration=.35,tracks=[track]){await this.init();this.syncTracks(tracks);const rack=track.drumRack,pad=rack?.pads.find(item=>item.note===midi),sampler=track.sampler,asset=pad?.asset||(sampler&&!rack?sampler.asset:null),buffer=buffers.get(asset);if(!buffer||pad?.mute)return false;const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner(),rate=pad?2**((pad.pitch||0)/12):sampler.mode==='oneShot'?1:2**((midi-(sampler.rootNote||60)+(sampler.transpose||0)+(sampler.fineTune||0)/100)/12),start=pad?0:Math.max(0,sampler.start||0),end=pad?buffer.duration:Math.min(buffer.duration,sampler.end||buffer.duration),region=Math.max(.01,end-start),length=Math.min(duration,region/rate),now=this.ctx.currentTime; source.buffer=buffer;source.playbackRate.value=rate;if(sampler?.mode==='loop'&&!pad){source.loop=true;source.loopStart=start;source.loopEnd=end}pan.pan.value=pad?.pan||0;source.connect(gain).connect(pan).connect(this.trackNodes.get(track.id).input);if(pad||sampler.mode==='oneShot')gain.gain.value=(pad?.volume??1)*.8;else{const attack=Math.min(sampler.attack||.005,length*.4),decay=Math.min(sampler.decay||.1,Math.max(0,length-attack)*.4),sustain=Math.max(0,Math.min(1,sampler.sustain??.8)),release=Math.min(sampler.release||.03,length*.4),noteOff=now+length;gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.8,now+attack);gain.gain.linearRampToValueAtTime(.8*sustain,now+attack+decay);gain.gain.setValueAtTime(.8*sustain,Math.max(now+attack+decay,noteOff-release));gain.gain.linearRampToValueAtTime(0,noteOff)}source.start(now,start);source.stop(now+length);this.registerSource(source,[gain,pan],track.id);return true}
  async play(project,buffers,from=this.offset,{when}={}){
   await this.init();this.stop();this.syncTracks(project.tracks,project.bpm);
   this.playing=true;this.playbackSignature=null;this.updatePlayback(project,buffers,from,when);
@@ -338,11 +417,11 @@ export class AudioEngine{
     const b=buffers.get(clip.asset);if(!b||clip.mute)continue;
     const at=clip.bar*bar,duration=clipDurationSeconds(clip);if(at>=to||at+duration<=from||(!initial&&at<from))continue;
      const skip=Math.max(0,from-at),source=this.ctx.createBufferSource(),g=this.ctx.createGain();source.buffer=b;source.playbackRate.value=clip.rate||1;source.connect(g).connect(node.input);
-    const when=contextStart+Math.max(0,at-from),dur=Math.min(duration-skip,stopAt-Math.max(at,from));scheduleClipSource(this.ctx,source,g,clip,when,skip,dur);this.registerSource(source,[g]);
+    const when=contextStart+Math.max(0,at-from),dur=Math.min(duration-skip,stopAt-Math.max(at,from));scheduleClipSource(this.ctx,source,g,clip,when,skip,dur);this.registerSource(source,[g],track.id);
    }
    for(const event of instrumentEvents(track,buffers,project.bpm,max/beat,from/beat,to/beat,patternBeats)){
     const voice=scheduleInstrumentEvent(this.ctx,node.input,event,from,to,contextStart,initial,stopAt);
-    if(voice)this.registerSource(voice.source,voice.nodes);
+    if(voice)this.registerSource(voice.source,voice.nodes,track.id);
    }
   }
  }

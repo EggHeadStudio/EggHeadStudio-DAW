@@ -43,6 +43,21 @@ export function draggedClipStart(pointerBeat,grabOffsetBeat,grid=0){
   return quantizeBeat(pointerBeat-grabOffsetBeat,grid);
 }
 
+export function playheadBeatAtSeconds(seconds,bpm,grid=0){
+  if(!Number.isFinite(seconds)||seconds<0||!Number.isFinite(bpm)||bpm<=0)throw new RangeError('Playhead position and tempo must be valid.');
+  return quantizeBeat(seconds*bpm/60,grid);
+}
+
+export function pinchZoomValue(startZoom,startDistance,distance,minZoom=.4,maxZoom=4){
+  if(![startZoom,startDistance,distance,minZoom,maxZoom].every(Number.isFinite)||startZoom<=0||startDistance<=0||distance<0||minZoom<=0||maxZoom<minZoom)throw new RangeError('Pinch zoom values must be finite and positive.');
+  return Math.max(minZoom,Math.min(maxZoom,startZoom*distance/startDistance));
+}
+
+export function anchoredTimelineScrollLeft(anchorBeat,anchorClientX,rulerContentLeft,pixelsPerBeat){
+  if(![anchorBeat,anchorClientX,rulerContentLeft,pixelsPerBeat].every(Number.isFinite)||anchorBeat<0||pixelsPerBeat<=0)throw new RangeError('Timeline anchor coordinates must be finite.');
+  return Math.max(0,anchorBeat*pixelsPerBeat+rulerContentLeft-anchorClientX);
+}
+
 export function clipViewportWindow(clipLeft,clipWidth,viewportLeft,viewportRight){
   const offset=Math.max(0,viewportLeft-clipLeft),end=Math.min(clipWidth,viewportRight-clipLeft);
   return clipWidth>0&&end>offset?{offset,width:end-offset,start:offset/clipWidth,end:end/clipWidth}:null;

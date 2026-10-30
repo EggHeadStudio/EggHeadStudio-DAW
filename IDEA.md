@@ -199,7 +199,7 @@ No miniature desktop clone. Bottom navigation or tabs: Arrange, Samples, Record,
 | 002 | Sample-based instruments, pitch detection, Piano Roll and Drum Rack sequencing | Notes/pads persist and produce sample audio | PARTIAL — sampler, internal note editor, 16-pad rack and shared step/piano pattern exist; unit tests pass, but full workflow acceptance remains incomplete |
 | 003 | Professional mixing/effects architecture, arrangement clip editing, live/offline consistency | Reorderable tested device chains and equivalent live/offline signal measurements | COMPLETE — 45 local Node tests pass; generated-audio Chromium acceptance verified Sample Studio processing/save, Sampler and Drum Rack patterns, independent track effects, mixer mute/solo, non-silent WAV export, project reload, and mobile-emulated timeline seek/alignment. Physical-device checks, remote CI and quantitative live/offline parity tolerances remain release follow-ups, not claims of completion |
 | 004 | Mastering Studio | Measurement-driven mastering chain, validated export and A/B | FUNCTIONALLY COMPLETE — Phases 1–6 implemented; Phase 6 boundary suite passed 110/110. Deterministic eight-track acceptance, clean IndexedDB `.EHS` restore/reopen, unchanged asset hashes, four-format mastered export and Release ZIP verified in Chromium. Independent standards/device/deployment and medium/large-project performance checks remain release/Batch 005 work; see [BATCH_004_FINAL_ACCEPTANCE.md](./docs/archive/batch-004/BATCH_004_FINAL_ACCEPTANCE.md) |
-| 005 | Performance, Mobile Experience & Production Reliability (005A/005B) | Measured performance/memory improvements, safe large archives, responsive editing, reliable recovery and real-device evidence | IN PROGRESS - 005A.7 closed for tested desktop scope; 005B.1/005B.2 foundations and 005B.3 compact workflows complete. Current suite 283/283; five-width layout/touch, synthetic recording, clean-origin instrument .EHS and decoded WAV/MP3 verified. Graphical EQ, full phone architecture, physical/cross-engine acceptance and low-memory budgets remain. See [BATCH_005A_7C_REPORT.md](./docs/archive/batch-005a/BATCH_005A_7C_REPORT.md) and [BATCH_005B_3_UX_REPORT.md](./docs/archive/batch-005b/BATCH_005B_3_UX_REPORT.md) |
+| 005 | Performance, Mobile Experience & Production Reliability (005A/005B) | Measured performance/memory improvements, safe large archives, responsive editing, reliable recovery and real-device evidence | IN PROGRESS — 005A.7 is closed for tested desktop scope; 005B.1-5D foundations and 5E.1 PWA acceptance remain as previously documented. The 005B.5F.5 continuation verifies several source/build Arrangement actions at 390x844 and layout-only overflow at seven sizes, but connected Sample/Recording/Mastering/Export workflows, clean-origin connected `.EHS`, PWA regression, pointer cancellation and physical-device acceptance remain open. See [BATCH_005B_5F_5_REPORT.md](./BATCH_005B_5F_5_REPORT.md), [MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md), [BATCH_005B_5F_REPORT.md](./BATCH_005B_5F_REPORT.md) and [MOBILE_PERFORMANCE_MODES.md](./MOBILE_PERFORMANCE_MODES.md) |
 | 006 | Persistence and portable projects | Versioned save/reopen, sample relink and media archive round-trip | PARTIAL — JSON/localStorage plus versioned `.EHS` archives with embedded/deduplicated media, checksums and schema migration; automated and Chromium round-trips pass, broader compatibility/missing-media acceptance remains |
 | 007 | Mobile UX, accessibility and performance | End-to-end workflow on physical desktop and mobile browsers | PARTIAL — browser-emulated responsive smoke checks only; physical devices, long recordings and memory budgets unverified |
 | 008 | GitHub Pages release verification | Static deployment smoke checks at repository subpath across target browsers | PARTIAL — local static requests passed for the app, workers, worklets and vendors; the previously published revision was checked, but this unpushed worktree has not been deployed |
@@ -568,3 +568,70 @@ all be considered for shared control/preview changes.
 phone/cross-engine acceptance. Buffered long-sample preparation and topology/
 impulse changes must not be presented as seamless or cost-free. No mandatory
 backend, new dependency, archive-version change or audio-quality reduction.
+
+## Batch 005B.5F — Mobile focus/performance and scrollbar checkpoint (incomplete)
+
+The current source adds a shared focus surface over existing editor DOM,
+optional landscape suggestions with remembered per-workspace choices, a
+touch/mouse Sampler keyboard, banked Drum Rack pads, live AudioEngine preview
+voice methods and shared standard/WebKit scrollbar styles. Focus presentation
+does not copy project parameters or construct parallel audio graphs. Pad IDs,
+Sampler settings, effect routing, project storage, `.EHS` v1 and PWA behavior
+remain unchanged.
+
+The integrated Chromium browser verified focus entry/exit, orientation prompt
+choices and remembered focus/continue behavior, plus Arrangement layout at
+320x740, 360x800, 390x844, 430x932, 768x1024, 1280x900 and 844x390. Fourteen
+added unit tests exercise preferences, pointer/sustain/cancellation races,
+pad bank mapping, source-routing parameters and instrument event scheduling.
+A separate browser check used the production `AudioEngine.render()` and a real
+`OfflineAudioContext`: Sampler PCM measured 261.58 Hz for MIDI 60 with root
+MIDI 69, and Drum Rack PCM measured 879.97 Hz for a 440 Hz sample pitched up
+an octave. The later 005B.5F.2 continuation also measured live Sampler/Drum
+output with an advancing 48 kHz AudioContext, verified note release,
+cancellation, simultaneous pads, mute, track EQ and a 32-pad bank switch, and
+restored the instrument settings and two sample assets through a clean-origin
+`.EHS` import. The live browser measurements used synthetic pointer events,
+not physical-device input. Installed Edge
+156.0.4314.56 and Firefox 153.6.0 produced before/after scrollbar-probe images
+and full-app after screenshots; these were visual/headless checks only, not
+native scroll interaction, standalone-PWA or physical-device tests.
+
+The full cross-workspace audit, actual scroll-thumb/wheel/keyboard/touch
+acceptance, recording/sample/mastering/export workflows, native pointer
+capture, AudioContext suspension/resume through a trusted gesture, and
+physical-device/browser visual comparison remain open. See the
+[5F.2 acceptance report](./BATCH_005B_5F_2_REPORT.md), [5F report](./BATCH_005B_5F_REPORT.md), [workspace audit](./BATCH_005B_5F_MOBILE_UX_AUDIT.md) and
+[performance-mode guide](./MOBILE_PERFORMANCE_MODES.md). Do not mark the batch
+complete until those acceptance gates pass.
+
+The 005B.5F.3 continuation adds stage/module navigation to Sample Studio,
+Mastering and Export focus, pins the existing workspace actions/transport, and
+releases track-owned sources on instrument removal or source-setting changes.
+The source-app Chromium checks are partial and do not close connected recording,
+meaningful-audio export, built-app, trusted-input or physical-device gates.
+See [BATCH_005B_5F_3_REPORT.md](./BATCH_005B_5F_3_REPORT.md) for the updated
+acceptance table and explicit blockers.
+
+The 005B.5F.4 continuation addresses mobile clip editing with tap selection,
+long-press/explicit Move, Trim handles, blank-lane pinch zoom and playhead-grid
+Sample Browser insertion. Chromium touch emulation verified a snapped move and
+trim, pinch anchor preservation and cancellation; the deterministic built app
+received a load/overflow smoke check. Cross-track moves, mobile gesture
+Undo/Redo, all-viewports connected workflows, physical-device input and
+remaining focus/lifecycle acceptance are still open. See
+[BATCH_005B_5F_4_REPORT.md](./BATCH_005B_5F_4_REPORT.md) and
+[MOBILE_ARRANGEMENT_GESTURES.md](./MOBILE_ARRANGEMENT_GESTURES.md). Do not
+mark 005B.5F.4 complete based on these partial checks.
+
+The 005B.5F.5 continuation verified source-app clip selection, explicit and
+long-press movement, start/end trimming, compatible and rejected cross-track
+drops, Duplicate/Delete, and their Undo/Redo paths at 390x844. The deterministic
+build verified long-press movement, Undo/Redo and end trim; all seven requested
+viewports received layout-only overflow checks. Host-side mobile browser
+fixtures now reload after setting the mobile viewport so the app initializes
+with the intended breakpoint. Connected Sample/Recording/Mastering/Export
+workflows, pointer cancellation/lost capture, full multi-viewport gestures,
+clean-origin connected `.EHS`, PWA regression and physical-device input remain
+open. See [BATCH_005B_5F_5_REPORT.md](./BATCH_005B_5F_5_REPORT.md) and the
+[user-led physical-device checklist](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md).

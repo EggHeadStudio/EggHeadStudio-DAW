@@ -102,6 +102,18 @@ buffered dry audio where possible.
 
 Clip Edit/Range modes let pointer gestures pass through the playhead line;
 seek using the ruler or return to Scroll/select to drag the playhead.
+On phones, tap a clip for its **Move / Trim / Duplicate / Delete** actions;
+long-press the body to move it, choose **Trim** to enable edge handles, or
+pinch an empty lane to zoom around the fingers. Sample Browser **+** uses the
+snapped playhead position. See the [mobile Arrangement gesture guide](./MOBILE_ARRANGEMENT_GESTURES.md)
+and [005B.5F.4 report](./BATCH_005B_5F_4_REPORT.md). That continuation remains
+incomplete pending full multi-viewport, connected-workflow and physical-device
+acceptance. The 5F.5 follow-up verified source-app compatible/incompatible
+track moves, both trim edges, clip actions and Undo/Redo, plus built-app
+movement and end trim at 390x844. It remains incomplete pending connected
+mobile production workflows, project/PWA round trips, pointer cancellation
+and physical-device input; see the [5F.5 report](./BATCH_005B_5F_5_REPORT.md)
+and [physical-device checklist](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md).
 Repeated Sample Studio opening no longer invokes stale teardown callbacks.
 Opening another library sample asks before discarding unsaved sample edits.
 New mastering graphs start at committed parameters; live edits retain smoothing.
@@ -142,6 +154,41 @@ records local Chromium verification of safe user-approved updates, offline
 production, multi-tab safety and data retention; see the
 [PWA architecture guide](./PWA_ARCHITECTURE.md). Physical Android/iOS,
 Firefox/Safari and remote deployment remain untested.
+
+### Batch 005B.5F focus/performance and scrollbar checkpoint (incomplete)
+
+The current slice adds reversible full-screen focus for existing workspace DOM,
+an optional portrait-to-landscape suggestion with per-workspace remembered
+choice, a playable Sampler keyboard, banked Drum Rack pads, and shared
+cross-browser scrollbar tokens. The existing AudioEngine, track effect chain,
+pad IDs, project state and native scrolling remain authoritative. The
+[performance-mode guide](./MOBILE_PERFORMANCE_MODES.md),
+[workspace audit](./BATCH_005B_5F_MOBILE_UX_AUDIT.md) and
+[checkpoint report](./BATCH_005B_5F_REPORT.md) document behavior and open gates.
+The [005B.5F.2 acceptance report](./BATCH_005B_5F_2_REPORT.md) records the
+live-audio and clean-origin project results plus remaining blockers.
+Integrated Chromium checked focus/orientation and Arrangement layout at seven
+viewports. The 005B.5F.2 source-app acceptance also measured real-time Sampler
+and Drum Rack output from their Performance Mode controls with an advancing
+48 kHz AudioContext, including note release, cancellation, simultaneous pads,
+mute, track EQ and a 32-pad bank switch. The Sampler/Drum settings and two
+sample assets survived a UI-exported `.EHS` import on a clean browser origin.
+These browser measurements used synthetic pointer events, not physical-device
+input.
+Batch 005B.5F.3 adds task navigation inside the Sample Studio, Mastering and
+Export focus surfaces, pins their existing transport/actions while navigating,
+and cleans up track-owned voices when an instrument is removed or its source
+settings change. Source Chromium checks covered Sample import/effect-stage
+navigation, Mastering module navigation, and a WAV export from an empty
+project; this does not accept complete mobile workflows. Recording/recovery,
+meaningful-audio export, built-app workflows, physical-device behavior and
+live instrument removal/replacement remain unverified. See the
+[5F.3 report](./BATCH_005B_5F_3_REPORT.md) for precise acceptance status.
+Headless Edge and Firefox screenshot/CSS probes verify the shared scrollbar style;
+native scrolling interactions, installed-PWA layout and physical-device
+appearance/audio remain untested. Trusted pointer capture and AudioContext
+suspension/resume through a real gesture also remain open. This is not full
+005B.5F acceptance.
 
 The global transport stays at the top. **Project** groups New Project, portable
 Save/Open .EHS and legacy JSON operations. **Download JSON** is the former

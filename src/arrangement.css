@@ -26,10 +26,11 @@
 .editor-tools button[aria-pressed=true]{background:#3b5e5a;border-color:#76d8c3}
 .workspace .track-row{height:124px}
 .workspace .track-label{width:125px;min-width:125px}
-.workspace .clip{top:1px;bottom:1px;height:auto;padding:5px 12px;border-radius:1px;box-shadow:none;touch-action:pan-x pan-y;user-select:none;min-width:0}
+.workspace .clip{top:1px;bottom:1px;height:auto;padding:5px 12px;border-radius:1px;box-shadow:none;touch-action:pan-x pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;min-width:0}
 .clip>span{position:relative;align-self:flex-start;z-index:1;pointer-events:none}
 .clip-waveform{position:absolute;top:23px;bottom:2px;left:0;height:calc(100% - 25px);pointer-events:none}
 .workspace .clip-handle{z-index:2;border-radius:0}
+.workspace .clip-handle{padding:0;border:0;color:inherit}
 .workspace .sampler-block{top:1px;bottom:1px;height:auto;border-radius:1px}
 .workspace .ruler-row{height:72px;z-index:8}
 .workspace .ruler{touch-action:none;flex-shrink:0;cursor:crosshair}
@@ -69,6 +70,8 @@
 .workspace .clip-device{flex:1;min-width:220px}
 .workspace .browser{min-width:150px;max-width:320px;resize:horizontal;overflow:auto}
 @media(max-width:850px){
+  .workspace .clip{touch-action:none}
+  .workspace .lane{touch-action:pan-x pan-y}
   .workspace .editor{min-height:650px;height:calc(100dvh - 230px)}
   .workspace .browser{max-width:100%;resize:none}
   .workspace .editor-tools{max-height:132px}
@@ -84,7 +87,20 @@
   .workspace .arrangement{min-height:230px}
   .workspace .clip-handle{width:20px}
   .range-edge{width:20px}
+  .mobile-clip-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 8px;background:#1b2330;border-bottom:1px solid #536478}
+  .mobile-clip-toolbar[hidden]{display:none}
+  .mobile-clip-toolbar strong{margin-right:auto;font-size:12px}
+  .mobile-clip-toolbar button{min-height:44px;min-width:62px}
+  .mobile-clip-toolbar button[aria-pressed=true]{background:#3b5e5a;border-color:#76d8c3}
+  .workspace .clip:not(.clip-selected) .clip-handle{pointer-events:none;opacity:0}
+  .workspace .arrangement:not(.clip-edit-mode):not(.range-mode):not(.mobile-clip-trim-mode) .clip-selected .clip-handle{pointer-events:none}
+  .workspace .arrangement.mobile-clip-trim-mode .clip-selected .clip-handle{pointer-events:auto}
+  .workspace .clip-selected .clip-handle{width:30px;background:#fff2;opacity:1}
+  .workspace .clip-selected .clip-handle::after{left:13px;width:3px;background:#fff}
+  .workspace .clip-move-active{outline:2px solid #ffdd85;outline-offset:1px;filter:brightness(1.16)}
+  .workspace .pinch-preview{will-change:transform}
 }
+@media(min-width:851px){.mobile-clip-toolbar{display:none}}
 .add-track-row{min-height:64px;align-items:center}
 .add-track-button{position:sticky;left:8px;min-height:44px;margin:8px}
 .sample-source,.selected-pad-editor,.instrument-devices{padding:14px;border:1px solid var(--border,#394052);border-radius:8px;margin:12px 0}

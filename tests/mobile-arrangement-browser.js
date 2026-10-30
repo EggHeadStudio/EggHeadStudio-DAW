@@ -29,7 +29,7 @@ export async function runMobileArrangementAcceptance(page){
     return await element.boundingBox();
   };
   try{
-    await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'));
+    await page.setViewportSize({width:390,height:844});await page.reload();await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'));
     check(await page.evaluate(()=>document.visibilityState==='visible'),'The browser must actually be visible; do not override visibility.');
     check(await page.evaluate(()=>!localStorage.getItem('pulse-project')),'Use an empty origin.');
     await page.locator('.project-menu>summary').click();page.once('dialog',dialog=>dialog.accept());await page.locator('#newProject').click();

@@ -38,7 +38,7 @@ export async function runMobileProductionAcceptance(page,{cleanOrigin,onStage=()
   };
   try{
     check(cleanOrigin,'Supply an unused cleanOrigin for portable restoration.');
-    await page.setViewportSize({width:390,height:844});
+    await page.setViewportSize({width:390,height:844});await page.reload();
     await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'));
     check(await page.evaluate(()=>document.visibilityState==='visible'&&!localStorage.getItem('pulse-project')),'Use a visible, empty origin.');
     cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:2});

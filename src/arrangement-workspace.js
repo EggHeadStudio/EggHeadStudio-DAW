@@ -1,6 +1,6 @@
 import {clipDurationSeconds} from './audio.js';
 import {copyTimeRange,deleteTimeRange,moveClipTo,normalizeTimeSelection,pasteTimeRange,resizeClipAtBeat} from './arrangement.js';
-import {clipViewportWindow,draggedClipStart,editLoopRegion,quantizeBeat,timelineBeatsAtClientX} from './timeline.js';
+import {clipViewportWindow,draggedClipStart,editLoopRegion,pinchZoomValue,quantizeBeat,timelineBeatsAtClientX} from './timeline.js';
 import {getWaveformRangePeaks} from './waveform.js';
 import {normalizeArrangementLoop} from './project-state.js';
 import {assertClipDestination,instrumentType,isInstrumentClip,patternForClip} from './instrument-clips.js';
@@ -67,6 +67,7 @@ export function mountArrangementWorkspace(options){
   const arrangement=$('.arrangement'),ruler=$('#ruler'),tools=$('.editor-tools'),lanes=all('.lane');
   const waves=[];
   let waveFrame=0;
+  let disposeInteractions=()=>{};
   const paintWaves=()=>{
     waveFrame=0;
     if(!arrangement.isConnected)return;
@@ -85,7 +86,7 @@ export function mountArrangementWorkspace(options){
   };
   const queueWaves=()=>{if(!waveFrame)waveFrame=requestAnimationFrame(paintWaves)};
   arrangement.addEventListener('scroll',queueWaves,{passive:true});
-  const waveResize=new ResizeObserver(()=>{if(arrangement.isConnected)queueWaves();else waveResize.disconnect()});
+  const waveResize=new ResizeObserver(()=>{if(arrangement.isConnected)queueWaves();else{waveResize.disconnect();disposeInteractions()}});
   waveResize.observe(arrangement);
   lanes.forEach(lane=>waveResize.observe(lane));
   document.querySelector('#loop')?.classList.toggle('active',Boolean(project.loop));
@@ -96,6 +97,56 @@ export function mountArrangementWorkspace(options){
   if(state.mobile===undefined){state.browserOpen=!mobile;state.mixerOpen=!mobile}
   state.mobile=mobile;
   const beatAt=clientX=>quantizeBeat(timelineBeatsAtClientX(clientX,ruler,arrangement,scale),grid());
+  const activePointers=new Map();let pinch=null,pinchFrame=0;
+  const pinchTargets=[ruler,...lanes];
+  const clearPinchPreview=()=>{if(pinchFrame)cancelAnimationFrame(pinchFrame);pinchFrame=0;for(const element of pinchTargets){element.style.transform='';element.style.transformOrigin='';element.classList.remove('pinch-preview')}};
+  const previewPinch=()=>{
+    pinchFrame=0;if(!pinch)return;
+    const points=[...activePointers.values()];if(points.length<2)return;
+    const distance=Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y),value=pinchZoomValue(pinch.startZoom,pinch.startDistance,distance);
+    pinch.zoom=value;
+    const factor=value/pinch.startZoom;
+    for(const [index,element]of pinchTargets.entries()){
+      element.style.transformOrigin=`${pinch.origins[index]}px 0`;
+      element.style.transform=`scaleX(${factor})`;
+      element.classList.add('pinch-preview');
+    }
+  };
+  const onPointerDown=event=>{
+    if(!mobile||event.pointerType!=='touch'||!event.target.matches('.lane'))return;
+    activePointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+    if(activePointers.size===2){
+      const points=[...activePointers.values()],distance=Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y);
+      if(distance<24){activePointers.delete(event.pointerId);return}
+      state.cancelClipPointer?.();state.cancelClipPointer=null;
+      const anchorX=(points[0].x+points[1].x)/2;
+      pinch={startZoom:options.zoom||1,startDistance:distance,anchorX,zoom:options.zoom||1,origins:pinchTargets.map(element=>anchorX-element.getBoundingClientRect().left)};
+      event.preventDefault();event.stopPropagation();
+    }
+  };
+  const onPointerMove=event=>{
+    if(!activePointers.has(event.pointerId))return;
+    activePointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+    if(pinch){event.preventDefault();if(!pinchFrame)pinchFrame=requestAnimationFrame(previewPinch)}
+  };
+  const finishPinch=(commitZoom)=>{
+    if(!pinch)return;
+    const {zoom:nextZoom,anchorX}=pinch;pinch=null;clearPinchPreview();activePointers.clear();
+    if(commitZoom&&Math.abs(nextZoom-(options.zoom||1))>1e-4)options.setZoom?.(nextZoom,anchorX);
+  };
+  const onPointerUp=event=>{
+    if(!activePointers.has(event.pointerId))return;
+    if(pinch){finishPinch(true);return}
+    activePointers.delete(event.pointerId);
+  };
+  const onPointerCancel=event=>{
+    if(!activePointers.has(event.pointerId))return;
+    if(pinch){finishPinch(false);return}
+    activePointers.delete(event.pointerId);
+  };
+  arrangement.addEventListener('pointerdown',onPointerDown,true);
+  document.addEventListener('pointermove',onPointerMove,true);document.addEventListener('pointerup',onPointerUp,true);document.addEventListener('pointercancel',onPointerCancel,true);
+  disposeInteractions=()=>{state.cancelClipPointer?.();state.cancelClipPointer=null;finishPinch(false);activePointers.clear();arrangement.removeEventListener('pointerdown',onPointerDown,true);document.removeEventListener('pointermove',onPointerMove,true);document.removeEventListener('pointerup',onPointerUp,true);document.removeEventListener('pointercancel',onPointerCancel,true)};
   let maxBeat=Math.max(64,(project.loopEnd||4)*4,...project.tracks.flatMap(track=>(track.clips||[]).map(clip=>clip.bar*4+scale.secondsToBeats(clipDurationSeconds(clip,project.bpm))+16)));
   const width=Math.max(1200,scale.beatsToPixels(maxBeat));
   ruler.style.width=`${width}px`;lanes.forEach(lane=>lane.style.width=`${width}px`);
@@ -114,6 +165,15 @@ export function mountArrangementWorkspace(options){
     const width=scale.beatsToPixels(maxBeat);ruler.style.width=`${width}px`;lanes.forEach(lane=>lane.style.width=`${width}px`);
   };
   tools.insertAdjacentHTML('beforeend',`<button id="selectRange" aria-pressed="${state.selectMode}">Select Range</button><button id="editClips" aria-pressed="${Boolean(state.editMode)}">Edit Clips (touch)</button><button id="clearRange">Clear Range</button><button id="cutRange">Cut</button><button id="deleteRange">Delete Selection</button><button id="setLoopRange">Loop from Range</button><button id="selectLoopRange">Select Loop</button><button id="playInsertion">Play from Marker</button><button id="followPlayhead" aria-pressed="${state.follow}">Follow</button><button id="toggleBrowser" aria-expanded="${state.browserOpen}">Samples</button><button id="toggleMixer" aria-expanded="${state.mixerOpen}">Mixer</button><button id="toggleDevices" aria-expanded="${state.devicesOpen}">Devices</button>`);
+  const clipToolbar=document.createElement('div');clipToolbar.className='mobile-clip-toolbar';
+  clipToolbar.hidden=!selectedClip;
+  clipToolbar.innerHTML=`<strong>Selected clip</strong><button type="button" data-clip-mode="move" aria-pressed="${state.clipMode==='move'}">Move</button><button type="button" data-clip-mode="trim" aria-pressed="${state.clipMode==='trim'}">Trim</button><button type="button" data-clip-action="duplicate">Duplicate</button><button type="button" data-clip-action="delete">Delete</button>`;
+  tools.after(clipToolbar);
+  clipToolbar.querySelectorAll('[data-clip-mode]').forEach(button=>button.onclick=()=>{
+    state.clipMode=state.clipMode===button.dataset.clipMode?null:button.dataset.clipMode;render();
+  });
+  clipToolbar.querySelector('[data-clip-action="duplicate"]').onclick=()=>options.duplicateClip();
+  clipToolbar.querySelector('[data-clip-action="delete"]').onclick=()=>options.deleteClip();
   const selectionToolbar=document.createElement('div');selectionToolbar.className='range-toolbar';
   selectionToolbar.innerHTML='<output id="rangeSummary" aria-live="polite">No time range</output><label>Start beat <input id="rangeStart" type="number" min="0" step="any"></label><label>End beat <input id="rangeEnd" type="number" min="0" step="any"></label><label>First track <select id="rangeFirstTrack"></select></label><label>Last track <select id="rangeLastTrack"></select></label><div class="section-actions"><button id="copySection">Copy section</button><button id="duplicateSection">Duplicate section</button><label>Paste at beat <input id="sectionPasteBeat" type="number" min="0" step="any"></label><button id="pasteSection">Paste section here</button></div>';
   for(const id of ['rangeFirstTrack','rangeLastTrack'])for(const [index,track]of project.tracks.entries()){
@@ -257,6 +317,8 @@ export function mountArrangementWorkspace(options){
   };
   arrangement.classList.toggle('range-mode',state.selectMode);
   arrangement.classList.toggle('clip-edit-mode',Boolean(state.editMode));
+  arrangement.classList.toggle('mobile-move-mode',mobile&&state.clipMode==='move');
+  arrangement.classList.toggle('mobile-clip-trim-mode',mobile&&state.clipMode==='trim');
   arrangement.addEventListener('click',event=>{if(state.selectMode&&event.target.closest('.sampler-block')){event.preventDefault();event.stopImmediatePropagation()}},true);
   lanes.forEach((lane,index)=>lane.onpointerdown=event=>{
     if(event.button!==0||event.isPrimary===false)return;
@@ -282,28 +344,21 @@ export function mountArrangementWorkspace(options){
       const canvas=document.createElement('canvas');canvas.className='clip-waveform';canvas.setAttribute('aria-hidden','true');element.prepend(canvas);
       wave={element,canvas,buffer,clip,track:project.tracks[index]};waves.push(wave);
     }
-    element.onpointerdown=event=>{
-      if(event.button!==0||event.isPrimary===false)return;
-      if(state.selectMode||event.shiftKey)return;
-      if(event.pointerType==='touch'&&!state.editMode){
-        const clear=()=>{element.onpointerup=null;element.onpointercancel=null};
-        element.onpointercancel=next=>{if(next.pointerId===event.pointerId)clear()};
-        element.onpointerup=next=>{
-          if(next.pointerId!==event.pointerId)return;
-          clear();
-          if(Math.abs(next.clientX-event.clientX)>6||Math.abs(next.clientY-event.clientY)>6)return;
-          const now=performance.now(),last=state.lastTap;state.lastTap={id:clip.id,time:now};
-          state.selection=null;if(isInstrumentClip(clip)&&last?.id===clip.id&&now-last.time<450)options.openClip(clip.id,index);else selectClip(clip.id,index);
-        };
-        return;
-      }
-      const handle=event.target.closest('[data-resize]'),edge=handle?.dataset.resize;
+    const selectTappedClip=()=>{
+      const now=performance.now(),last=state.lastTap;state.lastTap={id:clip.id,time:now};
+      state.selection=null;state.clipMode=null;
+      if(last?.id===clip.id&&now-last.time<450)options.openClipEditor?.(clip.id,index);
+      else selectClip(clip.id,index);
+    };
+    const startClipEdit=(event,edge)=>{
       if(edge&&!buffer&&!isInstrumentClip(clip))return notify('Load the clip source before trimming.');
       const original={...clip},grabOffset=timelineBeatsAtClientX(event.clientX,ruler,arrangement,scale)-clip.bar*4;
       const edgeOffset=edge==='end'?grabOffset-scale.secondsToBeats(clipDurationSeconds(clip,project.bpm)):grabOffset;
       let draft={...original},targetIndex=index,moved=false;
       arrangementGesture(element,event,next=>{
+        const wasMoved=moved;
         moved ||= Math.abs(next.clientX-event.clientX)>3||Math.abs(next.clientY-event.clientY)>3;
+        if(moved&&!wasMoved){options.activateClip?.(clip.id,index);state.selection=null}
         if(!moved)return;
         draft={...original};
         if(edge)resizeClipAtBeat(draft,edge,quantizeBeat(timelineBeatsAtClientX(next.clientX,ruler,arrangement,scale)-edgeOffset,grid()),buffer?.duration||0,project.bpm,patternForClip(project.tracks[index],clip));
@@ -315,12 +370,47 @@ export function mountArrangementWorkspace(options){
         element.style.transform=`translateY(${lanes[targetIndex].getBoundingClientRect().top-laneTop(index)}px)`;
         if(wave){wave.clip=draft;queueWaves()}
       },()=>{
-        if(!moved){
-          const now=performance.now(),last=state.lastTap;state.lastTap={id:clip.id,time:now};state.selection=null;
-          if(isInstrumentClip(clip)&&last?.id===clip.id&&now-last.time<450)options.openClip(clip.id,index);else selectClip(clip.id,index);return;
-        }
-        try{assertClipDestination(clip,instrumentType(project.tracks[index]),project.tracks[targetIndex]);checkpoint();moveClipTo(project.tracks,clip.id,project.tracks[targetIndex].id,draft.bar);if(edge&&isInstrumentClip(clip))delete clip.legacyTail;Object.assign(clip,draft);state.selection=null;commit()}catch(error){notify(error.message);render()}
+        element.classList.remove('clip-move-active');
+        if(!moved){selectTappedClip();return}
+        try{assertClipDestination(clip,instrumentType(project.tracks[index]),project.tracks[targetIndex]);checkpoint();moveClipTo(project.tracks,clip.id,project.tracks[targetIndex].id,draft.bar);if(edge&&isInstrumentClip(clip))delete clip.legacyTail;Object.assign(clip,draft);state.selection=null;state.clipMode=null;commit()}catch(error){notify(error.message);render()}
       },render);
+    };
+    element.onpointerdown=event=>{
+      if(event.button!==0||event.isPrimary===false)return;
+      if(state.selectMode||event.shiftKey)return;
+      const handle=event.target.closest('[data-resize]'),edge=handle?.dataset.resize;
+      if(mobile&&event.pointerType==='touch'){
+        const selected=selectedClip===clip.id,explicitMode=state.clipMode;
+        if(state.editMode){startClipEdit(event,edge);return}
+        if(explicitMode==='move'){startClipEdit(event,null);return}
+        if(edge){
+          if(!selected&&!state.editMode)return;
+          startClipEdit(event,edge);return;
+        }
+        if(explicitMode==='trim')return;
+        let cancelled=false,moved=false;
+        const pointerId=event.pointerId,startX=event.clientX,startY=event.clientY;
+        const clear=()=>{
+          clearTimeout(timer);document.removeEventListener('pointermove',onMove,true);document.removeEventListener('pointerup',onUp,true);document.removeEventListener('pointercancel',onCancel,true);
+          element.classList.remove('clip-move-active');if(state.cancelClipPointer===cancelPending)state.cancelClipPointer=null;
+        };
+        const cancelPending=()=>{cancelled=true;clear()};
+        const onMove=next=>{
+          if(next.pointerId!==pointerId||cancelled)return;
+          if(!moved&&Math.hypot(next.clientX-startX,next.clientY-startY)>10){moved=true;cancelPending()}
+        };
+        const onUp=next=>{if(next.pointerId!==pointerId||cancelled)return;clear();if(!moved&&Math.hypot(next.clientX-startX,next.clientY-startY)<=10)selectTappedClip()};
+        const onCancel=next=>{if(next.pointerId===pointerId)cancelPending()};
+        const timer=setTimeout(()=>{
+          if(cancelled)return;
+          clear();element.classList.add('clip-move-active');startClipEdit(event,null);
+        },350);
+        state.cancelClipPointer=cancelPending;
+        document.addEventListener('pointermove',onMove,true);document.addEventListener('pointerup',onUp,true);document.addEventListener('pointercancel',onCancel,true);
+        return;
+      }
+      if(edge&&!buffer&&!isInstrumentClip(clip))return notify('Load the clip source before trimming.');
+      startClipEdit(event,edge);
     };
     element.querySelectorAll('[data-resize]').forEach(handle=>handle.onpointerdown=null);
   });

@@ -78,6 +78,15 @@ export function wireDrumRackUI(root,{track,assets,buffers,engine,tracks,save,not
   root.querySelector('.selected-pad-editor .hint').textContent+=' Pad gain, pan and pitch apply to new hits; track effects update active voices. Space plays/pauses the Arrangement.';
   root.querySelectorAll('[data-pad-mute]').forEach(input=>input.onchange=event=>{const pad=rack.pads[+event.target.dataset.padMute];pad.mute=event.target.checked;save();refresh()});
   root.querySelectorAll('[data-trigger]').forEach(button=>button.onclick=()=>{const index=Number(button.dataset.trigger);trigger(index);selectedPads.set(track.id,index);refresh()});
+  root.addEventListener('ehs-select-pad',event=>{
+    const index=visible.findIndex(pad=>pad.id===event.detail?.padId);
+    if(index<0)return;
+    selectedPads.set(track.id,index);refresh();
+    requestAnimationFrame(()=>{
+      const heading=root.querySelector('.selected-pad-editor h3');
+      if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});heading.scrollIntoView({block:'center'})}
+    });
+  });
   function trigger(index) {
     const button=root.querySelector(`[data-trigger="${index}"]`);
     if(!button||!visible[index])return;

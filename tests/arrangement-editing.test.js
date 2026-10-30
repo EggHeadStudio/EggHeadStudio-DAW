@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {SampleEditor} from '../src/sample-editor.js';
-import {TimelineScale,clipViewportWindow,draggedClipStart,editLoopRegion,timelineBeatsAtClientX} from '../src/timeline.js';
+import {TimelineScale,anchoredTimelineScrollLeft,clipViewportWindow,draggedClipStart,editLoopRegion,pinchZoomValue,playheadBeatAtSeconds,timelineBeatsAtClientX} from '../src/timeline.js';
 import {ArrangementHistory,copyTimeRange,deleteTimeRange,normalizeTimeSelection,pasteTimeRange,resizeClipAtBeat,sliceAudioClip,splitClipAtTime} from '../src/arrangement.js';
 import {clipDurationSeconds,scheduleClipSource,toWav} from '../src/audio.js';
 import {createPortableProjectArchive,openPortableProjectArchive} from '../src/portable-project.js';
@@ -70,6 +70,28 @@ test('clip left edge snaps independently of center/right/left grab offsets',()=>
     near(draggedClipStart(pointer,offset,0),intended);
   }
   assert.equal(draggedClipStart(1,3,.25),0);
+});
+
+test('playhead sample insertion uses the selected snap grid in beat coordinates',()=>{
+  assert.equal(playheadBeatAtSeconds(2.07,120,.25),4.25);
+  assert.equal(playheadBeatAtSeconds(2.07,120,.5),4);
+  assert.equal(playheadBeatAtSeconds(2.07,120,0),4.14);
+  assert.throws(()=>playheadBeatAtSeconds(-.01,120,.25),RangeError);
+  assert.throws(()=>playheadBeatAtSeconds(1,0,.25),RangeError);
+});
+
+test('pinch zoom clamps scale and keeps its musical anchor stable across zoom and scroll',()=>{
+  assert.equal(pinchZoomValue(1,100,50),.5);
+  assert.equal(pinchZoomValue(1,100,1000),4);
+  assert.equal(pinchZoomValue(2,100,1),.4);
+  for(const zoom of [.4,1,2.5,4])for(const scrollLeft of [0,260,1340]){
+    const scale=new TimelineScale(123,39*zoom),anchorClientX=253,rulerContentLeft=80,rulerLeft=rulerContentLeft-scrollLeft;
+    const anchorBeat=scale.pixelsToBeats(anchorClientX-rulerLeft);
+    const nextZoom=pinchZoomValue(zoom,120,173),nextScale=new TimelineScale(123,39*nextZoom);
+    const nextLeft=anchoredTimelineScrollLeft(anchorBeat,anchorClientX,rulerContentLeft,nextScale.pixelsPerBeat);
+    const nextRulerLeft=rulerContentLeft-nextLeft,restoredBeat=nextScale.pixelsToBeats(anchorClientX-nextRulerLeft);
+    near(restoredBeat,anchorBeat);
+  }
 });
 
 test('loop brace snaps edges, preserves length while moving, and prevents inversion',()=>{
