@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#10131b" />
     <title>EggHeadStudio DAW</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
     <link rel="stylesheet" href="./src/style.css" />
     <link rel="stylesheet" href="./src/sampler.css" />
     <link rel="stylesheet" href="./src/arrangement.css" />
@@ -12,6 +14,11 @@
     <link rel="stylesheet" href="./src/mobile.css" />
   </head>
   <body>
+    <aside id="pwaUpdateNotice" class="pwa-update-notice" role="status" aria-live="polite" hidden>
+      <span data-pwa-update-message></span>
+      <button type="button" data-pwa-update-now>Update now</button>
+      <button type="button" data-pwa-update-later>Later</button>
+    </aside>
     <div id="app"></div>
     <script type="module" src="./src/app.js"></script>
   </body>

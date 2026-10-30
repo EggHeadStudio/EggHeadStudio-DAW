@@ -27,6 +27,7 @@ import {updateTrackMeters} from './meter-ui.js';
 import {organizeExportStudio,organizeInstrumentStudio,organizeMasteringStudio,organizeSampleStudio} from './studio-workflows.js';
 import {mountMasterEq,mountTrackEqs} from './eq-workspace.js';
 import {WorkspaceNavigation,mountMobileShell,syncMobileShell,mountExpandedEditors,closeExpandedEditor} from './mobile-workspace.js';
+import {mountPwaUpdates} from './pwa-updates.js';
 const workspaceNavigation=new WorkspaceNavigation();
 const navigationBlocked=()=>recordingStudio.busy||sampleCapturePending||recorder?.state==='recording';
 const navigationWarning=()=>notify('Finish or recover the current recording before switching workspaces. Your audio is preserved.');
@@ -53,6 +54,8 @@ let arrangementWorkspace=null;
 const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={id:uid(),schemaVersion:1,name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,releaseMetadata:{},exportSettings:normalizeExportSettings(),tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null,exportController=null,exportRun=null,releaseZipController=null,releaseArtworkBlob=null,releaseArtworkSourceBlob=null,releaseArtworkUrl=null;
 let portableImportController=null;
 let sampleCapturePending=false;
+let sampleCaptureFinalizing=false,projectImportPending=false,sampleLoadPending=false,sampleSavePending=false,assetImportPending=false;
+let pointerGesturePending=false,keyboardGesturePending=false;
 let portableExportController=null;
 let recoverySnapshot=null;
 let renderedWorkspace=null,transportPending=false;
@@ -93,6 +96,25 @@ mountTransportShortcuts(document,{toggle:toggleWorkspacePlayback,blocked:()=>rec
  onBlocked:()=>notify('Space is disabled during microphone recording. Use Finish/Stop; the take is preserved.'),
  onError:error=>notify(`Playback failed: ${error.message}`)});
 window.addEventListener('beforeunload',event=>{if(recordingStudio.busy){event.preventDefault();event.returnValue='A recording or buffered take is not saved.'}});
+document.addEventListener('pointerdown',event=>{pointerGesturePending=Boolean(event.target?.closest?.('#app'))},{capture:true});
+for(const type of ['pointerup','pointercancel'])document.addEventListener(type,()=>{pointerGesturePending=false},{capture:true});
+document.addEventListener('keydown',event=>{if(event.key!=='Tab'&&event.target?.closest?.('#app'))keyboardGesturePending=true},{capture:true});
+document.addEventListener('keyup',()=>{keyboardGesturePending=false},{capture:true});
+document.addEventListener('click',event=>{if(event.target?.closest?.('#finishRecord')&&recorder?.state==='recording')sampleCaptureFinalizing=true},{capture:true});
+function pwaUpdateBlockers(){
+ const blockers=[];
+ if(recordingStudio.busy||sampleCapturePending||sampleCaptureFinalizing||recorder?.state==='recording')blockers.push('Finish or cancel the active recording first.');
+ if(sampleEditor&&!savedSampleId)blockers.push('Save or discard the current unsaved sample edits first.');
+ if(projectDirty)blockers.push('Save or export the project before updating; there are unsaved changes.');
+ if(projectImportPending||portableImportController)blockers.push('Wait for the project import to finish.');
+ if(portableExportController)blockers.push('Wait for the .EHS export to finish.');
+ if(sampleSavePending)blockers.push('Wait for the sample save to finish.');
+ if(exportController||releaseZipController||masteringAnalysisController)blockers.push('Wait for the audio render/export to finish or cancel it.');
+ if(sampleLoadPending||assetImportPending)blockers.push('Wait for the sample import to finish.');
+ if(pointerGesturePending||keyboardGesturePending)blockers.push('Finish the current edit gesture first.');
+ if(engine.playing||masteringPlayback||sampleStudioPreviewPlaying())blockers.push('Stop audio playback before updating.');
+ return blockers;
+}
 async function dbSet(k,v){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets','readwrite');t.objectStore('assets').put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}async function dbGet(k){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets');const r=t.objectStore('assets').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 async function dbSetMany(entries){const db=await dbp;return new Promise((resolve,reject)=>{const tx=db.transaction('assets','readwrite'),store=tx.objectStore('assets');for(const[key,value]of entries)value===null?store.delete(key):store.put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Asset cache transaction was aborted.'))})}
 function notify(s){$('#toast').textContent=s;$('#toast').classList.add('show');setTimeout(()=>$('#toast')?.classList.remove('show'),3500)}
@@ -228,6 +250,19 @@ async function importPortableProject(file){
  }catch(error){notify(error.name==='AbortError'?'Portable project import cancelled. The active project was not replaced.':`Could not open portable project: ${error.message}`)}
  finally{cancel.remove();replacementButtons.forEach(button=>button.disabled=false);portableImportController=null;archiveStatus('Ready')}
 }
+async function openJsonProject(file){
+ if(projectDirty&&!window.confirm('The current project has unsaved changes. Open this JSON project anyway?'))return;
+ projectImportPending=true;
+ try{
+  const parsed=normalizeProjectData(parseProject(await file.text()));
+  engine.stop();resetArrangementEditing();project=parsed;
+  engine.setMaster({...DEFAULT_MASTER_SETTINGS,...parsed.masterSettings});
+  engine.setMastering(parsed.mastering||DEFAULT_MASTER_SETTINGS);
+  await restoreAssets();save(false);projectDirty=false;shell();
+  notify('JSON project loaded; samples not present in the local library may need relinking.');
+ }catch(error){notify(error.message)}
+ finally{projectImportPending=false}
+}
 function resetArrangementEditing(){arrangementHistory.clear();arrangementWorkspaceState.selection=null;arrangementWorkspaceState.clipboard=null;arrangementWorkspaceState.insertionBeat=0;arrangementClipboard=null}
 function resetTemporarySample(){recordingToken++;stopSampleStudioPreview();if(recorder?.state==='recording')cancelSampleRecording(true,false);sampleEditor=null;recordBuffer=null;recordBlob=null;savedSampleId=null;sampleFilename=createEmptySampleSession().filename}
 function applyNewProject(choice){
@@ -270,7 +305,7 @@ function wireShell(){
  $('#openEhs').onclick=()=>$('#importEhs').click();
  $('#importEhs').onchange=async event=>{const file=event.target.files?.[0];if(file)await importPortableProject(file);event.target.value=''};
  $('#openProject').onclick=()=>$('#importProject').click();
- $('#importProject').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;if(projectDirty&&!window.confirm('The current project has unsaved changes. Open this JSON project anyway?')){e.target.value='';return}try{const p=normalizeProjectData(parseProject(await file.text()));engine.stop();resetArrangementEditing();project=p;engine.setMaster({...DEFAULT_MASTER_SETTINGS,...p.masterSettings});engine.setMastering(p.mastering||DEFAULT_MASTERING_SETTINGS);await restoreAssets();save(false);projectDirty=false;shell();notify('JSON project loaded; samples not present in the local library may need relinking.')}catch(err){notify(err.message)}finally{e.target.value=''}};
+ $('#importProject').onchange=async e=>{const file=e.target.files?.[0];if(file)await openJsonProject(file);e.target.value=''};
  $('#exportMix').onclick=()=>openExportStudio();
  $$('[data-view]').forEach(b=>b.onclick=()=>navigateWorkspace(b.dataset.view));
  $('#importFiles').onchange=e=>importFiles([...e.target.files]);
@@ -283,7 +318,7 @@ function wireShell(){
 }
 const $$=s=>[...document.querySelectorAll(s)];
 async function addAsset(file){const id=uid(),ctx=await engine.init(),buffer=await ctx.decodeAudioData(await file.arrayBuffer());assets.set(id,{id,name:file.name,path:file.webkitRelativePath||file.name,size:file.size,duration:buffer.duration});buffers.set(id,buffer);await dbSet(id,file);return id}
-async function importFiles(files){let ok=0;for(const f of files){if(!/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(f.name)&&!f.type.startsWith('audio/'))continue;try{await addAsset(f);ok++}catch(e){console.warn(f.name,e)}}render();notify(`Imported ${ok} audio files. Files cached locally.`)}
+async function importFiles(files){let ok=0;assetImportPending=true;try{for(const f of files){if(!/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(f.name)&&!f.type.startsWith('audio/'))continue;try{await addAsset(f);ok++}catch(e){console.warn(f.name,e)}}render();notify(`Imported ${ok} audio files. Files cached locally.`)}finally{assetImportPending=false}}
 async function restoreAssets(){const ids=new Set(project.tracks.flatMap(t=>[...t.clips.map(c=>c.asset),t.sampler?.asset,...(t.drumRack?.pads||[]).map(p=>p.asset)].filter(Boolean)));for(const id of ids){if(buffers.has(id))continue;const f=await dbGet(id);if(f){try{const b=await(await engine.init()).decodeAudioData(await f.arrayBuffer());buffers.set(id,b);assets.set(id,{id,name:f.name||'Sample',duration:b.duration,path:f.name})}catch{}}}}
 function normalizeProject(){project=normalizeProjectData(project)}
 function normalizeProjectData(input){
@@ -676,12 +711,14 @@ async function startSampleRecording(){
   activeRecorder.onerror=event=>notify(`Recording failed: ${event.error?.message||'unknown recorder error'}`);
   activeRecorder.onstop=async()=>{
    if(token!==recordingToken)return;
+   sampleCaptureFinalizing=true;
    const parts=resolveRecordingChunks(chunks);chunks=[];const mimeType=activeRecorder.mimeType;releaseRecordingResources();recorder=null;
-   if(!parts){clearSampleStudioSession();if(view==='sample')renderSampleBatch003();notify('Recording contained no audio and was discarded.');return}
+   if(!parts){clearSampleStudioSession();if(view==='sample')renderSampleBatch003();notify('Recording contained no audio and was discarded.');sampleCaptureFinalizing=false;return}
    try{
     recordBlob=new Blob(parts,{type:mimeType});const buffer=await engine.ctx.decodeAudioData(await recordBlob.arrayBuffer());if(token!==recordingToken)return;
     resetSampleEditor(buffer,'My_Recording.wav');notify('Recording captured. Select, edit, preview, and save the new sample.');
-   }catch(error){if(token!==recordingToken)return;clearSampleStudioSession();if(view==='sample')renderSampleBatch003();notify(`Recording decode failed: ${error.message}`)}
+   }catch(error){if(token===recordingToken){clearSampleStudioSession();if(view==='sample')renderSampleBatch003();notify(`Recording decode failed: ${error.message}`)}}
+   finally{sampleCaptureFinalizing=false}
   };
   clearSampleStudioSession();view='sample';activeRecorder.start();renderSampleBatch003();drawRecordingWave();
  }catch(error){
@@ -689,8 +726,28 @@ async function startSampleRecording(){
   if(token===recordingToken)notify(`Microphone unavailable: ${error.message}`);
  }finally{sampleCapturePending=false;mountMobileEditors()}
 }
-function loadSampleForEditing(){if(shouldConfirmSampleDiscard({hasBuffer:Boolean(sampleEditor),saved:Boolean(savedSampleId)})&&!confirm('Discard the current unsaved sample and load another audio file?'))return;const token=recordingToken,input=document.createElement('input');input.type='file';input.accept='audio/*';input.onchange=async()=>{const file=input.files?.[0];if(!file)return;try{const buffer=await(await engine.init()).decodeAudioData(await file.arrayBuffer());if(token!==recordingToken)return;resetSampleEditor(buffer,file.name);notify(`${file.name} loaded for non-destructive editing.`)}catch(error){if(token===recordingToken)notify(`Sample decode failed: ${error.message}`)}};input.click()}
-async function saveEditedSample(buffer,name){if(!buffer||!buffer.length)throw Error('Edited sample contains no audio frames.');const token=recordingToken,filename=(name.trim()||'Sample').replace(/\.wav$/i,'')+'.wav',blob=toWav(buffer),file=new File([blob],filename,{type:'audio/wav'}),assetId=await addAsset(file);if(token===recordingToken)savedSampleId=assetId;let savedName=null,folderError=null;if(folderHandle){try{savedName=await nextFolderFileName(folderHandle,filename);const handle=await folderHandle.getFileHandle(savedName,{create:true}),writer=await handle.createWritable();await writer.write(blob);await writer.close()}catch(error){folderError=error}}if(!savedName)download(blob,filename);if(token===recordingToken){sampleFilename=filename;renderSampleBatch003()}notify(folderError?`Folder save failed (${folderError.message}); downloaded ${filename}.`:`${filename} saved to the sample library${savedName?` and folder as ${savedName}`:' and downloaded'}.`)}
+function loadSampleForEditing(){if(shouldConfirmSampleDiscard({hasBuffer:Boolean(sampleEditor),saved:Boolean(savedSampleId)})&&!confirm('Discard the current unsaved sample and load another audio file?'))return;const token=recordingToken,input=document.createElement('input');input.type='file';input.accept='audio/*';sampleLoadPending=true;input.addEventListener('cancel',()=>{sampleLoadPending=false},{once:true});input.onchange=async()=>{const file=input.files?.[0];if(!file){sampleLoadPending=false;return}try{const buffer=await(await engine.init()).decodeAudioData(await file.arrayBuffer());if(token!==recordingToken)return;resetSampleEditor(buffer,file.name);notify(`${file.name} loaded for non-destructive editing.`)}catch(error){if(token===recordingToken)notify(`Sample decode failed: ${error.message}`)}finally{sampleLoadPending=false}};input.click()}
+async function saveEditedSample(buffer,name){
+ if(!buffer||!buffer.length)throw Error('Edited sample contains no audio frames.');
+ if(sampleSavePending)throw Error('A sample save is already in progress.');
+ sampleSavePending=true;
+ try{
+  const token=recordingToken,filename=(name.trim()||'Sample').replace(/\.wav$/i,'')+'.wav',
+   blob=toWav(buffer),file=new File([blob],filename,{type:'audio/wav'}),assetId=await addAsset(file);
+  if(token===recordingToken)savedSampleId=assetId;
+  let savedName=null,folderError=null;
+  if(folderHandle){
+   try{
+    savedName=await nextFolderFileName(folderHandle,filename);
+    const handle=await folderHandle.getFileHandle(savedName,{create:true}),writer=await handle.createWritable();
+    await writer.write(blob);await writer.close();
+   }catch(error){folderError=error}
+  }
+  if(!savedName)download(blob,filename);
+  if(token===recordingToken){sampleFilename=filename;renderSampleBatch003()}
+  notify(folderError?`Folder save failed (${folderError.message}); downloaded ${filename}.`:`${filename} saved to the sample library${savedName?` and folder as ${savedName}`:' and downloaded'}.`);
+ }finally{sampleSavePending=false}
+}
 function masterEqSvg(settings){
  return '<div id="masterEqGraph"></div>';
 }
@@ -1129,6 +1186,7 @@ function saveMasterPreset(){
 }
 async function startup(){
  let recoveryError=null,savedProject=null;
+ mountPwaUpdates({getSafety:pwaUpdateBlockers});
  try{savedProject=localStorage.getItem('pulse-project');if(savedProject)project=normalizeProjectData(parseProject(savedProject));else normalizeProject()}catch(error){recoveryError=error;if(savedProject)recoverySnapshot={key:`pulse-project-recovery-${Date.now()}`,serialized:savedProject};console.error('Project recovery failed; saved project retained.',error)}
  project.mastering=normalizeMasteringSettings(project.mastering||DEFAULT_MASTERING_SETTINGS);engine.masterSettings={...engine.masterSettings,...project.masterSettings};engine.masteringSettings=normalizeMasteringSettings(project.mastering);shell();await restoreAssets();const keys=artworkKeys();releaseArtworkBlob=await dbGet(keys.current);releaseArtworkSourceBlob=await dbGet(keys.source);releaseArtworkUrl=releaseArtworkBlob?URL.createObjectURL(releaseArtworkBlob):null;if(view==='arrange')render();notify(recoveryError?`Saved project could not be restored: ${recoveryError.message}. Its stored data was not replaced.`:'Ready. Import a folder or record your first sample.');
 }startup();

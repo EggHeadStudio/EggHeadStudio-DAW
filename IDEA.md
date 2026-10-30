@@ -46,7 +46,7 @@ EggHeadStudio DAW is a local-first, sample-driven DAW served as a static website
 
 ### 2.1 First launch
 
-- Open hosted URL on desktop/mobile; browser loads static assets and registers service worker after explicit offline-capability implementation.
+- Open hosted URL on desktop/mobile; the built Pages app registers its service worker, caches the versioned app shell and waits for user approval before a safe update. Offline project/audio operations are browser-acceptance tested; platform installation remains an explicit verification step.
 - Choose `New Project` with BPM, time signature, sample rate, project name.
 - Connect a local folder if supported; otherwise select/import folder or individual files. Show clearly whether the library is a live writable folder, an imported snapshot, or a cloud library.
 - Index files in worker with cancellation, progress and bounded memory; display folders, search, duration, format, tags, waveform previews and audition.
@@ -334,20 +334,28 @@ Update this checklist only after relevant test evidence is recorded. A feature e
 
 ## 13. NEXT IMMEDIATE ACTION
 
-Review the [005B.5D closure](./BATCH_005B_5D_REPORT.md) before planning PWA work.
-The connected source/built 22-step mobile workflow now passes the unchanged
-max 1e-4 / RMS 1e-6 repeated/restored audio gates. The cause was variable native
-polyphonic summation entering a numerically sensitive low-cut path, not archive
-corruption or changed EQ settings. Reusable, deterministic offline voice/track
-sum slots preserve native filters, live smoothing, stereo, sidechain and limiter.
-The built test resolves the actual versioned modules. All **324/324** Node
-tests pass, preserving the previous 321.
+The [005B.5D closure](./BATCH_005B_5D_REPORT.md) resolved the mastering
+repeatability blocker. Batch 005B.5E added the relative-path PWA manifest,
+official app icons and versioned offline shell. Batch 005B.5E.1 then verified
+user-approved safe updates, failed-install recovery, multi-tab blockers/cache
+retention, and an actual local-Chromium offline production workflow. The
+[5E.1 report](./BATCH_005B_5E_1_REPORT.md) and
+[PWA architecture guide](./PWA_ARCHITECTURE.md) contain evidence and limits.
+The 005B.5D source/built mobile workflow still passes its unchanged max 1e-4 /
+RMS 1e-6 audio gates. The final regression results for this follow-up are
+recorded in the 5E.1 report.
+
+The current local browser scope is complete; do not infer remote deployment or
+physical Android/iOS, Firefox or Safari acceptance. The next release step is an
+approved Pages deployment followed by the platform checklist in
+[PWA_ARCHITECTURE.md](./PWA_ARCHITECTURE.md). Treat deployment approval as a
+separate gate. The PWA update does not implement a new instrument.
 
 Additional phone take switching/metered preview, Sample Cancel/New and protected
 replacement, visible shared sample transport, numerical export progress/cancel,
 metadata/artwork release packaging and New/import/reload safety are verified.
 Seven-size representative interactions remain distinct from exhaustive gesture
-and physical-device acceptance. No PWA or new instrument was implemented.
+and physical-device acceptance.
 Retain the historical [005B.5C report](./BATCH_005B_5C_REPORT.md),
 [interaction matrix](./BATCH_005B_5C_ACCEPTANCE_MATRIX.md),
 [mobile milestone](./BATCH_005B_5_REPORT.md),

@@ -30,9 +30,33 @@ Open `http://localhost:5000`.
 
 For cache-versioned deployment, select **Settings → Pages → Source → GitHub Actions**. The supplied `.github/workflows/pages.yml` tests the application, runs `npm run build`, and deploys `dist` on an approved push to `main` or a manual workflow run. No dependency installation is needed for the build: the browser dependencies are already bundled locally. GitHub Pages serves static assets only; the Flask server is **not deployed**. This configuration has been tested locally, not deployed from this worktree.
 
-The deterministic build hashes the HTML and all `src`/`vendor` assets. JavaScript, CSS, nested imports, Workers and AudioWorklets share `assets/<content-version>/`, so cached files from another release cannot be mixed into the new graph. URLs remain relative for repository subpaths. No Service Worker, random per-load query string, project migration or storage clearing is used. Local development still works directly from the source without building. Legacy **Deploy from a branch** remains unversioned; switch to Actions to use this protection.
+The deterministic build hashes the HTML, PWA manifest, generated icons, service-worker template and all `src`/`vendor` assets. JavaScript, CSS, nested imports, Workers and AudioWorklets share `assets/<content-version>/`, so cached files from another release cannot be mixed into the new graph. URLs remain relative for repository subpaths. The generated service worker caches only the built application shell, versioned application assets, manifest and app icons; it does not cache project/sample/recording data or clear browser storage. Local source serving remains build-free; install and offline support are provided by the Pages build. Legacy **Deploy from a branch** is not the supported PWA deployment; use Actions.
+
+The installable app uses the official root `icon.png` artwork, proportionally
+resized without cropping for standard icons. The maskable asset adds dark
+padding to keep the logo and metallic frame inside the central safe area.
+Preview the variants at [icons/icon-preview.png](./icons/icon-preview.png).
+After the Actions build is deployed, the manifest and icon URLs resolve under
+the repository subpath. Browser installation affordances vary by platform;
+physical Android and iOS installation has not been certified.
 
 After deployment, reload and inspect `document.querySelector('meta[name="ehs-build"]').content` in DevTools; compare it with `version.json` fetched using `{cache:'no-store'}`. All script/style requests should contain that same version. GitHub/CDN caching can still serve an old HTML entry temporarily; use a hard reload if its version differs. This is not an instantaneous-update guarantee, and the first transition from an unversioned release may require a hard reload. Never clear site data to update: that would remove local projects/audio.
+
+The built PWA keeps a new worker waiting until the user selects **Update now**.
+**Later** leaves the current app running. Before activation, every open app tab
+must answer the safety check and report no recording, unsaved edits, save/import,
+export, active gesture or playback operation. A missing or incompatible tab
+blocks the update rather than risking user work. Old versioned shell caches
+remain available to older clients and are cleaned only after all app tabs report
+the new build. Updates never clear project or audio storage; keep portable
+`.EHS` backups of important work.
+
+Local Chromium acceptance verified failed-install recovery, a two-tab A-to-B
+transition and an offline editing/save/export workflow. The exact scope,
+evidence and browser/platform limitations are recorded in the
+[005B.5E.1 report](./BATCH_005B_5E_1_REPORT.md) and
+[PWA architecture guide](./PWA_ARCHITECTURE.md). Android/iOS device installation,
+Firefox/Safari and remote Pages deployment remain unverified.
 
 ## Batch 005B.1 workspace foundation
 
@@ -110,8 +134,14 @@ Firefox or Safari verification is claimed. See the
 [005B.5C report](./BATCH_005B_5C_REPORT.md) records the historical numerical failure;
 the [005B.5D report](./BATCH_005B_5D_REPORT.md) and
 [interaction matrix](./BATCH_005B_5C_ACCEPTANCE_MATRIX.md) identify exact results
-and remaining device/gesture limits. PWA planning can follow review of this
-closure; no PWA or new instrument work is included here.
+and remaining device/gesture limits. That 5D checkpoint predates PWA work;
+Batch 005B.5E adds the official-brand app icons, relative manifest and offline
+shell caching. See the [5E PWA report](./BATCH_005B_5E_PWA_REPORT.md) for
+icon/manifest verification. The [5E.1 report](./BATCH_005B_5E_1_REPORT.md)
+records local Chromium verification of safe user-approved updates, offline
+production, multi-tab safety and data retention; see the
+[PWA architecture guide](./PWA_ARCHITECTURE.md). Physical Android/iOS,
+Firefox/Safari and remote deployment remain untested.
 
 The global transport stays at the top. **Project** groups New Project, portable
 Save/Open .EHS and legacy JSON operations. **Download JSON** is the former
