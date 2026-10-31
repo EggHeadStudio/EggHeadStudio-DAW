@@ -126,3 +126,13 @@ Batch 005B.5F.5 cannot be accepted until the following are completed:
 
 Use the practical [physical-device checklist](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md)
 for the separate user-led device gate.
+
+## QA-01.1 follow-up
+
+Subsequent targeted mobile/PWA usability fixes and browser checks are recorded
+in the [QA-01.1 Extended report](./QA-01_1_EXTENDED_REPORT.md). They verify
+specific Arrangement pinch/drag-preview behavior, Sample Browser refresh and
+non-destructive hiding, mobile device-panel access, and PWA notice timeout
+recovery. They do not close the connected workflows, full viewport matrix,
+clean-origin project round trip, actual PWA update activation or physical-device
+gates listed above. The 5F.5 status remains **INCOMPLETE**.

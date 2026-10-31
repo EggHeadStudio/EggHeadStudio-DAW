@@ -45,19 +45,23 @@ function drawClipWave(canvas,buffer,clip,window,height){
 }
 
 export function arrangementGesture(element,event,move,finish,cancel){
-  if(event.button!==0||event.isPrimary===false)return;
+  if(event.button!==0||event.isPrimary===false)return null;
   event.preventDefault();event.stopPropagation();
   const pointerId=event.pointerId;
   element.setPointerCapture(pointerId);
+  let ended=false;
   const onMove=next=>{if(next.pointerId===pointerId)move(next)};
   const end=(next,aborted)=>{
-    if(next.pointerId!==pointerId)return;
+    if(ended||next.pointerId!==pointerId)return false;
+    ended=true;
     element.removeEventListener('pointermove',onMove);element.removeEventListener('pointerup',onUp);element.removeEventListener('pointercancel',onCancel);element.removeEventListener('lostpointercapture',onCancel);
     if(element.hasPointerCapture(pointerId))element.releasePointerCapture(pointerId);
     if(aborted)cancel?.();else finish(next);
+    return true;
   };
   const onUp=next=>end(next,false),onCancel=next=>end(next,true);
   element.addEventListener('pointermove',onMove);element.addEventListener('pointerup',onUp);element.addEventListener('pointercancel',onCancel);element.addEventListener('lostpointercapture',onCancel);
+  return()=>end({pointerId},true);
 }
 
 export function mountArrangementWorkspace(options){
@@ -96,6 +100,13 @@ export function mountArrangementWorkspace(options){
   const mobile=matchMedia('(max-width:850px)').matches;
   if(state.mobile===undefined){state.browserOpen=!mobile;state.mixerOpen=!mobile}
   state.mobile=mobile;
+  const trackGesture=(element,event,move,finish,cancel)=>{
+    let cancelGesture;
+    const clear=()=>{if(state.cancelClipPointer===cancelGesture)state.cancelClipPointer=null};
+    cancelGesture=arrangementGesture(element,event,move,next=>{clear();finish(next)},()=>{clear();cancel?.()});
+    if(cancelGesture)state.cancelClipPointer=cancelGesture;
+    return cancelGesture;
+  };
   const beatAt=clientX=>quantizeBeat(timelineBeatsAtClientX(clientX,ruler,arrangement,scale),grid());
   const activePointers=new Map();let pinch=null,pinchFrame=0;
   const pinchTargets=[ruler,...lanes];
@@ -113,7 +124,7 @@ export function mountArrangementWorkspace(options){
     }
   };
   const onPointerDown=event=>{
-    if(!mobile||event.pointerType!=='touch'||!event.target.matches('.lane'))return;
+    if(!mobile||event.pointerType!=='touch'||!arrangement.contains(event.target))return;
     activePointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
     if(activePointers.size===2){
       const points=[...activePointers.values()],distance=Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y);
@@ -145,8 +156,13 @@ export function mountArrangementWorkspace(options){
     activePointers.delete(event.pointerId);
   };
   arrangement.addEventListener('pointerdown',onPointerDown,true);
+  const preventArrangementPinch=event=>{if(event.touches?.length>1)event.preventDefault()};
+  const onGestureStart=event=>event.preventDefault();
+  arrangement.addEventListener('touchstart',preventArrangementPinch,{capture:true,passive:false});
+  arrangement.addEventListener('touchmove',preventArrangementPinch,{capture:true,passive:false});
+  arrangement.addEventListener('gesturestart',onGestureStart,{passive:false});
   document.addEventListener('pointermove',onPointerMove,true);document.addEventListener('pointerup',onPointerUp,true);document.addEventListener('pointercancel',onPointerCancel,true);
-  disposeInteractions=()=>{state.cancelClipPointer?.();state.cancelClipPointer=null;finishPinch(false);activePointers.clear();arrangement.removeEventListener('pointerdown',onPointerDown,true);document.removeEventListener('pointermove',onPointerMove,true);document.removeEventListener('pointerup',onPointerUp,true);document.removeEventListener('pointercancel',onPointerCancel,true)};
+  disposeInteractions=()=>{state.cancelClipPointer?.();state.cancelClipPointer=null;finishPinch(false);activePointers.clear();arrangement.removeEventListener('pointerdown',onPointerDown,true);arrangement.removeEventListener('touchstart',preventArrangementPinch,true);arrangement.removeEventListener('touchmove',preventArrangementPinch,true);arrangement.removeEventListener('gesturestart',onGestureStart);document.removeEventListener('pointermove',onPointerMove,true);document.removeEventListener('pointerup',onPointerUp,true);document.removeEventListener('pointercancel',onPointerCancel,true)};
   let maxBeat=Math.max(64,(project.loopEnd||4)*4,...project.tracks.flatMap(track=>(track.clips||[]).map(clip=>clip.bar*4+scale.secondsToBeats(clipDurationSeconds(clip,project.bpm))+16)));
   const width=Math.max(1200,scale.beatsToPixels(maxBeat));
   ruler.style.width=`${width}px`;lanes.forEach(lane=>lane.style.width=`${width}px`);
@@ -220,7 +236,7 @@ export function mountArrangementWorkspace(options){
         };
         handle.onpointerdown=event=>{
           const original={...state.selection};let draft={...original};
-          arrangementGesture(handle,event,next=>{
+          trackGesture(handle,event,next=>{
             const beat=beatAt(next.clientX);draft=normalizeTimeSelection(edge==='start'?beat:original.startBeat,edge==='end'?beat:original.endBeat,original.firstTrack,original.lastTrack);
             for(const item of all('.time-range')){item.style.left=`${scale.beatsToPixels(draft.startBeat)}px`;item.style.width=`${scale.beatsToPixels(draft.endBeat-draft.startBeat)}px`}
           },()=>{state.selection=draft;paintSelection()},()=>paintSelection());
@@ -304,14 +320,14 @@ export function mountArrangementWorkspace(options){
     if(event.button!==0||event.isPrimary===false)return;
     const original=state.insertionBeat;
     let beat=beatAt(event.clientX);state.insertionBeat=beat;showInsertion();
-    arrangementGesture(element,event,next=>{beat=beatAt(next.clientX);state.insertionBeat=beat;showInsertion()},()=>{seek(scale.beatsToSeconds(beat));paintSelection()},()=>{state.insertionBeat=original;showInsertion()});
+    trackGesture(element,event,next=>{beat=beatAt(next.clientX);state.insertionBeat=beat;showInsertion()},()=>{seek(scale.beatsToSeconds(beat));paintSelection()},()=>{state.insertionBeat=original;showInsertion()});
   };
   ruler.onpointerdown=event=>{if(!event.target.closest('.arrangement-loop'))seekGesture(ruler,event)};
   $('#playhead').onpointerdown=event=>seekGesture($('#playhead'),event);
   loop.onpointerdown=event=>{
     const original=loopState(),edge=event.target.closest('[data-loop-edge]')?.dataset.loopEdge||'move',offset=timelineBeatsAtClientX(event.clientX,ruler,arrangement,scale)-(edge==='end'?original.end:original.start);
     let draft=original;
-    arrangementGesture(loop,event,next=>{draft=editLoopRegion(original,edge,timelineBeatsAtClientX(next.clientX,ruler,arrangement,scale)-offset,grid());paintLoop(draft)},()=>{
+    trackGesture(loop,event,next=>{draft=editLoopRegion(original,edge,timelineBeatsAtClientX(next.clientX,ruler,arrangement,scale)-offset,grid());paintLoop(draft)},()=>{
       checkpoint();project.loopStart=draft.start/4;project.loopEnd=draft.end/4;commit();
     },()=>paintLoop(original));
   };
@@ -330,7 +346,7 @@ export function mountArrangementWorkspace(options){
     const anchor=event.shiftKey&&state.selection?{beat:state.selection.startBeat,track:state.selection.firstTrack}:{beat:beatAt(event.clientX),track:index};
     const original=state.selection?structuredClone(state.selection):null;
     let moved=false;
-    arrangementGesture(lane,event,next=>{
+    trackGesture(lane,event,next=>{
       moved ||= Math.abs(next.clientX-event.clientX)>3||Math.abs(next.clientY-event.clientY)>3;
       const target=selectAt(next);state.selection=normalizeTimeSelection(anchor.beat,beatAt(next.clientX),anchor.track,target<0?index:target);paintSelection();
     },()=>{if(!moved){state.selection=null;state.insertionBeat=beatAt(event.clientX);showInsertion();seek(scale.beatsToSeconds(state.insertionBeat))}paintSelection()},()=>{state.selection=original;paintSelection()});
@@ -355,7 +371,9 @@ export function mountArrangementWorkspace(options){
       const original={...clip},grabOffset=timelineBeatsAtClientX(event.clientX,ruler,arrangement,scale)-clip.bar*4;
       const edgeOffset=edge==='end'?grabOffset-scale.secondsToBeats(clipDurationSeconds(clip,project.bpm)):grabOffset;
       let draft={...original},targetIndex=index,moved=false;
-      arrangementGesture(element,event,next=>{
+      const bounds=element.getBoundingClientRect(),pointerOffsetX=event.clientX-bounds.left,pointerOffsetY=event.clientY-bounds.top;
+      let dragPreview=null;
+      trackGesture(element,event,next=>{
         const wasMoved=moved;
         moved ||= Math.abs(next.clientX-event.clientX)>3||Math.abs(next.clientY-event.clientY)>3;
         if(moved&&!wasMoved){options.activateClip?.(clip.id,index);state.selection=null}
@@ -365,15 +383,36 @@ export function mountArrangementWorkspace(options){
         else{
           draft.bar=draggedClipStart(timelineBeatsAtClientX(next.clientX,ruler,arrangement,scale),grabOffset,grid())/4;
           const nextTrack=selectAt(next);targetIndex=nextTrack<0?index:nextTrack;
+          if(!dragPreview){
+            dragPreview=element.cloneNode(true);
+            dragPreview.removeAttribute('data-clip');dragPreview.classList.add('clip-drag-preview');
+            dragPreview.setAttribute('aria-hidden','true');dragPreview.querySelectorAll('button').forEach(button=>button.remove());
+            const sourceCanvas=element.querySelector('canvas'),previewCanvas=dragPreview.querySelector('canvas');
+            if(sourceCanvas&&previewCanvas){previewCanvas.width=sourceCanvas.width;previewCanvas.height=sourceCanvas.height;previewCanvas.getContext('2d')?.drawImage(sourceCanvas,0,0)}
+            dragPreview.style.height=`${bounds.height}px`;
+            document.body.append(dragPreview);element.classList.add('clip-move-active');
+          }
+          dragPreview.style.left=`${next.clientX-pointerOffsetX}px`;
+          dragPreview.style.top=`${next.clientY-pointerOffsetY}px`;
+          dragPreview.style.width=`${scale.timeToPixels(clipDurationSeconds(draft,project.bpm))}px`;
+          lanes.forEach((lane,laneIndex)=>lane.parentElement.classList.toggle('clip-drop-target',laneIndex===targetIndex));
         }
-        element.style.left=`${scale.barsToPixels(draft.bar)}px`;element.style.width=`${scale.timeToPixels(clipDurationSeconds(draft,project.bpm))}px`;
-        element.style.transform=`translateY(${lanes[targetIndex].getBoundingClientRect().top-laneTop(index)}px)`;
+        if(edge){
+          element.style.left=`${scale.barsToPixels(draft.bar)}px`;
+          element.style.width=`${scale.timeToPixels(clipDurationSeconds(draft,project.bpm))}px`;
+        }
         if(wave){wave.clip=draft;queueWaves()}
       },()=>{
-        element.classList.remove('clip-move-active');
+        element.classList.remove('clip-move-active');dragPreview?.remove();
+        lanes.forEach(lane=>lane.parentElement.classList.remove('clip-drop-target'));
         if(!moved){selectTappedClip();return}
         try{assertClipDestination(clip,instrumentType(project.tracks[index]),project.tracks[targetIndex]);checkpoint();moveClipTo(project.tracks,clip.id,project.tracks[targetIndex].id,draft.bar);if(edge&&isInstrumentClip(clip))delete clip.legacyTail;Object.assign(clip,draft);state.selection=null;state.clipMode=null;commit()}catch(error){notify(error.message);render()}
-      },render);
+      },()=>{
+        element.classList.remove('clip-move-active');dragPreview?.remove();
+        lanes.forEach(lane=>lane.parentElement.classList.remove('clip-drop-target'));
+        element.style.left=`${scale.barsToPixels(original.bar)}px`;element.style.width=`${scale.timeToPixels(clipDurationSeconds(original,project.bpm))}px`;element.style.transform='';
+        if(wave){wave.clip=clip;queueWaves()}
+      });
     };
     element.onpointerdown=event=>{
       if(event.button!==0||event.isPrimary===false)return;
@@ -414,7 +453,6 @@ export function mountArrangementWorkspace(options){
     };
     element.querySelectorAll('[data-resize]').forEach(handle=>handle.onpointerdown=null);
   });
-  const laneTop=index=>lanes[index].getBoundingClientRect().top;
   // Keep the mixer in the same scroll row as its lane, not in a second scroller.
   const strips=all('.mixer-strip:not(.master-strip)'),actionsByTrack=all('.track-label .track-actions');
   strips.forEach((strip,index)=>{
@@ -429,8 +467,6 @@ export function mountArrangementWorkspace(options){
     lanes[index].parentElement.append(strip);
   });
   const bottom=$('.bottom-panel');bottom.hidden=!state.devicesOpen;
-  if(state.deviceHeight)bottom.style.height=`${state.deviceHeight}px`;
-  bottom.addEventListener('pointerup',()=>state.deviceHeight=bottom.getBoundingClientRect().height);
   bottom.querySelector('.pane-head').firstChild.textContent='DEVICES & CLIP EDITOR ';
   if(project.tracks[selectedTrack]?.sampler||project.tracks[selectedTrack]?.drumRack){
     const instrument=document.createElement('button');instrument.className='selected-instrument';instrument.textContent=project.tracks[selectedTrack].drumRack?'Drum Rack Setup (pads & samples)':'Sampler Setup (sample & keys)';

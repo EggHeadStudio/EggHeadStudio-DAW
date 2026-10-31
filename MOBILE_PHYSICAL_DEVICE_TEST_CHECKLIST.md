@@ -42,8 +42,11 @@
 | Duplicate/Delete | Duplicate a selected clip; Undo/Redo; Delete the duplicate; Undo/Redo. | Exactly one copy is added/removed at each operation; history restores the prior state. | High | Not tested | |
 | Double-tap and cancellation | Double-tap a clip; then separately cancel a move and a trim using OS/app pointer cancellation or by interrupting capture. | Double-tap opens the existing editor. Cancelled gestures leave clip data and history unchanged; no stuck gesture state. | High | Not tested | |
 | Timeline gestures | Pinch on blank lane; cancel a second pinch; pan horizontally and vertically at nonzero scroll; set loop and seek playhead. | Pinch zoom anchors at the fingers; cancellation restores prior zoom; panning does not edit clips; loop and playhead align with the grid. | High | Not tested | |
+| Pinch hit zones and page zoom | Pinch starting on a clip, the ruler and the loop control; cancel one pinch; then pinch/zoom a non-Arrangement page area. | Arrangement zoom works from each timeline surface, cancellation restores prior zoom, and browser/page zoom remains usable outside Arrangement. | High | Not tested | |
+| Downward drag visibility | Select Move; drag a clip down across several compatible lanes, then release on one. | Floating preview stays above lane contents; destination remains visible; only the selected destination receives the clip. | High | Not tested | |
 | Sample insertion | Select an Audio track, set a non-default grid, seek to a nonzero beat, use Sample Browser **+**. | New clip appears on the selected track at the snapped playhead and retains the correct source. | High | Not tested | |
 | Mixer access | Select a track; open Selected track Mixer; adjust volume/pan; mute/solo; return to Arrangement. | Selected controls remain usable; mute/solo affect playback; opening/closing Mixer does not move clips or hide essential controls. | High | Not tested | |
+| Device Panel resize/compact | Drag the Device Panel separator up and down; use Arrow keys/Home/End; enable Compact devices and open a long effect editor. | Panel follows the pointer and keyboard within its bounds; compact cards remain horizontal without nested vertical scrolling; full parameters remain reachable in the expanded editor. | Medium | Not tested | |
 | Viewports/orientation | Repeat representative selection, move, trim, scroll, Mixer and Focus entry/exit at 320x740, 360x800, 390x844, 430x932, 768x1024, 1280x900 and 844x390 landscape where available. | Essential controls remain visible, no page-level horizontal overflow, editing remains accurate after rotation. | Medium | Not tested | |
 
 ## Sample Browser
@@ -51,7 +54,9 @@
 | Check | Exact user actions | Expected result | Severity | Result (Pass / Fail / Not tested) | Reproduction / evidence |
 |---|---|---|---|---|---|
 | Import and search | Import a disposable audio file through the picker; search by part of its filename. | Sample appears once, search returns the correct item, and the library remains available after workspace changes. | Medium | Not tested | |
+| Immediate refresh and repeat import | Import a sample while the browser is open; repeat the same import and keep a search filter active. | New item appears immediately without changing workspaces; repeated import does not create duplicate visible entries; filter remains useful. | Medium | Not tested | |
 | Preview and insertion | Preview the sample; choose an Audio track; set a nonzero playhead and grid; tap **+**. | Preview is audible; insertion uses the selected track and snapped playhead. | High | Not tested | |
+| Non-destructive library removal | Add a sample to a clip or instrument, use its Remove action, then play the project and reload. | Library entry is hidden; a reference warning is shown; the active project and stored audio remain playable and unchanged. | Critical | Not tested | |
 | Touch and scroll | Scroll a long library, change categories, use search and operate preview/add controls. | Rows remain tappable; scrolling does not trigger neighboring actions or page zoom. | Medium | Not tested | |
 
 ## Sample Studio
@@ -110,3 +115,4 @@
 | Playback and export after restore | Play the restored project and export a non-silent WAV. | Restored project plays and exports the same intended material; no missing media or altered settings. | Critical | Not tested | |
 | Offline shell and updates | Install/open the PWA; go offline; edit/save locally; then test a waiting update using the app's safe-update prompts. | Shell opens offline; local project/audio remains; update waits for safe work state and never clears user data. | Critical | Not tested | |
 | Installed layout and navigation | Repeat workspace entry/exit, orientation, back navigation and sample/project access in standalone presentation. | No hidden essential controls; no accidental page zoom; safe areas and bottom navigation remain usable. | Medium | Not tested | |
+| Focused form fields and persistent transport | Focus project/search/numeric fields; scroll Arrangement; rotate portrait/landscape. | Text controls do not trigger iOS automatic focus zoom; the existing transport remains reachable while Arrangement is scrolled. | Medium | Not tested | |

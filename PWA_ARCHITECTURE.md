@@ -37,7 +37,12 @@ Only a successful all-client check can call `skipWaiting()`. The worker then
 notifies the checked clients. Each tab reloads only after it asks the activated
 worker for its version and confirms that it matches the approved build. There
 is no automatic reload. Errors leave the current page running and are reported
-in the UI or console.
+in the UI or console. After approval, version confirmation is retried while the
+new worker activates. If the approved build is still not confirmed before the
+bounded wait expires, the notice returns to an actionable **Retry update** or
+**Dismiss** state; it does not remain indefinitely on a switching message. A
+matching version hides the notice immediately before the safe reload. This UI
+recovery does not alter the all-client safety check or force activation.
 
 An older open tab that does not implement the safety protocol, or a suspended
 tab that cannot answer within the 2.5-second client-query window, prevents

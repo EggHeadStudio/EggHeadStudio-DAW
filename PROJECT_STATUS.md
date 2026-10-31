@@ -1,30 +1,43 @@
 # EggHeadStudio DAW — Project Status
 
-Last status update: 2026-10-30
+Last status update: 2026-10-31
 
 ## Development
 
 - Latest reported completed batch: 005B.5D.
 - Latest known deployed batch: 005B.5B.
-- Current work: 005B.5E — Installable PWA.
-- Current PWA prompt has been submitted to Codex; final implementation report is pending.
+- Latest mobile checkpoint: 005B.5F.5 (incomplete).
+- Current continuation: QA-01.1 Extended — targeted mobile/PWA usability fixes
+  have a follow-up report; broader production and device acceptance remains
+  open.
+- See [QA-01.1 Extended report](./QA-01_1_EXTENDED_REPORT.md) for the
+  requirement-level results, measured browser checks and blockers.
 
 ## Verified Baseline
 
-Batch 005B.5D reported:
+Last full pre-QA baseline (Batch 005B.5F.5) reported:
 
-- 324/324 Node tests passed.
-- Connected 22-step mobile production workflow passed.
-- Deterministic offline rendering comparison passed in the tested environment.
-- WAV/MP3 export and .ehs restoration verified.
+- 344/344 Node tests passed.
+- Source/build Arrangement interaction checks and seven layout-only viewport
+  checks passed within the reported scope.
+- Connected Sample/Recording/Mastering/Export workflows, clean-origin connected
+  `.EHS` acceptance, comprehensive PWA/browser acceptance and physical-device
+  input remained incomplete.
+
+The QA-01.1 continuation reports 347/347 Node tests passing, syntax checks for
+changed JavaScript modules, clean diff hygiene, and two deterministic builds
+with matching version `d58e08a9349dc059e707` and 68 assets. Source and built
+Chromium checks cover targeted Arrangement gestures and mobile usability fixes
+at 390x844; these do not close the connected-workflow, actual PWA update or
+physical-device gates.
 
 These results do not establish physical iOS/Android or full cross-browser compatibility.
 
 ## Upcoming Development
 
-1. 005B.5E — PWA and safe offline updates.
-2. 005B.5F — Mobile Focus and Performance Modes.
-3. 005B.6 — Cross-browser and physical-device acceptance.
+1. QA-01.1 — complete the remaining workflow, PWA and viewport acceptance.
+2. User-led iPhone Safari / installed iPhone PWA / Windows PWA retest.
+3. 005B.6 — connected workflows, cross-browser and physical-device acceptance.
 4. 005C — Release candidate and hardening.
 5. Stable 1.0 release.
 

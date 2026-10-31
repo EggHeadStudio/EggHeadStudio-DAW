@@ -61,7 +61,7 @@ summary{cursor:pointer;min-height:36px;padding:9px 12px;border:1px solid var(--b
 .workspace .device-panel{display:block;min-width:0}
 .workspace .effect-chain{min-width:0;display:block}
 .effect-chain-title,.effect-presets{margin-bottom:8px}
-.device-chain-scroll{display:flex;gap:8px;max-width:100%;overflow-x:auto;align-items:flex-start;padding:4px 3px 12px;overscroll-behavior-x:contain}
+.device-chain-scroll{display:flex;gap:8px;max-width:100%;overflow-x:auto;overflow-y:hidden;align-items:flex-start;padding:4px 3px 12px;overscroll-behavior-x:contain}
 .sample-device-chain{grid-column:1/-1;min-width:0}
 .sample-device-chain .device-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .sample-device-chain .device-body>.graphical-eq,.sample-device-chain [data-sample-reduction]{grid-column:1/-1}
@@ -260,16 +260,18 @@ button:disabled,.parameter-disabled{opacity:.55}
 .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .meter-peak{display:none}
 .workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .track-actions{grid-row:2;grid-column:1;display:grid;grid-template-columns:repeat(4,1fr);gap:1px;align-content:center}
 .workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .track-actions button{min-width:0;min-height:32px;padding:1px;font-size:10px}
-.workspace .bottom-panel{height:var(--device-panel-height,320px);min-height:160px;max-height:65%;resize:none;position:relative;padding-top:12px}
-.device-panel-resize{height:10px;position:absolute;top:0;left:0;right:0;cursor:ns-resize;touch-action:none;border-top:2px solid var(--border)}
+.workspace .bottom-panel{height:var(--device-panel-height,320px);min-height:160px;max-height:min(80vh,600px);resize:none;position:relative;padding-top:12px}
+.device-panel-resize{height:14px;position:absolute;top:0;left:0;right:0;z-index:20;cursor:ns-resize;touch-action:none;border-top:2px solid var(--border)}
+.device-panel-resize:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .device-panel-controls{display:flex;gap:4px;flex-wrap:wrap}
 .device-panel-controls button{font-size:11px;min-height:30px}
 .bottom-panel>.pane-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;position:sticky;top:0;z-index:10;background:var(--surface)}
-.devices-compact .device-chain-scroll>.effect-device{flex-basis:240px;min-width:220px}
+.devices-compact .device-chain-scroll>.effect-device{flex-basis:260px;min-width:240px;min-height:180px}
 .devices-compact .parameter-rotary{--knob-size:44px}
 .devices-compact .parameter-control>.parameter-number,.devices-compact .parameter-control>button{display:none}
-.devices-compact .device-body{gap:6px;padding:6px}
+.devices-compact .device-body{gap:6px;padding:6px;max-height:none;overflow:visible;scrollbar-gutter:auto}
 .devices-compact .device-chain-scroll>.effect-device header{gap:2px}
+.device-chain-scroll>.effect-device .device-body{max-height:none;overflow:visible;scrollbar-gutter:auto}
 .workspace .clip-selected{outline:2px solid var(--focus);outline-offset:-2px}
 @media(max-width:850px){
   .workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .parameter-control>input[type=range]{min-height:28px}
@@ -368,3 +370,10 @@ button:disabled,.parameter-disabled{opacity:.55}
 .eq-analysis-controls input[type=range]{width:80px}
 .eq-analysis-status{display:block;font:11px var(--font-numeric);color:var(--text-secondary);min-height:30px}
 @media(max-width:600px){.device-chain-scroll>.effect-device[data-device-type=eq]{width:calc(100vw - 54px);flex-basis:calc(100vw - 54px)}.eq-selected-controls>label{flex-basis:82px}.eq-analysis-controls{gap:6px}.eq-selection select{max-width:155px}}
+@media(max-width:850px){
+  .devices-compact .device-chain-scroll>.effect-device{height:240px;min-height:240px;overflow:hidden}
+  .devices-compact .device-chain-scroll>.effect-device .device-body{max-height:160px;overflow:hidden}
+  .devices-compact .device-chain-scroll>.effect-device .mobile-expand{grid-column:1/-1;min-height:36px}
+  .devices-compact .device-chain-scroll>.effect-device.mobile-expanded-editor{height:auto!important;min-height:0!important;overflow:auto!important}
+  .devices-compact .device-chain-scroll>.effect-device.mobile-expanded-editor .device-body{max-height:none;overflow:visible}
+}

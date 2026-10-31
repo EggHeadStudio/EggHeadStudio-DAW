@@ -31,6 +31,14 @@ import {closeMobileFocus,mountMobileFocus,mobileFocusStage} from './mobile-focus
 import {mountPianoPerformance,mountDrumPerformance} from './mobile-performance.js';
 import {mountPwaUpdates} from './pwa-updates.js';
 const workspaceNavigation=new WorkspaceNavigation();
+const HIDDEN_LIBRARY_ASSETS_KEY='pulse-hidden-library-assets-v1';
+function loadHiddenLibraryAssets(){
+ try{
+  const saved=JSON.parse(localStorage.getItem(HIDDEN_LIBRARY_ASSETS_KEY)||'[]');
+  return new Set(Array.isArray(saved)?saved.filter(id=>typeof id==='string'):[]);
+ }catch(error){console.warn('Could not restore hidden sample-library entries.',error);return new Set()}
+}
+const hiddenLibraryAssets=loadHiddenLibraryAssets();
 const navigationBlocked=()=>recordingStudio.busy||sampleCapturePending||recorder?.state==='recording';
 const navigationWarning=()=>notify('Finish or recover the current recording before switching workspaces. Your audio is preserved.');
 function navigateWorkspace(next){
@@ -311,7 +319,7 @@ function wireShell(){
  $('#importProject').onchange=async e=>{const file=e.target.files?.[0];if(file)await openJsonProject(file);e.target.value=''};
  $('#exportMix').onclick=()=>openExportStudio();
  $$('[data-view]').forEach(b=>b.onclick=()=>navigateWorkspace(b.dataset.view));
- $('#importFiles').onchange=e=>importFiles([...e.target.files]);
+ $('#importFiles').onchange=e=>{const files=[...e.target.files];e.target.value='';importFiles(files)};
  $('#importFolder').onchange=e=>importFiles([...e.target.files]);
  engine.onTick=t=>{playhead=t;tick(t);updateTransportButton()};
  engine.onMeter=meters=>updateTrackMeters(app,meters);
@@ -320,9 +328,37 @@ function wireShell(){
  mountMobileShell(app,{navigate:navigateWorkspace,back:mobileBack,blocked:navigationBlocked,onBlocked:navigationWarning});
 }
 const $$=s=>[...document.querySelectorAll(s)];
-async function addAsset(file){const id=uid(),ctx=await engine.init(),buffer=await ctx.decodeAudioData(await file.arrayBuffer());assets.set(id,{id,name:file.name,path:file.webkitRelativePath||file.name,size:file.size,duration:buffer.duration});buffers.set(id,buffer);await dbSet(id,file);return id}
-async function importFiles(files){let ok=0;assetImportPending=true;try{for(const f of files){if(!/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(f.name)&&!f.type.startsWith('audio/'))continue;try{await addAsset(f);ok++}catch(e){console.warn(f.name,e)}}render();notify(`Imported ${ok} audio files. Files cached locally.`)}finally{assetImportPending=false}}
-async function restoreAssets(){const ids=new Set(project.tracks.flatMap(t=>[...t.clips.map(c=>c.asset),t.sampler?.asset,...(t.drumRack?.pads||[]).map(p=>p.asset)].filter(Boolean)));for(const id of ids){if(buffers.has(id))continue;const f=await dbGet(id);if(f){try{const b=await(await engine.init()).decodeAudioData(await f.arrayBuffer());buffers.set(id,b);assets.set(id,{id,name:f.name||'Sample',duration:b.duration,path:f.name})}catch{}}}}
+async function addAsset(file){
+ const path=file.webkitRelativePath||file.name;
+ const existing=[...assets.values()].find(asset=>asset.name===file.name&&asset.path===path&&asset.size===file.size&&(asset.lastModified||0)===(file.lastModified||0));
+ if(existing){if(hiddenLibraryAssets.has(existing.id)){const next=new Set(hiddenLibraryAssets);next.delete(existing.id);if(!persistHiddenLibraryAssets(next))throw new Error('The sample was already in the library, but its hidden state could not be updated.')}return existing.id}
+ const bytes=await file.arrayBuffer(),ctx=await engine.init(),buffer=await ctx.decodeAudioData(bytes),id=uid();
+ await dbSet(id,file);
+ assets.set(id,{id,name:file.name,path,size:file.size,lastModified:file.lastModified||0,duration:buffer.duration});buffers.set(id,buffer);return id;
+}
+function persistHiddenLibraryAssets(next){
+ try{localStorage.setItem(HIDDEN_LIBRARY_ASSETS_KEY,JSON.stringify([...next]));hiddenLibraryAssets.clear();for(const id of next)hiddenLibraryAssets.add(id);return true}
+ catch(error){notify(`Could not update the sample library: ${error.message}`);return false}
+}
+async function importFiles(files){
+ let imported=0,failed=0;assetImportPending=true;
+ try{
+  for(const file of files){
+   if(!/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(file.name)&&!file.type.startsWith('audio/'))continue;
+   try{await addAsset(file);imported++}catch(error){failed++;console.warn(`Could not import ${file.name}.`,error)}
+  }
+  drawList($('#search')?.value||'');
+  notify(`Imported ${imported} audio files${failed?`; ${failed} failed` : ''}. Files are cached locally.`);
+ }finally{assetImportPending=false}
+}
+async function restoreAssets(){
+ const ids=new Set(project.tracks.flatMap(track=>[...track.clips.map(clip=>clip.asset),track.sampler?.asset,...(track.drumRack?.pads||[]).map(pad=>pad.asset)].filter(Boolean)));
+ for(const id of ids){
+  if(buffers.has(id))continue;
+  const file=await dbGet(id);
+  if(file){try{const buffer=await(await engine.init()).decodeAudioData(await file.arrayBuffer());buffers.set(id,buffer);assets.set(id,{id,name:file.name||'Sample',duration:buffer.duration,path:file.webkitRelativePath||file.name,size:file.size,lastModified:file.lastModified||0})}catch(error){console.warn(`Could not restore sample ${file.name||id}.`,error)}}
+ }
+}
 function normalizeProject(){project=normalizeProjectData(project)}
 function normalizeProjectData(input){
  const project=structuredClone(input);
@@ -585,7 +621,7 @@ function renderTrackEffects(track){
 }
 function renderArrange(){
  const t=project.tracks[selectedTrack];
- $('#main').innerHTML=`<section class="workspace"><aside class="browser"><div class="pane-head">SAMPLE BROWSER</div><div class="browser-actions"><button id="connectFolder">＋ Folder</button><button id="addFiles">＋ Files</button></div><input id="search" placeholder="Search samples…"><div class="sample-list" id="sampleList"></div><p class="hint">Drag samples to a track or click +. On mobile, + inserts at the snapped playhead on the selected Audio track.</p><button id="recordOwn" class="accent full">● Record Own Sample</button></aside><section class="editor"><div class="editor-tools"><button id="addTrack">＋ Track</button><button id="zoomOut">−</button><span>Zoom ${Math.round(zoom*100)}%</span><button id="zoomIn">＋</button><span class="grow"></span><span>Tap to select • Hold 350 ms then drag to move</span></div><div class="arrangement"><div class="ruler-row"><div class="track-label">TRACKS</div><div class="ruler" id="ruler" style="width:${Math.max(1200,16*beatsWidth())}px">${Array.from({length:16},(_,i)=>`<span style="left:${timelineScale().barsToPixels(i)}px">${i+1}</span>`).join('')}</div></div>${project.tracks.map((tr,i)=>`<div class="track-row"><div class="track-label ${i===selectedTrack?'track-selected':''}" data-track="${i}"><strong style="color:${tr.color}">${esc(tr.name)}</strong><div class="track-actions"><button data-mute="${i}" class="${tr.mute?'active':''}">M</button><button data-solo="${i}" class="${tr.solo?'active':''}">S</button><button data-remove="${i}" title="Remove track">×</button></div></div><div class="lane" data-lane="${i}" style="width:${Math.max(1200,16*beatsWidth())}px;background-size:${beatsWidth()}px 100%">${tr.clips.map(c=>`<div class="clip ${selectedClip===c.id?'clip-selected':''}" draggable="true" data-clip="${c.id}" data-track-index="${i}" style="left:${timelineScale().barsToPixels(c.bar)}px;width:${clipWidth(c)}px;background:${tr.color}"><button type="button" class="clip-handle clip-handle-start" data-resize="start" aria-label="Trim ${esc(assets.get(c.asset)?.name||'clip')} start"></button><span>${esc(assets.get(c.asset)?.name||'Missing sample')}${c.loop?' · LOOP':''}</span><button type="button" class="clip-handle clip-handle-end" data-resize="end" aria-label="Trim ${esc(assets.get(c.asset)?.name||'clip')} end"></button></div>`).join('')}</div></div>`).join('')}<div class="playhead" id="playhead" role="slider" aria-label="Arrangement playhead" aria-valuemin="0" aria-valuenow="${playhead}" aria-valuetext="${playhead.toFixed(3)} seconds"></div></div><section class="bottom-panel"><div class="pane-head">MIXER & EFFECTS <span>Selected: ${esc(t?.name||'')}</span></div><div class="mixer">${project.tracks.map((tr,i)=>`<div class="mixer-strip"><div class="strip-title" style="color:${tr.color}">${esc(tr.name)}</div><label>Volume <input type="range" min="0" max="1.5" step=".01" value="${tr.volume}" data-vol="${i}"></label><label>Pan <input type="range" min="-1" max="1" step=".01" value="${tr.pan}" data-pan="${i}"></label><span>${Math.round(tr.volume*100)}%</span><div class="stereo-meter" data-meter="${esc(tr.id)}" data-track-name="${esc(tr.name)}" aria-label="${esc(tr.name)} stereo level"><span class="meter-channel"><i data-meter-left></i></span><span class="meter-channel"><i data-meter-right></i></span><b data-clip-warning hidden>CLIP</b></div></div>`).join('')}<div class="mixer-strip master-strip"><div class="strip-title">Master</div><label>Volume <input type="range" min="0" max="1.5" step=".01" value="${engine.masterSettings.volume??1}" id="masterVolume"></label><output id="masterVolumeValue">${Math.round((engine.masterSettings.volume??1)*100)}%</output></div></div><div class="device-panel">${renderTrackEffects(t)}<section class="clip-device"><strong>Clip Editor</strong><div id="clipEditor">${selectedClip?clipControls():'Select a clip to adjust trim, fades, loop and gain.'}</div></section></div></section></section></section>`;
+ $('#main').innerHTML=`<section class="workspace"><aside class="browser"><div class="pane-head">SAMPLE BROWSER</div><div class="browser-actions"><button id="connectFolder">＋ Folder</button><button id="addFiles">＋ Files</button></div><input id="search" placeholder="Search samples…"><div class="sample-list" id="sampleList"></div><p class="hint">Drag samples to a track or click +. On mobile, + inserts at the snapped playhead on the selected Audio track.</p><button id="recordOwn" class="accent full">● Record Own Sample</button></aside><section class="editor"><div class="editor-tools"><button id="addTrack">＋ Track</button><button id="zoomOut">−</button><span>Zoom ${Math.round(zoom*100)}%</span><button id="zoomIn">＋</button><span class="grow"></span><span>Tap to select • Long-press or choose Move to drag</span></div><div class="arrangement"><div class="ruler-row"><div class="track-label">TRACKS</div><div class="ruler" id="ruler" style="width:${Math.max(1200,16*beatsWidth())}px">${Array.from({length:16},(_,i)=>`<span style="left:${timelineScale().barsToPixels(i)}px">${i+1}</span>`).join('')}</div></div>${project.tracks.map((tr,i)=>`<div class="track-row"><div class="track-label ${i===selectedTrack?'track-selected':''}" data-track="${i}"><strong style="color:${tr.color}">${esc(tr.name)}</strong><div class="track-actions"><button data-mute="${i}" class="${tr.mute?'active':''}">M</button><button data-solo="${i}" class="${tr.solo?'active':''}">S</button><button data-remove="${i}" title="Remove track">×</button></div></div><div class="lane" data-lane="${i}" style="width:${Math.max(1200,16*beatsWidth())}px;background-size:${beatsWidth()}px 100%">${tr.clips.map(c=>`<div class="clip ${selectedClip===c.id?'clip-selected':''}" draggable="true" data-clip="${c.id}" data-track-index="${i}" style="left:${timelineScale().barsToPixels(c.bar)}px;width:${clipWidth(c)}px;background:${tr.color}"><button type="button" class="clip-handle clip-handle-start" data-resize="start" aria-label="Trim ${esc(assets.get(c.asset)?.name||'clip')} start"></button><span>${esc(assets.get(c.asset)?.name||'Missing sample')}${c.loop?' · LOOP':''}</span><button type="button" class="clip-handle clip-handle-end" data-resize="end" aria-label="Trim ${esc(assets.get(c.asset)?.name||'clip')} end"></button></div>`).join('')}</div></div>`).join('')}<div class="playhead" id="playhead" role="slider" aria-label="Arrangement playhead" aria-valuemin="0" aria-valuenow="${playhead}" aria-valuetext="${playhead.toFixed(3)} seconds"></div></div><section class="bottom-panel"><div class="pane-head">MIXER & EFFECTS <span>Selected: ${esc(t?.name||'')}</span></div><div class="mixer">${project.tracks.map((tr,i)=>`<div class="mixer-strip"><div class="strip-title" style="color:${tr.color}">${esc(tr.name)}</div><label>Volume <input type="range" min="0" max="1.5" step=".01" value="${tr.volume}" data-vol="${i}"></label><label>Pan <input type="range" min="-1" max="1" step=".01" value="${tr.pan}" data-pan="${i}"></label><span>${Math.round(tr.volume*100)}%</span><div class="stereo-meter" data-meter="${esc(tr.id)}" data-track-name="${esc(tr.name)}" aria-label="${esc(tr.name)} stereo level"><span class="meter-channel"><i data-meter-left></i></span><span class="meter-channel"><i data-meter-right></i></span><b data-clip-warning hidden>CLIP</b></div></div>`).join('')}<div class="mixer-strip master-strip"><div class="strip-title">Master</div><label>Volume <input type="range" min="0" max="1.5" step=".01" value="${engine.masterSettings.volume??1}" id="masterVolume"></label><output id="masterVolumeValue">${Math.round((engine.masterSettings.volume??1)*100)}%</output></div></div><div class="device-panel">${renderTrackEffects(t)}<section class="clip-device"><strong>Clip Editor</strong><div id="clipEditor">${selectedClip?clipControls():'Select a clip to adjust trim, fades, loop and gain.'}</div></section></div></section></section></section>`;
  drawList();wireArrange();wireTrackEffects();tick(playhead);
 }
 function wireTrackEffects(){
@@ -665,7 +701,25 @@ function clipControls(){
  const source=isInstrumentClip(c)?`<strong>${esc(patternForClip(track,c)?.name||'Pattern')}</strong><button id="openClipEditor">Open Editor</button><label>Duration (beats) <input id="instrumentDuration" type="number" min=".0625" step=".25" value="${c.durationBeats}"></label><label>Source offset (beats) <input id="instrumentOffset" type="number" min="0" step=".25" value="${c.offsetBeats}"></label>`:`<label>Start (s) <input id="clipStart" type="number" step=".01" min="0" value="${c.start.toFixed(2)}"></label><label>End (s) <input id="clipEnd" type="number" step=".01" min="0" value="${c.end.toFixed(2)}"></label><label>Speed <input id="clipRate" type="number" step=".05" min=".25" max="4" value="${c.rate||1}"></label><label>Fade in (s) <input id="clipFadeIn" type="number" step=".01" min="0" value="${c.fadeIn||0}"></label><label>Fade out (s) <input id="clipFadeOut" type="number" step=".01" min="0" value="${c.fadeOut||0}"></label>${c.loop?`<label>Loop duration (s) <input id="clipDuration" type="number" step=".01" min=".01" value="${clipDurationSeconds(c,project.bpm).toFixed(2)}"></label>`:''}`;
  return `<div class="clip-controls">${source}<label>Gain <input id="clipGain" type="number" step=".1" min="0" max="3" value="${c.gain??1}"></label><label>Loop <input id="clipLoop" type="checkbox" ${c.loop?'checked':''}></label><label>Move to track <select id="clipTrack">${project.tracks.filter(item=>instrumentType(item)===instrumentType(track)).map(item=>`<option value="${esc(item.id)}" ${item.id===track.id?'selected':''}>${esc(item.name)}</option>`).join('')}</select></label><label>Start bar <input id="clipBar" type="number" min="0" step=".0625" value="${c.bar}"></label><button id="moveClip">Move clip</button><button id="deleteClip">Delete clip</button></div>`;
 }
-function drawList(filter=''){const el=$('#sampleList');if(!el)return;el.innerHTML=[...assets.values()].filter(a=>a.name.toLowerCase().includes(filter.toLowerCase())).map(a=>`<div class="sample-item" draggable="true" data-asset="${a.id}"><span title="${esc(a.path)}">♫ ${esc(a.name)}</span><button data-preview="${a.id}" title="Preview">▶</button><button data-add="${a.id}" title="Add to selected track">＋</button></div>`).join('')||'<div class="empty">No samples yet. Connect a folder or import files.</div>';$$('[data-preview]').forEach(b=>b.onclick=()=>previewAsset(b.dataset.preview));$$('[data-add]').forEach(b=>b.onclick=()=>insertSampleAtPlayhead(b.dataset.add));$$('[data-asset]').forEach(e=>e.ondragstart=ev=>ev.dataTransfer.setData('text/sample',e.dataset.asset))}
+function assetReferenceCount(id){
+ return project.tracks.reduce((count,track)=>count+track.clips.filter(clip=>clip.asset===id).length+(track.sampler?.asset===id?1:0)+(track.drumRack?.pads||[]).filter(pad=>pad.asset===id).length,0);
+}
+function removeAssetFromLibrary(id){
+ const asset=assets.get(id);if(!asset)return;
+ const references=assetReferenceCount(id),detail=references?`${references} active project reference${references===1?'':'s'} will remain intact.`:'No active project references were found.';
+ if(!window.confirm(`Remove "${asset.name}" from the visible sample library? ${detail} This only hides the library entry; audio data and project playback are retained.`))return;
+ const next=new Set(hiddenLibraryAssets);next.add(id);
+ if(persistHiddenLibraryAssets(next)){drawList($('#search')?.value||'');notify('Sample hidden from the library. Existing project audio remains available.')}
+}
+function drawList(filter=''){
+ const el=$('#sampleList');if(!el)return;
+ const visible=[...assets.values()].filter(asset=>!hiddenLibraryAssets.has(asset.id)&&asset.name.toLowerCase().includes(filter.toLowerCase()));
+ el.innerHTML=visible.map(asset=>`<div class="sample-item" draggable="true" data-asset="${esc(asset.id)}"><span title="${esc(asset.path)}">♫ ${esc(asset.name)}</span><button data-preview="${esc(asset.id)}" title="Preview" aria-label="Preview ${esc(asset.name)}">▶</button><button data-add="${esc(asset.id)}" title="Add to selected track" aria-label="Add ${esc(asset.name)} to selected track">＋</button><button data-remove-sample="${esc(asset.id)}" title="Hide from library; project audio is retained" aria-label="Remove ${esc(asset.name)} from visible library">×</button></div>`).join('')||'<div class="empty">No visible samples. Connect a folder or import files.</div>';
+ $$('[data-preview]').forEach(button=>button.onclick=()=>previewAsset(button.dataset.preview));
+ $$('[data-add]').forEach(button=>button.onclick=()=>insertSampleAtPlayhead(button.dataset.add));
+ $$('[data-remove-sample]').forEach(button=>button.onclick=()=>removeAssetFromLibrary(button.dataset.removeSample));
+ $$('[data-asset]').forEach(element=>element.ondragstart=event=>event.dataTransfer.setData('text/sample',element.dataset.asset));
+}
 function stopLibraryPreview(){const source=previewSource;previewSource=null;if(!source)return;source.onended=null;try{source.stop()}catch(error){if(error.name!=='InvalidStateError')throw error}source.disconnect()}
 async function previewAsset(id){await engine.init();stopLibraryPreview();const b=buffers.get(id);if(!b)return notify('Missing sample');const s=engine.ctx.createBufferSource();s.buffer=b;s.connect(engine.ctx.destination);s.onended=()=>{s.disconnect();if(previewSource===s)previewSource=null};s.start();previewSource=s}
 function placeClip(asset,trackIndex,bar){const b=buffers.get(asset);if(!b)return notify('Sample not loaded');if(!project.tracks[trackIndex]||instrumentType(project.tracks[trackIndex])!=='audio')return notify('Select an Audio track in Arrangement before adding this sample. The sample remains in the browser.');const clip={id:uid(),asset,bar:Math.max(0,bar),start:0,end:b.duration,rate:1,gain:1};checkpointArrangement();project.tracks[trackIndex].clips.push(clip);selectedTrack=trackIndex;selectedClip=clip.id;commitArrangement()}

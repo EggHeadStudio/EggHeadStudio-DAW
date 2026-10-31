@@ -1,4 +1,5 @@
 const UPDATE_QUERY_TIMEOUT_MS = 5000;
+const UPDATE_CONFIRM_TIMEOUT_MS = 20000;
 
 function answer(port, value) {
   port?.postMessage(value);
@@ -18,7 +19,7 @@ function currentSafety(getSafety) {
   }
 }
 
-export function mountPwaUpdates({getSafety}) {
+export function mountPwaUpdates({getSafety,queryTimeoutMs=UPDATE_QUERY_TIMEOUT_MS,confirmTimeoutMs=UPDATE_CONFIRM_TIMEOUT_MS}) {
   const build = document.querySelector('meta[name="ehs-build"]')?.content;
   if (!build || !('serviceWorker' in navigator)) return null;
 
@@ -27,6 +28,11 @@ export function mountPwaUpdates({getSafety}) {
   let reloadStarted = false;
   let updateRequested = false;
   let updateDismissed = false;
+  let versionCheckPending = false;
+  let versionCheckTimer = 0;
+  let activationTimer = 0;
+  let heartbeatInterval = 0;
+  let updateInterval = 0;
   const notice = document.getElementById('pwaUpdateNotice');
   const message = notice?.querySelector('[data-pwa-update-message]');
   const updateButton = notice?.querySelector('[data-pwa-update-now]');
@@ -36,7 +42,7 @@ export function mountPwaUpdates({getSafety}) {
   }
 
   const showUpdate = () => {
-    if (!registration?.waiting || updateDismissed) return;
+    if (!registration?.waiting || updateDismissed || approvedVersion) return;
     message.textContent = 'A tested app update is ready.';
     notice.hidden = false;
     updateButton.hidden = false;
@@ -52,19 +58,32 @@ export function mountPwaUpdates({getSafety}) {
     laterButton.hidden = false;
     laterButton.textContent = 'Dismiss';
   };
+  const showActivationFailure = () => {
+    approvedVersion = null;
+    clearTimeout(activationTimer);clearTimeout(versionCheckTimer);
+    message.textContent = 'The update could not be confirmed. Your current version is still available; you can retry or dismiss this notice.';
+    notice.hidden = false;
+    updateButton.hidden = !registration?.waiting;
+    updateButton.disabled = !registration?.waiting;
+    updateButton.textContent = 'Retry update';
+    laterButton.hidden = false;
+    laterButton.disabled = false;
+    laterButton.textContent = 'Dismiss';
+  };
   const report = () => currentSafety(getSafety);
   const heartbeat = () => navigator.serviceWorker.controller?.postMessage({
     type: 'EHS_CLIENT_HEARTBEAT',
     version: build
   });
   const reloadApprovedVersion = async () => {
-    if (!approvedVersion || !registration?.active || reloadStarted) return;
+    if (!approvedVersion || !registration?.active || reloadStarted || versionCheckPending) return;
+    versionCheckPending = true;
     const channel = new MessageChannel();
     const response = new Promise(resolve => {
       const timeout = setTimeout(() => {
         channel.port1.close();
         resolve(null);
-      }, UPDATE_QUERY_TIMEOUT_MS);
+      }, queryTimeoutMs);
       channel.port1.onmessage = event => {
         clearTimeout(timeout);
         channel.port1.close();
@@ -74,21 +93,38 @@ export function mountPwaUpdates({getSafety}) {
     try {
       registration.active.postMessage({type: 'EHS_GET_BUILD_VERSION'}, [channel.port2]);
       if (await response === approvedVersion && approvedVersion !== build) {
+        clearTimeout(activationTimer);clearTimeout(versionCheckTimer);
         reloadStarted = true;
+        notice.hidden = true;
         location.reload();
       }
     } catch (error) {
       console.error('Could not verify the activated EggHeadStudio version.', error);
+    } finally {
+      versionCheckPending = false;
+      if (approvedVersion && !reloadStarted) {
+        versionCheckTimer = setTimeout(reloadApprovedVersion, 300);
+      }
     }
+  };
+  const startApprovedUpdate = version => {
+    if (typeof version !== 'string' || !version) {
+      showActivationFailure();
+      return;
+    }
+    approvedVersion = version;
+    message.textContent = 'Update approved. Confirming the new version…';
+    updateButton.disabled = true;
+    updateButton.textContent = 'Updating…';
+    laterButton.disabled = true;
+    clearTimeout(activationTimer);clearTimeout(versionCheckTimer);
+    activationTimer = setTimeout(showActivationFailure, confirmTimeoutMs);
+    reloadApprovedVersion();
   };
 
   navigator.serviceWorker.addEventListener('message', event => {
     if (event.data?.type === 'EHS_UPDATE_APPROVED') {
-      approvedVersion = event.data.version;
-      message.textContent = 'Update approved. Switching versions…';
-      updateButton.disabled = true;
-      updateButton.textContent = 'Updating…';
-      reloadApprovedVersion();
+      startApprovedUpdate(event.data.version);
       return;
     }
     if (!event.ports?.[0]) return;
@@ -129,10 +165,7 @@ export function mountPwaUpdates({getSafety}) {
         message.textContent = `Update paused: ${[...new Set(result?.blockers || ['Update safety could not be verified.'])].join(' ')}`;
         return;
       }
-      approvedVersion = result.version;
-      message.textContent = 'Update approved. Switching versions…';
-      updateButton.textContent = 'Updating…';
-      reloadApprovedVersion();
+      startApprovedUpdate(result.version);
     };
     try {
       registration.waiting.postMessage({type: 'EHS_ACTIVATE_IF_SAFE'}, [channel.port2]);
@@ -152,6 +185,7 @@ export function mountPwaUpdates({getSafety}) {
     if (!installing) return;
     installing.addEventListener('statechange', () => {
       if (installing.state === 'installed' && registration.active) showUpdate();
+      if (installing.state === 'activated') reloadApprovedVersion();
       if (installing.state === 'redundant' && !registration.waiting) {
         showInstallFailure();
       }
@@ -165,7 +199,7 @@ export function mountPwaUpdates({getSafety}) {
     inspectRegistration();
     registration.addEventListener('updatefound', inspectRegistration);
     heartbeat();
-    setInterval(heartbeat, 5000);
+    heartbeatInterval = setInterval(heartbeat, 5000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
         updateDismissed = false;
@@ -175,7 +209,7 @@ export function mountPwaUpdates({getSafety}) {
           console.warn('EggHeadStudio could not check for an update.', error));
       }
     });
-    setInterval(() => {
+    updateInterval = setInterval(() => {
       if (!document.hidden) registration.update().catch(error =>
         console.warn('EggHeadStudio could not check for an update.', error));
     }, 60 * 60 * 1000);
@@ -184,5 +218,11 @@ export function mountPwaUpdates({getSafety}) {
     showInstallFailure();
   });
 
-  return {report};
+  return {
+    report,
+    dispose(){
+      clearInterval(heartbeatInterval);clearInterval(updateInterval);
+      clearTimeout(versionCheckTimer);clearTimeout(activationTimer);
+    }
+  };
 }

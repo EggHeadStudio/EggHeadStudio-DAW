@@ -199,7 +199,7 @@ No miniature desktop clone. Bottom navigation or tabs: Arrange, Samples, Record,
 | 002 | Sample-based instruments, pitch detection, Piano Roll and Drum Rack sequencing | Notes/pads persist and produce sample audio | PARTIAL — sampler, internal note editor, 16-pad rack and shared step/piano pattern exist; unit tests pass, but full workflow acceptance remains incomplete |
 | 003 | Professional mixing/effects architecture, arrangement clip editing, live/offline consistency | Reorderable tested device chains and equivalent live/offline signal measurements | COMPLETE — 45 local Node tests pass; generated-audio Chromium acceptance verified Sample Studio processing/save, Sampler and Drum Rack patterns, independent track effects, mixer mute/solo, non-silent WAV export, project reload, and mobile-emulated timeline seek/alignment. Physical-device checks, remote CI and quantitative live/offline parity tolerances remain release follow-ups, not claims of completion |
 | 004 | Mastering Studio | Measurement-driven mastering chain, validated export and A/B | FUNCTIONALLY COMPLETE — Phases 1–6 implemented; Phase 6 boundary suite passed 110/110. Deterministic eight-track acceptance, clean IndexedDB `.EHS` restore/reopen, unchanged asset hashes, four-format mastered export and Release ZIP verified in Chromium. Independent standards/device/deployment and medium/large-project performance checks remain release/Batch 005 work; see [BATCH_004_FINAL_ACCEPTANCE.md](./docs/archive/batch-004/BATCH_004_FINAL_ACCEPTANCE.md) |
-| 005 | Performance, Mobile Experience & Production Reliability (005A/005B) | Measured performance/memory improvements, safe large archives, responsive editing, reliable recovery and real-device evidence | IN PROGRESS — 005A.7 is closed for tested desktop scope; 005B.1-5D foundations and 5E.1 PWA acceptance remain as previously documented. The 005B.5F.5 continuation verifies several source/build Arrangement actions at 390x844 and layout-only overflow at seven sizes, but connected Sample/Recording/Mastering/Export workflows, clean-origin connected `.EHS`, PWA regression, pointer cancellation and physical-device acceptance remain open. See [BATCH_005B_5F_5_REPORT.md](./BATCH_005B_5F_5_REPORT.md), [MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md), [BATCH_005B_5F_REPORT.md](./BATCH_005B_5F_REPORT.md) and [MOBILE_PERFORMANCE_MODES.md](./MOBILE_PERFORMANCE_MODES.md) |
+| 005 | Performance, Mobile Experience & Production Reliability (005A/005B) | Measured performance/memory improvements, safe large archives, responsive editing, reliable recovery and real-device evidence | IN PROGRESS — 005A.7 is closed for tested desktop scope; 005B.1-5D foundations and 5E.1 PWA acceptance remain as previously documented. The 005B.5F.5 continuation verifies several source/build Arrangement actions at 390x844 and layout-only overflow at seven sizes. QA-01.1 adds targeted source Chromium checks and fixes for Arrangement pinch/drag preview, PWA update recovery, sample-library refresh/removal, mobile form sizing and Device Panel resizing. Connected Sample/Recording/Mastering/Export workflows, clean-origin connected `.EHS`, installed-PWA regression, full viewport gestures and physical-device retest remain open. See [QA-01.1 report](./QA-01_1_EXTENDED_REPORT.md), [BATCH_005B_5F_5_REPORT.md](./BATCH_005B_5F_5_REPORT.md), [MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md), [BATCH_005B_5F_REPORT.md](./BATCH_005B_5F_REPORT.md) and [MOBILE_PERFORMANCE_MODES.md](./MOBILE_PERFORMANCE_MODES.md) |
 | 006 | Persistence and portable projects | Versioned save/reopen, sample relink and media archive round-trip | PARTIAL — JSON/localStorage plus versioned `.EHS` archives with embedded/deduplicated media, checksums and schema migration; automated and Chromium round-trips pass, broader compatibility/missing-media acceptance remains |
 | 007 | Mobile UX, accessibility and performance | End-to-end workflow on physical desktop and mobile browsers | PARTIAL — browser-emulated responsive smoke checks only; physical devices, long recordings and memory budgets unverified |
 | 008 | GitHub Pages release verification | Static deployment smoke checks at repository subpath across target browsers | PARTIAL — local static requests passed for the app, workers, worklets and vendors; the previously published revision was checked, but this unpushed worktree has not been deployed |
@@ -635,3 +635,27 @@ workflows, pointer cancellation/lost capture, full multi-viewport gestures,
 clean-origin connected `.EHS`, PWA regression and physical-device input remain
 open. See [BATCH_005B_5F_5_REPORT.md](./BATCH_005B_5F_5_REPORT.md) and the
 [user-led physical-device checklist](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md).
+
+## QA-01.1 extended continuation
+
+The source implementation now captures two-finger Arrangement gestures across
+the ruler, clip, loop and lane surfaces; shows a floating, high-stack clip
+preview during downward moves; prevents the wide playhead hit target from
+blocking clips; and recovers the PWA notice when an approved build cannot be
+confirmed. Sample Browser updates preserve the active filter, repeated file
+imports reuse the matching local asset, and Remove only hides a library entry
+while showing active reference counts and retaining audio bytes. Mobile text
+controls are 16px, the single existing transport header sticks during page
+scroll, compact effect cards can open their unchanged controls in an expanded
+editor, and the Device Panel uses its shared height setting rather than a
+second inline height.
+
+Source Chromium at 390x844 verified imported-sample search/refresh, non-
+destructive removal with one live clip reference, downward cross-track
+movement, pinch over a clip and ruler, cancellation over the loop, and compact/
+expanded EQ access. Desktop Chromium verified Device Panel pointer resizing
+from 320px to 400px. New Node tests cover gesture cancellation and PWA
+confirmation timeout/recovery. These checks are synthetic browser evidence,
+not trusted phone input or an installed-PWA retest. See
+[QA-01.1 report](./QA-01_1_EXTENDED_REPORT.md); physical iPhone, installed
+iPhone PWA and Windows PWA retests are still user acceptance gates.

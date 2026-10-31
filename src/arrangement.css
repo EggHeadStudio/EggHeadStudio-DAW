@@ -27,6 +27,10 @@
 .workspace .track-row{height:124px}
 .workspace .track-label{width:125px;min-width:125px}
 .workspace .clip{top:1px;bottom:1px;height:auto;padding:5px 12px;border-radius:1px;box-shadow:none;touch-action:pan-x pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;min-width:0}
+.workspace .arrangement{touch-action:pan-x pan-y}
+.clip-drag-preview{position:fixed!important;z-index:200;pointer-events:none;opacity:.94;filter:drop-shadow(0 8px 14px #000b);transform:none!important}
+.clip-drag-preview .clip-handle{display:none!important}
+.track-row.clip-drop-target>.lane{outline:2px solid #9ce8d6;outline-offset:-2px}
 .clip>span{position:relative;align-self:flex-start;z-index:1;pointer-events:none}
 .clip-waveform{position:absolute;top:23px;bottom:2px;left:0;height:calc(100% - 25px);pointer-events:none}
 .workspace .clip-handle{z-index:2;border-radius:0}
@@ -37,6 +41,7 @@
 .workspace .ruler>span{top:42px;height:30px;padding:4px 3px;border-left:1px solid #72818f;pointer-events:none;white-space:nowrap;font-size:10px}
 .workspace .ruler>.beat-tick{border-left-color:#485266}
 .workspace .playhead{top:72px;z-index:5}
+.workspace .arrangement>.playhead{width:2px;transform:none;pointer-events:none}
 .workspace .clip-edit-mode .playhead,.workspace .range-mode .playhead{pointer-events:none}
 .arrangement-loop{position:absolute;top:3px;height:32px;min-width:2px;display:flex;align-items:center;justify-content:space-between;background:#a5b0bf25;border:1px solid #718197;touch-action:none;cursor:grab;color:#aab8c8}
 .arrangement-loop.loop-enabled{background:#75d7c34d;border-color:#76d8c3;color:#b8ffed}
@@ -97,7 +102,7 @@
   .workspace .arrangement.mobile-clip-trim-mode .clip-selected .clip-handle{pointer-events:auto}
   .workspace .clip-selected .clip-handle{width:30px;background:#fff2;opacity:1}
   .workspace .clip-selected .clip-handle::after{left:13px;width:3px;background:#fff}
-  .workspace .clip-move-active{outline:2px solid #ffdd85;outline-offset:1px;filter:brightness(1.16)}
+  .workspace .clip-move-active{outline:2px solid #ffdd85;outline-offset:1px;filter:brightness(.65)}
   .workspace .pinch-preview{will-change:transform}
 }
 @media(min-width:851px){.mobile-clip-toolbar{display:none}}

@@ -94,17 +94,23 @@ export function mountExpandedEditors(root,{blocked,onBlocked,onChange=()=>{}}){
   const entries=[
     ['.piano-editor','Piano Roll'],['.step-scroll','Step Sequencer'],
     ['.selected-pad-editor','Pad inspector'],['.workflow-stage','Sample stage'],
+    ['.device-chain-scroll>.effect-device','Effect device'],
     ['.graphical-eq','EQ'],['.bottom-panel','Devices'],['.right-mixer.track-selected','Track Mixer']
   ];
   for(const [selector,name]of entries)for(const [index,element]of [...root.querySelectorAll(selector)].entries()){
     const mixer=selector==='.right-mixer.track-selected';
+    const device=selector==='.device-chain-scroll>.effect-device';
     const key=`${selector}:${element.closest('[data-device-id]')?.dataset.deviceId||element.dataset.mobileEditorId||index}`;
     if(element.closest('[hidden]')&&!mixer)continue;
     if(element.dataset.mobileExpandable)continue;
     element.dataset.mobileExpandable='true';
     const button=document.createElement('button');button.type='button';button.className='mobile-expand';button.textContent=`Expand ${element.querySelector('h3')?.textContent||name}`;
     button.setAttribute('aria-expanded','false');
-    if(mixer){button.textContent='Selected track Mixer';root.querySelector('.editor-tools').append(button)}else element.before(button);
+    if(device){
+      const title=element.getAttribute('aria-label')?.replace(/ device$/,'')||name;
+      button.textContent=`Expand ${title}`;button.setAttribute('aria-label',`Expand ${title} editor`);element.querySelector('header')?.append(button);
+    }
+    else if(mixer){button.textContent='Selected track Mixer';root.querySelector('.editor-tools').append(button)}else element.before(button);
     button.onclick=()=>{
       if(blocked()){onBlocked();return}
       closeExpandedEditor({focus:false});

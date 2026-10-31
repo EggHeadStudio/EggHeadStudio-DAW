@@ -25,6 +25,15 @@ test('Arrangement pointer cancellation restores the draft without committing or 
   }
 });
 
+test('Arrangement gesture cancellation can be requested when a second touch starts a pinch',()=>{
+  const surface=new PointerSurface();let draft=1,commits=0,cancels=0;
+  const cancel=arrangementGesture(surface,down(),()=>draft=2,()=>commits++,()=>{draft=1;cancels++});
+  surface.send('pointermove');assert.equal(draft,2);
+  assert.equal(cancel(),true);assert.equal(cancel(),false);
+  assert.equal(draft,1);assert.equal(commits,0);assert.equal(cancels,1);
+  assert.equal(surface.hasPointerCapture(1),false);
+});
+
 test('Arrangement pointer completion commits once and ignores unrelated pointers',()=>{
   const surface=new PointerSurface();let moves=0,commits=0,cancels=0;
   arrangementGesture(surface,down(),()=>moves++,()=>commits++,()=>cancels++);

@@ -4,9 +4,9 @@
 
 1. Tap a clip to select it. Its action bar offers **Move**, **Trim**,
    **Duplicate** and **Delete**.
-2. To move it without first changing modes, press and hold the clip body for
-   about 350 ms, then drag. The clip follows the pointer and snaps to the
-   current grid.
+2. To move it without first changing modes, press and hold the clip body
+   briefly, then drag. A floating preview follows the pointer across lanes and
+   snaps to the current grid.
 3. Alternatively, select **Move** and drag the clip body immediately.
 4. Select **Trim** to activate the visible start/end handles. Drag either
    handle to resize the clip on the current grid. Dragging the start handle
@@ -18,8 +18,10 @@ error and do not silently change the clip's track.
 
 ## Zoom, scrolling and insertion
 
-- Pinch with two fingers on an empty lane to zoom around the fingers'
-  midpoint. Zoom is clamped to the existing 0.4x–4x range.
+- Pinch with two fingers on the ruler, a clip, the loop control or a lane to
+  zoom around the fingers' midpoint. Zoom is clamped to the existing 0.4x–4x
+  range. The gesture is scoped to Arrangement; page zoom remains available
+  elsewhere.
 - Release commits one zoom change. Cancelling either pointer clears the
   preview and leaves the prior zoom unchanged.
 - Drag on blank timeline space to use its normal scroll behavior. Clip bodies
@@ -42,6 +44,10 @@ gestures, test results and outstanding gates.
 The 5F.5 source-app follow-up additionally verified explicit Move,
 compatible/incompatible cross-track destinations, both trim handles,
 Duplicate/Delete and their Undo/Redo behavior. The deterministic build verified
-long-press movement, Undo/Redo and end trim. Pointer cancellation, lost capture,
-double-tap, native scrolling at nonzero offsets and built-app pinch remain
-unaccepted; see the [5F.5 report](./BATCH_005B_5F_5_REPORT.md).
+long-press movement, Undo/Redo and end trim. The QA-01.1 follow-up added source
+Chromium checks for downward cross-track movement, pinch beginning on a clip
+and ruler, and pinch cancellation over the loop. These are synthetic browser
+results only. Pointer-cancellation physical behavior, lost capture, double-tap,
+native scrolling at nonzero offsets and built-app pinch remain unaccepted; see
+the [5F.5 report](./BATCH_005B_5F_5_REPORT.md) and
+[QA-01.1 report](./QA-01_1_EXTENDED_REPORT.md).

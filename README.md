@@ -104,8 +104,8 @@ Clip Edit/Range modes let pointer gestures pass through the playhead line;
 seek using the ruler or return to Scroll/select to drag the playhead.
 On phones, tap a clip for its **Move / Trim / Duplicate / Delete** actions;
 long-press the body to move it, choose **Trim** to enable edge handles, or
-pinch an empty lane to zoom around the fingers. Sample Browser **+** uses the
-snapped playhead position. See the [mobile Arrangement gesture guide](./MOBILE_ARRANGEMENT_GESTURES.md)
+pinch the ruler, a clip, loop control or lane to zoom around the fingers.
+Sample Browser **+** uses the snapped playhead position. See the [mobile Arrangement gesture guide](./MOBILE_ARRANGEMENT_GESTURES.md)
 and [005B.5F.4 report](./BATCH_005B_5F_4_REPORT.md). That continuation remains
 incomplete pending full multi-viewport, connected-workflow and physical-device
 acceptance. The 5F.5 follow-up verified source-app compatible/incompatible
@@ -117,6 +117,17 @@ and [physical-device checklist](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md).
 Repeated Sample Studio opening no longer invokes stale teardown callbacks.
 Opening another library sample asks before discarding unsaved sample edits.
 New mastering graphs start at committed parameters; live edits retain smoothing.
+
+The QA-01.1 extended continuation fixes Arrangement pinch capture on ruler/clip/
+loop targets, uses a floating preview for downward clip moves, restores PWA
+update actions after version-confirmation timeout, refreshes Sample Browser
+entries without a workspace rerender, and hides library entries without
+deleting referenced audio. Mobile controls use 16px text fields, sticky
+transport chrome and an expanded effect editor; Device Panel resizing now uses
+one height state. Chromium source checks and targeted Node regressions pass,
+but this continuation remains incomplete: physical iPhone/Windows PWA retests,
+full multi-viewport workflows, installed-PWA update checks and built-app
+gesture parity remain open. See [QA-01.1](./QA-01_1_EXTENDED_REPORT.md).
 
 The [005B.5D closure](./BATCH_005B_5D_REPORT.md) verifies the connected
 390px workflow from sample import/edit/save through two
