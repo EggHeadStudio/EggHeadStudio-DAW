@@ -74,13 +74,23 @@ No factory sound is silently assigned when creating an empty instrument.
 Select one through the existing Sampler/pad source controls, then create a
 pattern and play it. Generation/provenance is in the [QA report](./QA-01_2_REPORT.md).
 
-The horizontal rack uses 320px-high compact cards with appropriate device
+The horizontal rack uses 300px-high compact cards with appropriate device
 widths: ordinary 360px, Compressor 700px, graphical EQ 760px. EQ retains its
 native-DSP response curve, real FFT, all draggable bands/cuts and synchronized
 Frequency/Gain/Q. Use selected-band controls beside the graph, scroll the chain
 horizontally and choose Expand for the full desktop/mobile editor. Expansion
 reuses the same controls/state. Complex sidechain/multiband settings remain
 accessible without turning ordinary cards into vertical scrollers.
+Arrangement keeps Add effect and chain Presets in the same header as the panel
+controls, avoiding a second toolbar and its empty margins. Sampler/Drum Rack
+setup sits at the right end of the chain. EQ filter switches and measured FFT
+status occupy separate rows; axis captions have their own space above the scale
+labels. Panel resizing and the full expanded editor remain available.
+The initial panel height is 360px to show the compact rack below its shared
+desktop toolbar; an existing user-resized height remains authoritative. Smaller
+phone presentations retain horizontal chain scrolling and expanded editing.
+Desktop Arrangement can shrink within its existing scroller to avoid pushing
+the rack below the viewport when its editing toolbar wraps.
 
 Local Chromium acceptance verified failed-install recovery, a two-tab A-to-B
 transition and an offline editing/save/export workflow. The exact scope,

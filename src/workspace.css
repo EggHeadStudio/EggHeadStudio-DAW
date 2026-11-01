@@ -84,9 +84,9 @@ summary{cursor:pointer;min-height:36px;padding:9px 12px;border:1px solid var(--b
 .device-body output{font-variant-numeric:tabular-nums;color:#c5e1d8}
 .device-bypassed{border-style:dashed!important}
 .device-bypassed>header{color:#a8aeb9}
-.instrument-device{padding:12px!important}
+.instrument-device{padding:8px!important}
 .instrument-device h3{margin:0 0 8px;font-size:13px}
-.instrument-device p{color:#acbac8}
+.instrument-device p{color:#acbac8;margin:4px 0 8px}
 .instrument-device .selected-instrument{width:100%;margin:0}
 .workspace .clip-device{margin-top:8px;border-top:1px solid var(--border);padding-top:10px}
 .instrument-devices{margin-top:16px;border-top:1px solid var(--border);padding-top:12px}
@@ -260,7 +260,7 @@ button:disabled,.parameter-disabled{opacity:.55}
 .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .meter-peak{display:none}
 .workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .track-actions{grid-row:2;grid-column:1;display:grid;grid-template-columns:repeat(4,1fr);gap:1px;align-content:center}
 .workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .track-actions button{min-width:0;min-height:32px;padding:1px;font-size:10px}
-.workspace .bottom-panel{height:var(--device-panel-height,320px);min-height:160px;max-height:min(80vh,600px);resize:none;position:relative;padding-top:12px}
+.workspace .bottom-panel{height:var(--device-panel-height,360px);min-height:160px;max-height:min(80vh,600px);resize:none;position:relative;padding-top:12px}
 .device-panel-resize{height:14px;position:absolute;top:0;left:0;right:0;z-index:20;cursor:ns-resize;touch-action:none;border-top:2px solid var(--border)}
 .device-panel-resize:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .device-panel-controls{display:flex;gap:4px;flex-wrap:wrap}
@@ -369,10 +369,10 @@ button:disabled,.parameter-disabled{opacity:.55}
 .eq-analysis-controls select{max-width:110px}
 .eq-analysis-controls input[type=range]{width:80px}
 .eq-analysis-status{display:block;font:11px var(--font-numeric);color:var(--text-secondary);min-height:30px}
-.device-chain-scroll>.effect-device:not(.mobile-expanded-editor){height:320px;min-height:320px;max-width:none;overflow:visible;flex-basis:360px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor){height:300px;min-height:300px;max-width:none;overflow:visible;flex-basis:360px}
 .device-chain-scroll>.effect-device[data-device-type=compressor]:not(.mobile-expanded-editor){flex-basis:700px}
 .device-chain-scroll>.effect-device[data-device-type=eq]:not(.mobile-expanded-editor){flex-basis:760px}
-.device-chain-scroll>.effect-device:not(.mobile-expanded-editor)>header{display:flex;flex-wrap:wrap;min-height:70px;flex-shrink:0;align-content:center;gap:4px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor)>header{display:flex;flex-wrap:wrap;min-height:56px;flex-shrink:0;align-content:center;gap:4px;padding:6px}
 .effect-device>header .mobile-expand{margin:0;flex:0 0 auto;width:auto}
 .device-advanced{grid-column:1/-1}
 .device-advanced>summary{min-height:30px;padding:4px;font-size:11px}
@@ -384,19 +384,24 @@ button:disabled,.parameter-disabled{opacity:.55}
 .device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .parameter-dial::after{left:15px;height:11px}
 .device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .parameter-control>button{display:none}
 .device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .parameter-number{display:block;min-height:28px;padding:3px}
-.device-chain-scroll>.effect-device[data-device-type=eq]:not(.mobile-expanded-editor) .device-body{display:block}
-.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .graphical-eq{display:grid;grid-template-columns:minmax(0,1fr) 260px;grid-template-rows:38px 142px 36px;gap:4px 10px}
-.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-plot{grid-column:1;grid-row:1/3;height:184px}
+.device-chain-scroll>.effect-device[data-device-type=eq]:not(.mobile-expanded-editor) .device-body{display:block;padding:6px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .graphical-eq{display:grid;grid-template-columns:minmax(0,1fr) 280px;grid-template-rows:30px 142px minmax(44px,auto);gap:4px 10px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-plot{grid-column:1;grid-row:1/3;height:176px}
 .device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selection{grid-column:2;grid-row:1;margin:0;flex-wrap:nowrap}
 .device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls{grid-column:2;grid-row:2;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;align-content:start}
 .device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls>label{font-size:11px;min-width:0}
-.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls>label:nth-child(-n+2){grid-row:2}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls>label:nth-child(-n+2){grid-row:2;flex-direction:row;align-items:center;gap:4px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls [data-eq-type]{min-width:0;min-height:30px;padding:3px;flex:1;width:0}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls .parameter-control{gap:2px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls .parameter-rotary{padding-top:40px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls .parameter-control>output{min-height:14px}
 .device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls>[data-eq-reset]{grid-column:3;grid-row:2;padding:4px}
 .device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls>label:has([data-eq-value]){grid-row:1}
-.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-analysis-controls{grid-column:1;grid-row:3;margin:0;gap:4px;flex-wrap:nowrap}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-analysis-controls{grid-column:1;grid-row:3;margin:0;gap:4px;flex-wrap:wrap;align-content:center}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-analysis-controls label{display:flex;gap:3px;align-items:center}
 .device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-analysis-controls select{max-width:72px;padding:3px;font-size:11px}
 .device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-analysis-controls input[type=range]{width:42px}
-.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-analysis-status{grid-column:2;grid-row:3;min-height:0;font-size:10px;overflow-wrap:anywhere}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-analysis-status{grid-column:2;grid-row:3;min-height:0;font-size:10px;line-height:1.4;overflow-wrap:anywhere;align-self:center}
 .device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .graphical-eq>.hint{display:none}
 .effect-device.mobile-expanded-editor .graphical-eq{display:block}
 .effect-device.mobile-expanded-editor .device-body{max-height:none;overflow:visible}
@@ -409,8 +414,11 @@ button:disabled,.parameter-disabled{opacity:.55}
 .eq-plot{scroll-margin-block:60px}
 .arrangement-zoom-status{position:sticky;bottom:8px;left:220px;z-index:25;padding:4px 8px;background:var(--surface);border:1px solid var(--accent);border-radius:4px;pointer-events:none;font:12px var(--font-numeric)}
 .workflow-master-chain.device-chain-scroll{display:flex;align-items:flex-start;overflow-x:auto;max-width:100%;padding-bottom:12px}
+.workflow-master-chain>.effect-device:not(.mobile-expanded-editor){padding:0}
 .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .device-body>.hint{display:none}
 .workflow-master-chain>.effect-device[data-device-type=multiband]:not(.mobile-expanded-editor){flex-basis:580px;min-width:580px}
+.workflow-master-chain>.effect-device[data-device-type=multiband]:not(.mobile-expanded-editor)>header>label{flex-basis:100%}
+.workflow-master-chain>.effect-device[data-device-type=multiband]:not(.mobile-expanded-editor) .device-body{padding:4px}
 .workflow-master-chain .master-multiband .multiband-display{grid-column:1/-1;min-height:28px}
 .workflow-master-chain .master-multiband .master-filter-controls{grid-column:1/-1;display:flex;gap:12px}
 .workflow-master-chain .master-multiband .master-filter-controls>label{flex:1;min-width:0}
@@ -422,9 +430,28 @@ button:disabled,.parameter-disabled{opacity:.55}
 .mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .graphical-eq{display:block}
 .mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .eq-plot{height:clamp(220px,42dvh,420px)}
 .mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls{display:flex}
+.mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls>label:nth-child(-n+2){flex-direction:column;align-items:stretch}
+.mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls [data-eq-type]{width:100%;flex:none}
 .mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .multiband-band-grid{display:grid}
 .mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .device-body>.hint{display:block}
+.workspace .bottom-panel{padding-inline:8px;padding-bottom:6px}
+.bottom-panel>.pane-head{padding-block:4px}
+.workspace .device-panel{margin:0;padding:0;border:0}
+.workspace .effect-chain-title{justify-content:flex-start;gap:8px;margin:0;flex:1;min-width:260px;letter-spacing:normal}
+.workspace .effect-chain-title>label{margin-left:auto}
+.workspace .effect-chain-title select{min-height:30px}
+.workspace .effect-chain-title>.device-presets{margin:0}
+.workspace .effect-chain-title>.device-presets[open]{flex-basis:100%}
+.workspace .effect-chain-title>.device-presets>.effect-presets{margin:4px 0 0}
+.workspace .device-chain-scroll{padding-block:0 6px}
+.workspace .device-chain-scroll>.instrument-device{flex-basis:280px;min-width:240px}
+@media(min-width:851px){
+  .workspace .arrangement{min-height:200px}
+}
 @media(max-width:850px){
   .device-panel-resize{height:24px}
   .workspace .bottom-panel{padding-top:24px}
+  .bottom-panel>.pane-head>span{font-size:10px;letter-spacing:0}
+  .workspace .effect-chain-title>label{gap:4px}
+  .workspace .effect-chain-title select{width:130px;margin-left:0}
 }

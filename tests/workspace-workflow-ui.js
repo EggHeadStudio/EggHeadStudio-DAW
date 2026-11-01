@@ -1,3 +1,5 @@
+import {verifyCompactDeviceBounds} from './mobile-closure-browser.js';
+
 // Pass a Playwright Page after runInstrumentWorkflowAcceptance on a disposable origin.
 export async function runWorkspaceWorkflowAcceptance(page){
   const check=(condition,message)=>{if(!condition)throw new Error(message)},errors=[];
@@ -63,6 +65,7 @@ export async function runWorkspaceWorkflowAcceptance(page){
     const density=page.getByRole('button',{name:'Compact devices',exact:true});await density.click();
     check(await page.locator('.bottom-panel').evaluate(panel=>panel.classList.contains('devices-compact')),'Compact devices did not apply.');
     await density.click();
+    await verifyCompactDeviceBounds(page);
     const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);check(!overflow,`Overflow at ${width}`);
     layouts.push({width,rows,keyboardResize:true,touchResize:true,touchCancel:true,overflow});
   }
@@ -70,7 +73,9 @@ export async function runWorkspaceWorkflowAcceptance(page){
   await page.setViewportSize({width:1280,height:1100});await expand.click();
   await page.getByRole('button',{name:'Select Empty Lead track',exact:true}).click();
   check((await page.locator('.bottom-panel>.pane-head').textContent()).includes('Empty Lead'),'Device Panel track context is wrong.');
-  check(await page.locator('.instrument-device h3').textContent()==='Sampler','Instrument is not first.');
+  check(await page.locator('.instrument-device h3').textContent()==='Sampler','Instrument context is wrong.');
+  check(await page.locator('.device-chain-scroll').evaluate(chain=>chain.lastElementChild.classList.contains('instrument-device')),'Instrument setup is not on the right.');
+  check(await page.locator('.bottom-panel>.pane-head .device-presets').count()===1,'Presets are not in the shared rack toolbar.');
   await page.locator('.arrangement-edit-menu>summary').click();await page.locator('#openPiano').click();
   check(await page.locator('.piano-tool-group').count()===3,'Piano toolbar groups missing.');
   check(await page.locator('#patternLength').inputValue()==='16','Pattern length context incorrect.');

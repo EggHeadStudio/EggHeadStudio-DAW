@@ -98,11 +98,16 @@ export function mountArrangementChrome({root,project,selectedTrack,selectedClip,
   }
   mountTrackLayout(root,project,state,moveTrack);
   mountDevicePanelLayout(root,state);
+  const deviceHead=root.querySelector('.bottom-panel>.pane-head'),deviceTitle=root.querySelector('.effect-chain-title');
+  if(deviceTitle){
+    deviceTitle.querySelector('strong').remove();
+    deviceHead.insertBefore(deviceTitle,deviceHead.querySelector('.device-panel-controls'));
+  }
   if(instrument&&chain){
     const card=document.createElement('article');card.className='instrument-device';
     const heading=document.createElement('h3');heading.textContent=track.drumRack?'Drum Rack':'Sampler';
     const context=document.createElement('p');context.textContent=clip?patternForClip(track,clip)?.name||'Selected pattern':'Select or create a pattern';
-    card.append(heading,context,instrument);chain.prepend(card);
+    card.append(heading,context,instrument);chain.append(card);
   }
   const search=root.querySelector('#search');search.setAttribute('aria-label','Search samples');
   const browser=root.querySelector('.browser'),samplePane=document.createElement('div');samplePane.className='browser-category';
@@ -134,12 +139,13 @@ export function mountArrangementChrome({root,project,selectedTrack,selectedClip,
 export function enhanceDeviceChain(root,track){
   const chain=root.querySelector('.effect-chain');if(!chain)return;
   const presets=chain.querySelector('.effect-presets'),presetMenu=createCommandDisclosure('Presets','device-presets');
-  presets.before(presetMenu);presetMenu.append(presets);
+  const title=chain.querySelector('.effect-chain-title');
+  title.insertBefore(presetMenu,title.querySelector('label'));presetMenu.append(presets);
   const scroll=document.createElement('div');scroll.className='device-chain-scroll';scroll.setAttribute('aria-label','Ordered track devices');scroll.tabIndex=0;
   chain.append(scroll);
   for(const [index,article]of [...chain.querySelectorAll('.effect-device')].entries()){
     const effect=track.fx.effects[index],title=article.querySelector('header label').textContent.trim();
-    mountDeviceShell(article,{id:effect.id,type:effect.type,title,onPreset:()=>{presetMenu.open=true;chain.querySelector('#effectPresetSelect').focus();presetMenu.scrollIntoView({block:'nearest'})}});
+    mountDeviceShell(article,{id:effect.id,type:effect.type,title,onPreset:()=>{presetMenu.open=true;root.querySelector('#effectPresetSelect').focus();presetMenu.scrollIntoView({block:'nearest'})}});
     scroll.append(article);enhanceEffectParameters(article,effect);
   }
 }

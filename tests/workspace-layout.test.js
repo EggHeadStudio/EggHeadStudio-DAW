@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {boundedPanelHeight,boundedTrackHeight,COMPACT_TRACK_HEIGHT,EXPANDED_TRACK_HEIGHT,trackHeight} from '../src/workspace-layout.js';
+import {boundedPanelHeight,boundedTrackHeight,COMPACT_TRACK_HEIGHT,DEFAULT_DEVICE_PANEL_HEIGHT,EXPANDED_TRACK_HEIGHT,trackHeight} from '../src/workspace-layout.js';
 
 test('Arrangement defaults to 84-pixel tracks without adding project fields',()=>{
   const project={tracks:[{id:'one'},{id:'two'}]},before=structuredClone(project),state={};
@@ -19,6 +19,8 @@ test('track resizing is finite, rounded and bounded independently of compact mod
 });
 
 test('Device Panel resizing enforces practical bounds without a project migration',()=>{
+  assert.equal(DEFAULT_DEVICE_PANEL_HEIGHT,360);
+  assert.equal(boundedPanelHeight(DEFAULT_DEVICE_PANEL_HEIGHT),DEFAULT_DEVICE_PANEL_HEIGHT);
   assert.equal(boundedPanelHeight(10),160);assert.equal(boundedPanelHeight(800),600);
   assert.equal(boundedPanelHeight(321.2),321);assert.throws(()=>boundedPanelHeight(NaN),RangeError);
 });

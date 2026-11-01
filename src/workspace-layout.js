@@ -2,6 +2,7 @@ import {describeControl} from './ui-controls.js';
 
 export const COMPACT_TRACK_HEIGHT=84;
 export const EXPANDED_TRACK_HEIGHT=240;
+export const DEFAULT_DEVICE_PANEL_HEIGHT=360;
 
 export function trackHeight(state,id){
   return state.trackHeights?.[id]??COMPACT_TRACK_HEIGHT;
@@ -69,7 +70,7 @@ export function mountTrackLayout(root,project,state,moveTrack){
 
 export function mountDevicePanelLayout(root,state){
   const panel=root.querySelector('.bottom-panel'),head=panel.querySelector('.pane-head');
-  panel.style.setProperty('--device-panel-height',`${state.devicePanelHeight??320}px`);
+  panel.style.setProperty('--device-panel-height',`${state.devicePanelHeight??DEFAULT_DEVICE_PANEL_HEIGHT}px`);
   const controls=document.createElement('div');controls.className='device-panel-controls';
   const density=document.createElement('button');density.type='button';density.textContent='Compact devices';
   density.setAttribute('aria-pressed',String(Boolean(state.compactDevices)));
@@ -82,7 +83,7 @@ export function mountDevicePanelLayout(root,state){
   handle.setAttribute('role','separator');handle.setAttribute('aria-label','Device Panel height');handle.setAttribute('aria-orientation','horizontal');
   handle.setAttribute('aria-valuemin','160');handle.setAttribute('aria-valuemax','600');
   const set=value=>{state.devicePanelHeight=boundedPanelHeight(value);panel.style.setProperty('--device-panel-height',`${state.devicePanelHeight}px`);handle.setAttribute('aria-valuenow',String(state.devicePanelHeight))};
-  set(state.devicePanelHeight??320);
+  set(state.devicePanelHeight??DEFAULT_DEVICE_PANEL_HEIGHT);
   handle.onkeydown=event=>{
     if(!['ArrowUp','ArrowDown','Home','End'].includes(event.key))return;
     event.preventDefault();event.stopPropagation();

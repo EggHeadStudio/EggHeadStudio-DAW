@@ -183,9 +183,11 @@ export async function verifyRecordingOrientation(page){
 export async function verifyCompactDeviceBounds(page){
   const devices=await page.locator('.device-chain-scroll>.effect-device:not(.mobile-expanded-editor):not(.device-collapsed)').evaluateAll(elements=>elements.filter(element=>element.getClientRects().length).map(element=>{
     const card=element.getBoundingClientRect(),body=element.querySelector('.device-body');
-    return{type:element.dataset.deviceType,height:card.height,bottom:card.bottom,bodyBottom:body.getBoundingClientRect().bottom,internalScroll:body.scrollHeight>body.clientHeight};
+    const eq=body.querySelector('.graphical-eq'),controls=eq?.querySelector('.eq-selected-controls'),status=eq?.querySelector('.eq-analysis-status');
+    const overlap=controls&&status?Math.max(0,controls.getBoundingClientRect().bottom-status.getBoundingClientRect().top):0;
+    return{type:element.dataset.deviceType,height:card.height,bottom:card.bottom,bodyBottom:body.getBoundingClientRect().bottom,internalScroll:body.scrollHeight>body.clientHeight,eqTextOverlap:overlap};
   }));
-  const invalid=devices.find(device=>device.internalScroll||device.bodyBottom>device.bottom+1);
+  const invalid=devices.find(device=>device.internalScroll||device.bodyBottom>device.bottom+1||device.eqTextOverlap>0);
   if(invalid)throw new Error(`Compact ${invalid.type} controls exceed their device bounds: ${JSON.stringify(invalid)}`);
   return devices;
 }

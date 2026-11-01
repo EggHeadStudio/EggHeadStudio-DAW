@@ -3,7 +3,7 @@ import {createEqAnalyzer} from './eq-analyzer.js';
 import {enhanceParameter} from './ui-controls.js';
 
 const colors=['#d9b677','#94bfff','#9ce8d6','#f2a0a5','#c4acf4','#a2d28e','#91d9e7','#bcc4d3'];
-const left=38,top=16;
+const left=38,top=24;
 const ns='http://www.w3.org/2000/svg';
 function svgElement(name,attributes={}){
   const element=document.createElementNS(ns,name);
