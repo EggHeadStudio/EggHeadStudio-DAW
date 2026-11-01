@@ -27,20 +27,31 @@ export function mountDeviceShell(article,{id,type,title,onPreset}){
   const header=article.querySelector('header'),body=document.createElement('div');body.className='device-body';
   body.id=`device-body-${id}`;
   for(const child of [...article.children])if(child!==header)body.append(child);
+  const sidechain=body.querySelector('.sidechain-controls');
+  if(sidechain){
+    const advanced=document.createElement('details');advanced.className='device-advanced';
+    const summary=document.createElement('summary');summary.textContent='Sidechain routing';
+    sidechain.before(advanced);advanced.append(summary,sidechain);
+    advanced.addEventListener('toggle',()=>{if(advanced.open&&!article.classList.contains('mobile-expanded-editor'))article.querySelector('header .mobile-expand')?.click()});
+  }
   const subtitle=document.createElement('small');subtitle.className='device-type';subtitle.textContent=type==='eq'?'Equalizer':type;
-  header.querySelector('label').append(subtitle);
+  header.querySelector('label')?.append(subtitle);
   const fold=document.createElement('button');fold.className='device-fold';fold.textContent='Collapse';fold.setAttribute('aria-expanded','true');fold.setAttribute('aria-controls',body.id);
   fold.onclick=()=>{body.hidden=!body.hidden;fold.textContent=body.hidden?'Expand':'Collapse';fold.setAttribute('aria-expanded',String(!body.hidden));article.classList.toggle('device-collapsed',body.hidden)};
   const preset=document.createElement('button');preset.className='device-preset';preset.textContent='Presets';preset.setAttribute('aria-label',`${title} chain presets`);preset.onclick=onPreset;
   if(onPreset)header.append(preset);
   header.append(fold);article.append(body);
   describeControl(fold,`Fold ${title} without changing its audio processing.`);
-  const enabled=header.querySelector('[data-effect-enabled]');enabled.setAttribute('aria-label',`Enable ${title}`);
-  const status=document.createElement('span');status.className='device-status';header.querySelector('label').append(status);
-  const paint=()=>{article.classList.toggle('device-bypassed',!enabled.checked);status.textContent=enabled.checked?'Active':'Bypassed'};
-  enabled.addEventListener('change',paint);paint();
+  const enabled=header.querySelector('[data-effect-enabled]');
+  if(enabled){
+    enabled.setAttribute('aria-label',`Enable ${title}`);
+    const status=document.createElement('span');status.className='device-status';header.querySelector('label').append(status);
+    const paint=()=>{article.classList.toggle('device-bypassed',!enabled.checked);status.textContent=enabled.checked?'Active':'Bypassed'};
+    enabled.addEventListener('change',paint);paint();
+  }
   for(const [selector,action]of [['[data-effect-up]','Move earlier'],['[data-effect-down]','Move later'],['[data-effect-remove]','Remove']]){
-    const button=header.querySelector(selector);button.setAttribute('aria-label',`${action}: ${title}`);button.title=`${action}: ${title}`;
+    const button=header.querySelector(selector);if(!button)continue;
+    button.setAttribute('aria-label',`${action}: ${title}`);button.title=`${action}: ${title}`;
   }
   return body;
 }

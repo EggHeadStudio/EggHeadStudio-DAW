@@ -20,7 +20,7 @@ export function showSamplePicker({assets,buffers,preview,onSelect,notify}){
   document.querySelector('#instrumentSamplePicker')?.close();
   const dialog=document.createElement('dialog');
   dialog.id='instrumentSamplePicker';dialog.className='sample-picker';
-  dialog.innerHTML='<h2>Choose Sample</h2><label>Search samples <input type="search" autofocus></label><div class="sample-picker-list"></div><button data-close>Cancel</button>';
+  dialog.innerHTML='<h2>Choose Sample</h2><p class="hint">Preview a Factory or User sample, then Select. Next create a pattern and draw notes or steps; Play auditions the Arrangement.</p><label>Search samples <input type="search" autofocus></label><div class="sample-picker-list"></div><button data-close>Cancel</button>';
   const list=dialog.querySelector('.sample-picker-list');
   const render=()=>{
     list.replaceChildren();
@@ -28,10 +28,10 @@ export function showSamplePicker({assets,buffers,preview,onSelect,notify}){
     for(const asset of assets.values()){
       if(!asset.name.toLowerCase().includes(filter))continue;
       const row=document.createElement('div'),name=document.createElement('span'),play=document.createElement('button'),choose=document.createElement('button');
-      name.textContent=asset.name;play.textContent='Preview';choose.textContent='Select';
-      play.disabled=choose.disabled=!buffers.has(asset.id);
+      name.textContent=`${asset.factory?'Factory · ':'User · '}${asset.name}`;play.textContent='Preview';choose.textContent='Select';
+      play.disabled=choose.disabled=!buffers.has(asset.id)&&!asset.load;
       play.onclick=()=>Promise.resolve(preview(asset.id)).catch(error=>notify(error.message));
-      choose.onclick=()=>{try{onSelect(asset.id);dialog.close()}catch(error){notify(error.message)}};
+      choose.onclick=async()=>{choose.disabled=true;try{await asset.load?.();await onSelect(asset.id);dialog.close()}catch(error){notify(error.message);choose.disabled=false}};
       row.append(name,play,choose);list.append(row);
     }
     if(!list.children.length)list.textContent='No matching samples. Import files from the Sample Browser first.';
@@ -48,6 +48,6 @@ export function bindSampleDrop(element,assign,notify){
     event.preventDefault();event.stopPropagation();
     const id=event.dataTransfer.getData('text/sample');
     if(!id)return notify('Drag a sample from the Sample Browser.');
-    try{assign(id)}catch(error){notify(error.message)}
+    Promise.resolve().then(()=>assign(id)).catch(error=>notify(error.message));
   };
 }

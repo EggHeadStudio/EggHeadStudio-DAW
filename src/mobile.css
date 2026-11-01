@@ -11,9 +11,15 @@
 .piano-world[data-touch-mode=scroll] .piano-note,.piano-world[data-touch-mode=select] .piano-note{touch-action:pan-x pan-y}
 .piano-world[data-touch-mode=scroll] .piano-note{cursor:grab}
 .section-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%}
+.piano-key,.piano-note,.velocity-bar,.drum-trigger,.drum-step,.performance-key,.performance-pad,
+.eq-plot,.arrangement :is(.clip,.arrangement-loop,.range-edge),.device-panel-resize,.parameter-control>input[type=range]{
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
+}
 .range-edge{padding:0;border:0;border-radius:0}
 .range-edge:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .mobile-focus-trigger,.performance-mode-launch{min-height:44px}
+.effect-device.mobile-expanded-editor{position:fixed!important;inset:8px 8px calc(8px + env(safe-area-inset-bottom))!important;z-index:80!important;background:var(--surface-canvas)!important;margin:0!important;padding:12px!important;width:auto!important;max-width:none!important;min-width:0!important;flex-basis:auto!important;height:auto!important;min-height:0!important;overflow:auto!important}
+.effect-device.mobile-expanded-editor .mobile-editor-exit{display:block;position:sticky;top:0;z-index:30;min-height:44px;width:100%;margin-bottom:8px}
 .mobile-orientation-prompt{width:min(440px,calc(100vw - 24px));max-height:85dvh;overflow:auto;padding:18px;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md)}
 .mobile-orientation-prompt::backdrop{background:#0009}
 .mobile-orientation-prompt h2{margin:0 0 8px;font-size:18px}
@@ -67,6 +73,7 @@
 @media(max-width:850px){
   :root{--mobile-nav-height:calc(56px + env(safe-area-inset-bottom))}
   body{padding-bottom:var(--mobile-nav-height)}
+  .pwa-update-notice{top:auto;bottom:calc(var(--mobile-nav-height) + 8px)}
   .global-header{position:sticky;top:env(safe-area-inset-top,0px);padding:4px 8px;gap:4px;align-items:center;z-index:25}
   input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=color]),select,textarea{font-size:16px;line-height:1.2}
   .sample-studio :is(button,input,select,summary){scroll-margin-top:120px}
@@ -81,6 +88,12 @@
   .mobile-tempo>summary{display:block;min-height:44px;padding:12px 6px}
   .mobile-tempo-options{position:absolute;right:0;top:100%;width:240px;padding:10px;background:var(--surface);border:1px solid var(--border);flex-wrap:wrap;z-index:45}
   .mobile-tempo:not([open])>.mobile-tempo-options{display:none}
+  #app[data-workspace=arrange] .transport{display:flex;flex-wrap:wrap;justify-content:flex-start}
+  #app[data-workspace=arrange] .mobile-tempo{display:contents}
+  #app[data-workspace=arrange] .mobile-tempo>summary{display:none}
+  #app[data-workspace=arrange] .mobile-tempo>.mobile-tempo-options{display:flex;position:static;width:auto;padding:0;border:0;background:none}
+  #app[data-workspace=arrange] .mobile-tempo-options>#clock{display:none}
+  #app[data-workspace=arrange] #bpm{width:66px;min-height:44px}
   #app>nav[aria-label=Workspaces]{display:none}
   .mobile-navigation{position:fixed;inset:auto 0 0;z-index:45;display:grid;grid-template-columns:68px 76px minmax(0,1fr);gap:4px;padding:4px 8px calc(4px + env(safe-area-inset-bottom));background:var(--surface);border-top:1px solid var(--border)}
   .mobile-navigation button{min-height:48px;padding:6px 4px;min-width:0;white-space:normal;font-size:12px}

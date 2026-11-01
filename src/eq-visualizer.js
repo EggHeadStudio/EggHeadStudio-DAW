@@ -167,7 +167,7 @@ export function mountEqVisualizer(host,{name,getState,change,getContext,getTap,o
     host.dataset.spectrumPeakHz=String(peakBin*resolution);host.dataset.spectrumPeakDb=String(maximum);
   }
   const observer=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;if(!visible)detach()});observer.observe(host);
-  const resized=new ResizeObserver(()=>{dirty=true});resized.observe(host);
+  const resized=new ResizeObserver(()=>{dirty=true});resized.observe(plot);
   const visibility=()=>{if(document.hidden)detach()};document.addEventListener('visibilitychange',visibility);
   function tick(time){
     if(disposed)return;

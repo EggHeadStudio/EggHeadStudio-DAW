@@ -22,8 +22,12 @@ error and do not silently change the clip's track.
   zoom around the fingers' midpoint. Zoom is clamped to the existing 0.4x–4x
   range. The gesture is scoped to Arrangement; page zoom remains available
   elsewhere.
-- Release commits one zoom change. Cancelling either pointer clears the
-  preview and leaves the prior zoom unchanged.
+- During pinch, actual ruler/grid/clip/loop/playhead geometry updates at the
+  current pixels-per-beat; labels retain their normal font size. A live Zoom %
+  indicator reports the scale. No `scaleX` text-stretch preview is used.
+- Release commits one zoom change. Cancelling either pointer restores the prior
+  zoom and horizontal/vertical scroll. The midpoint is anchored subject to
+  integer CSS-pixel scroll rounding.
 - Drag on blank timeline space to use its normal scroll behavior. Clip bodies
   and resize handles reserve touch input for editing; use an empty lane when
   panning through time.
@@ -48,6 +52,15 @@ long-press movement, Undo/Redo and end trim. The QA-01.1 follow-up added source
 Chromium checks for downward cross-track movement, pinch beginning on a clip
 and ruler, and pinch cancellation over the loop. These are synthetic browser
 results only. Pointer-cancellation physical behavior, lost capture, double-tap,
-native scrolling at nonzero offsets and built-app pinch remain unaccepted; see
+and native scrolling across browsers remain unaccepted; see
 the [5F.5 report](./BATCH_005B_5F_5_REPORT.md) and
 [QA-01.1 report](./QA-01_1_EXTENDED_REPORT.md).
+
+QA-01.2 additionally verified source and built live pinch at nonzero horizontal
+scroll: a built 1.5x gesture changed clip width 1560 -> 2340px and ruler width
+2496 -> 3744px, while the 11px labels remained untransformed. Cancellation
+restored both geometry and the original 300px scroll. This closes that specific
+built-pinch gate, not all lost-capture/native scrolling/device gestures.
+Arrangement now uses its normal mobile transport and layout instead of a
+redundant Focus surface. Touch Device Panel resizing/cancellation also passed.
+See [QA-01.2](./QA-01_2_REPORT.md) for exact scope and outstanding tests.

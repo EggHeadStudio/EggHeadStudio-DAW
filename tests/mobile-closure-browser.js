@@ -33,12 +33,14 @@ export async function runMobileClosureAcceptance(page,{onStage=()=>{}}={}){
       await page.evaluate(frequency=>{globalThis.ehs5dFrequency=frequency},frequency);
       await field('#recordingPosition',0);await page.locator('#studioRecord').click();
       await page.waitForFunction(()=>document.querySelector('.recording-studio').dataset.recordingState==='recording');
+      await verifyRecordingOrientation(page);
       await page.waitForFunction(()=>document.querySelector('#recordingTime').textContent>='00:01.200');
       await page.locator('#studioStop').click();await page.waitForFunction(()=>document.querySelector('.recording-studio').dataset.recordingState==='idle');
       const id=await page.locator('[data-take]').last().getAttribute('data-take');ids.push(id);
       for(const [key,value]of [['start',.05],['end',.8],['gain',.5],['fadeIn',.05],['fadeOut',.08]])await field(`[data-take-value="${id}"][data-key="${key}"]`,value);
       await page.locator(`[data-activate-take="${id}"]`).click();
     }
+
     check(await page.locator('[data-take]').count()===initialTakes+2,'Normal saves lost a take.');
     const previews=[];
     for(const id of ids){
@@ -151,6 +153,7 @@ export async function runMobileClosureAcceptance(page,{onStage=()=>{}}={}){
     await page.reload();await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.startsWith('Ready.'));
     check(JSON.stringify((await read()).tracks)===JSON.stringify(snapshot.tracks),'Reload lost saved takes.');
     results.project={newCancelPreserved:true,saveThenNewPreserved:true,importCancelPreserved:true,importRestored:true,reloadPreserved:true,archiveBytes:archive.bytes.length};
+    await verifyCompactDeviceBounds(page);
     check(!errors.length,errors.join('\n'));return{...results,pageErrors:errors};
   }finally{
     page.off('pageerror',onError);
@@ -159,4 +162,30 @@ export async function runMobileClosureAcceptance(page,{onStage=()=>{}}={}){
       for(const mic of globalThis.ehs5dMics||[]){mic.destination.stream.getTracks().forEach(track=>track.stop());mic.oscillator.stop();await mic.context.close()}
     });
   }
+}
+
+export async function verifyRecordingOrientation(page){
+  const errors=[],onError=error=>errors.push(error.message);
+  page.on('pageerror',onError);
+  try{
+    for(const viewport of [{width:844,height:390},{width:390,height:844}]){
+      await page.setViewportSize(viewport);await page.waitForTimeout(200);
+      const state=await page.locator('.recording-studio').getAttribute('data-recording-state');
+      if(state!=='recording')throw new Error(`Orientation interrupted recording: ${state}`);
+      const prompt=page.locator('.mobile-orientation-prompt[open]');
+      if(await prompt.count())await prompt.getByRole('button',{name:'Continue Editing',exact:true}).click();
+    }
+    if(errors.length)throw new Error(`Recording orientation errors: ${errors.join('; ')}`);
+    return{portrait:true,landscape:true,recordingPreserved:true};
+  }finally{page.off('pageerror',onError)}
+}
+
+export async function verifyCompactDeviceBounds(page){
+  const devices=await page.locator('.device-chain-scroll>.effect-device:not(.mobile-expanded-editor):not(.device-collapsed)').evaluateAll(elements=>elements.filter(element=>element.getClientRects().length).map(element=>{
+    const card=element.getBoundingClientRect(),body=element.querySelector('.device-body');
+    return{type:element.dataset.deviceType,height:card.height,bottom:card.bottom,bodyBottom:body.getBoundingClientRect().bottom,internalScroll:body.scrollHeight>body.clientHeight};
+  }));
+  const invalid=devices.find(device=>device.internalScroll||device.bodyBottom>device.bottom+1);
+  if(invalid)throw new Error(`Compact ${invalid.type} controls exceed their device bounds: ${JSON.stringify(invalid)}`);
+  return devices;
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mountPwaUpdates} from '../src/pwa-updates.js';
 
 class Element {
-  constructor(){this.hidden=false;this.disabled=false;this.textContent='';this.listeners=new Map();this.children=new Map()}
+  constructor(){this.hidden=false;this.disabled=false;this.textContent='';this.dataset={};this.listeners=new Map();this.children=new Map()}
   querySelector(selector){return this.children.get(selector)||null}
   addEventListener(type,handler){const handlers=this.listeners.get(type)||[];handlers.push(handler);this.listeners.set(type,handlers)}
   fire(type){for(const handler of this.listeners.get(type)||[])handler({})}
@@ -59,6 +59,7 @@ test('approved update notice closes only after the active worker confirms the ap
     await new Promise(resolve=>setTimeout(resolve,350));
     assert.equal(fixture.reloads,1);
     assert.equal(fixture.notice.hidden,true);
+    assert.equal(fixture.notice.dataset.updateState,'updated');
   }finally{fixture.restore()}
 });
 
@@ -74,5 +75,17 @@ test('failed update confirmation restores a retry or dismiss action instead of l
     assert.equal(fixture.later.disabled,false);
     assert.equal(fixture.later.textContent,'Dismiss');
     assert.equal(fixture.reloads,0);
+    assert.equal(fixture.notice.dataset.updateState,'failed');
+  }finally{fixture.restore()}
+});
+
+test('approval completes without reload when newer HTML already matches the newly activated worker',async()=>{
+  const fixture=await updateFixture({activeVersion:'build-a'});
+  try{
+    fixture.workerListeners.get('message')({data:{type:'EHS_UPDATE_APPROVED',version:'build-a'}});
+    await new Promise(resolve=>setTimeout(resolve,20));
+    assert.equal(fixture.reloads,0);assert.equal(fixture.notice.dataset.updateState,'updated');
+    assert.match(fixture.message.textContent,/active worker and running application build now match/);
+    assert.equal(fixture.update.hidden,true);assert.equal(fixture.later.disabled,false);
   }finally{fixture.restore()}
 });

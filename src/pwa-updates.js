@@ -43,7 +43,8 @@ export function mountPwaUpdates({getSafety,queryTimeoutMs=UPDATE_QUERY_TIMEOUT_M
 
   const showUpdate = () => {
     if (!registration?.waiting || updateDismissed || approvedVersion) return;
-    message.textContent = 'A tested app update is ready.';
+    notice.dataset.updateState = 'available';
+    message.textContent = 'An app update is available. Your current build is still running.';
     notice.hidden = false;
     updateButton.hidden = false;
     updateButton.disabled = false;
@@ -52,6 +53,7 @@ export function mountPwaUpdates({getSafety,queryTimeoutMs=UPDATE_QUERY_TIMEOUT_M
     laterButton.textContent = 'Later';
   };
   const showInstallFailure = () => {
+    notice.dataset.updateState = 'failed';
     message.textContent = 'The update could not be installed. Your current version is still available.';
     notice.hidden = false;
     updateButton.hidden = true;
@@ -59,6 +61,7 @@ export function mountPwaUpdates({getSafety,queryTimeoutMs=UPDATE_QUERY_TIMEOUT_M
     laterButton.textContent = 'Dismiss';
   };
   const showActivationFailure = () => {
+    notice.dataset.updateState = 'failed';
     approvedVersion = null;
     clearTimeout(activationTimer);clearTimeout(versionCheckTimer);
     message.textContent = 'The update could not be confirmed. Your current version is still available; you can retry or dismiss this notice.';
@@ -92,11 +95,21 @@ export function mountPwaUpdates({getSafety,queryTimeoutMs=UPDATE_QUERY_TIMEOUT_M
     });
     try {
       registration.active.postMessage({type: 'EHS_GET_BUILD_VERSION'}, [channel.port2]);
-      if (await response === approvedVersion && approvedVersion !== build) {
+      if (await response === approvedVersion) {
         clearTimeout(activationTimer);clearTimeout(versionCheckTimer);
-        reloadStarted = true;
-        notice.hidden = true;
-        location.reload();
+        notice.dataset.updateState = 'updated';
+        if(approvedVersion!==build){
+          reloadStarted = true;
+          message.textContent = 'New worker version confirmed. Loading the updated application…';
+          notice.hidden = true;
+          location.reload();
+        }else{
+          approvedVersion = null;
+          message.textContent = 'Updated. The active worker and running application build now match.';
+          updateButton.hidden = true;
+          laterButton.hidden = false;laterButton.disabled = false;laterButton.textContent = 'Dismiss';
+          heartbeat();
+        }
       }
     } catch (error) {
       console.error('Could not verify the activated EggHeadStudio version.', error);
@@ -113,6 +126,7 @@ export function mountPwaUpdates({getSafety,queryTimeoutMs=UPDATE_QUERY_TIMEOUT_M
       return;
     }
     approvedVersion = version;
+    notice.dataset.updateState = 'switching';
     message.textContent = 'Update approved. Confirming the new version…';
     updateButton.disabled = true;
     updateButton.textContent = 'Updating…';
@@ -144,12 +158,14 @@ export function mountPwaUpdates({getSafety,queryTimeoutMs=UPDATE_QUERY_TIMEOUT_M
   updateButton.addEventListener('click', async () => {
     if (!registration?.waiting || updateRequested) return;
     updateRequested = true;
+    notice.dataset.updateState = 'checking';
     updateButton.disabled = true;
     updateButton.textContent = 'Checking open tabs…';
     const channel = new MessageChannel();
     const timeout = setTimeout(() => {
       channel.port1.close();
       updateRequested = false;
+      notice.dataset.updateState = 'failed';
       updateButton.disabled = false;
       updateButton.textContent = 'Update now';
       message.textContent = 'Could not confirm update safety. Your current version is still running.';
@@ -160,6 +176,7 @@ export function mountPwaUpdates({getSafety,queryTimeoutMs=UPDATE_QUERY_TIMEOUT_M
       updateRequested = false;
       const result = event.data;
       if (!result?.ok) {
+        notice.dataset.updateState = 'failed';
         updateButton.disabled = false;
         updateButton.textContent = 'Update now';
         message.textContent = `Update paused: ${[...new Set(result?.blockers || ['Update safety could not be verified.'])].join(' ')}`;
@@ -173,6 +190,7 @@ export function mountPwaUpdates({getSafety,queryTimeoutMs=UPDATE_QUERY_TIMEOUT_M
       clearTimeout(timeout);
       channel.port1.close();
       updateRequested = false;
+      notice.dataset.updateState = 'failed';
       updateButton.disabled = false;
       updateButton.textContent = 'Update now';
       message.textContent = `Update request failed: ${error.message}. Your current version is still running.`;

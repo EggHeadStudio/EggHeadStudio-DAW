@@ -1,6 +1,6 @@
 import {clipDurationSeconds} from './audio.js';
 import {copyTimeRange,deleteTimeRange,moveClipTo,normalizeTimeSelection,pasteTimeRange,resizeClipAtBeat} from './arrangement.js';
-import {clipViewportWindow,draggedClipStart,editLoopRegion,pinchZoomValue,quantizeBeat,timelineBeatsAtClientX} from './timeline.js';
+import {anchoredTimelineScrollLeft,clipViewportWindow,draggedClipStart,editLoopRegion,pinchZoomValue,quantizeBeat,timelineBeatsAtClientX} from './timeline.js';
 import {getWaveformRangePeaks} from './waveform.js';
 import {normalizeArrangementLoop} from './project-state.js';
 import {assertClipDestination,instrumentType,isInstrumentClip,patternForClip} from './instrument-clips.js';
@@ -108,20 +108,16 @@ export function mountArrangementWorkspace(options){
     return cancelGesture;
   };
   const beatAt=clientX=>quantizeBeat(timelineBeatsAtClientX(clientX,ruler,arrangement,scale),grid());
-  const activePointers=new Map();let pinch=null,pinchFrame=0;
-  const pinchTargets=[ruler,...lanes];
-  const clearPinchPreview=()=>{if(pinchFrame)cancelAnimationFrame(pinchFrame);pinchFrame=0;for(const element of pinchTargets){element.style.transform='';element.style.transformOrigin='';element.classList.remove('pinch-preview')}};
+  const activePointers=new Map();let pinch=null,pinchFrame=0,currentZoom=options.zoom||1;
+  const basePixelsPerBeat=scale.pixelsPerBeat/currentZoom;
+  const zoomIndicator=document.createElement('output');zoomIndicator.className='arrangement-zoom-status';zoomIndicator.hidden=true;arrangement.append(zoomIndicator);
+  const clearPinchPreview=()=>{if(pinchFrame)cancelAnimationFrame(pinchFrame);pinchFrame=0;zoomIndicator.hidden=true;state.pinchActive=false};
   const previewPinch=()=>{
     pinchFrame=0;if(!pinch)return;
     const points=[...activePointers.values()];if(points.length<2)return;
     const distance=Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y),value=pinchZoomValue(pinch.startZoom,pinch.startDistance,distance);
-    pinch.zoom=value;
-    const factor=value/pinch.startZoom;
-    for(const [index,element]of pinchTargets.entries()){
-      element.style.transformOrigin=`${pinch.origins[index]}px 0`;
-      element.style.transform=`scaleX(${factor})`;
-      element.classList.add('pinch-preview');
-    }
+    pinch.zoom=value;pinch.anchorX=(points[0].x+points[1].x)/2;
+    layoutZoom(value,pinch.anchorX,pinch.anchorBeat);
   };
   const onPointerDown=event=>{
     if(!mobile||event.pointerType!=='touch'||!arrangement.contains(event.target))return;
@@ -131,7 +127,8 @@ export function mountArrangementWorkspace(options){
       if(distance<24){activePointers.delete(event.pointerId);return}
       state.cancelClipPointer?.();state.cancelClipPointer=null;
       const anchorX=(points[0].x+points[1].x)/2;
-      pinch={startZoom:options.zoom||1,startDistance:distance,anchorX,zoom:options.zoom||1,origins:pinchTargets.map(element=>anchorX-element.getBoundingClientRect().left)};
+      pinch={startZoom:currentZoom,startDistance:distance,anchorX,anchorBeat:Math.max(0,timelineBeatsAtClientX(anchorX,ruler,arrangement,scale)),startScrollLeft:arrangement.scrollLeft,zoom:currentZoom};
+      state.pinchActive=true;zoomIndicator.hidden=false;zoomIndicator.textContent=`Zoom ${Math.round(currentZoom*100)}%`;
       event.preventDefault();event.stopPropagation();
     }
   };
@@ -142,8 +139,10 @@ export function mountArrangementWorkspace(options){
   };
   const finishPinch=(commitZoom)=>{
     if(!pinch)return;
-    const {zoom:nextZoom,anchorX}=pinch;pinch=null;clearPinchPreview();activePointers.clear();
-    if(commitZoom&&Math.abs(nextZoom-(options.zoom||1))>1e-4)options.setZoom?.(nextZoom,anchorX);
+    if(commitZoom&&pinchFrame){cancelAnimationFrame(pinchFrame);previewPinch()}
+    const previous=pinch;
+    if(!commitZoom){layoutZoom(previous.startZoom,previous.anchorX,previous.anchorBeat);arrangement.scrollLeft=previous.startScrollLeft}
+    pinch=null;clearPinchPreview();activePointers.clear();
   };
   const onPointerUp=event=>{
     if(!activePointers.has(event.pointerId))return;
@@ -247,6 +246,27 @@ export function mountArrangementWorkspace(options){
     }
   };
   paintSelection();
+  function layoutZoom(value,anchorClientX,anchorBeat){
+    const anchor=anchorClientX??arrangement.getBoundingClientRect().left+arrangement.clientWidth/2;
+    const beat=anchorBeat??Math.max(0,timelineBeatsAtClientX(anchor,ruler,arrangement,scale));
+    const contentLeft=ruler.getBoundingClientRect().left+arrangement.scrollLeft;
+    currentZoom=Math.max(.4,Math.min(4,value));scale.pixelsPerBeat=basePixelsPerBeat*currentZoom;
+    const width=Math.max(1200,scale.beatsToPixels(maxBeat));
+    ruler.style.width=`${width}px`;
+    for(const lane of lanes){lane.style.width=`${width}px`;lane.style.backgroundSize=`${scale.beatsToPixels(grid()||.0625)}px 100%`}
+    [...ruler.querySelectorAll('.bar-tick,.beat-tick')].forEach((label,index)=>{
+      label.style.left=`${scale.beatsToPixels(index)}px`;
+      label.textContent=index%4===0?String(index/4+1):scale.pixelsPerBeat>=30?`${Math.floor(index/4)+1}.${index%4+1}`:'';
+    });
+    for(const wave of waves){wave.element.style.left=`${scale.barsToPixels(wave.clip.bar)}px`;wave.element.style.width=`${Math.max(1,scale.timeToPixels(clipDurationSeconds(wave.clip,project.bpm)))}px`}
+    showInsertion();paintLoop(loopState());
+    for(const overlay of all('.time-range')){overlay.style.left=`${scale.beatsToPixels(state.selection.startBeat)}px`;overlay.style.width=`${scale.beatsToPixels(state.selection.endBeat-state.selection.startBeat)}px`}
+    arrangement.scrollLeft=anchoredTimelineScrollLeft(beat,anchor,contentLeft,scale.pixelsPerBeat);
+    zoomIndicator.textContent=`Zoom ${Math.round(currentZoom*100)}%`;
+    const label=[...tools.querySelectorAll('span')].find(element=>/^Zoom \d+%/.test(element.textContent));
+    if(label)label.textContent=`Zoom ${Math.round(currentZoom*100)}%`;
+    options.setZoom?.(currentZoom,anchor,{live:true});queueWaves();
+  }
   const hasRange=()=>state.selection&&state.selection.endBeat>state.selection.startBeat;
   const validateRange=()=>{
     if(!hasRange()){notify('Select a time range first.');return false}
@@ -473,7 +493,7 @@ export function mountArrangementWorkspace(options){
     instrument.onclick=()=>{state.selectMode=false;options.openClip(selectedClip,selectedTrack)};$('.device-panel').prepend(instrument);
   }
   paintWaves();
-  return{ensureBeat,handleKey(event){
+  return{ensureBeat,setZoom:layoutZoom,handleKey(event){
     const mod=event.ctrlKey||event.metaKey,key=event.key.toLowerCase();
     if(mod&&key==='l'){event.preventDefault();loopFromRange();return true}
     if(mod&&key==='x'){event.preventDefault();cut();return true}

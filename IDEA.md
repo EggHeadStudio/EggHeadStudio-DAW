@@ -199,7 +199,7 @@ No miniature desktop clone. Bottom navigation or tabs: Arrange, Samples, Record,
 | 002 | Sample-based instruments, pitch detection, Piano Roll and Drum Rack sequencing | Notes/pads persist and produce sample audio | PARTIAL — sampler, internal note editor, 16-pad rack and shared step/piano pattern exist; unit tests pass, but full workflow acceptance remains incomplete |
 | 003 | Professional mixing/effects architecture, arrangement clip editing, live/offline consistency | Reorderable tested device chains and equivalent live/offline signal measurements | COMPLETE — 45 local Node tests pass; generated-audio Chromium acceptance verified Sample Studio processing/save, Sampler and Drum Rack patterns, independent track effects, mixer mute/solo, non-silent WAV export, project reload, and mobile-emulated timeline seek/alignment. Physical-device checks, remote CI and quantitative live/offline parity tolerances remain release follow-ups, not claims of completion |
 | 004 | Mastering Studio | Measurement-driven mastering chain, validated export and A/B | FUNCTIONALLY COMPLETE — Phases 1–6 implemented; Phase 6 boundary suite passed 110/110. Deterministic eight-track acceptance, clean IndexedDB `.EHS` restore/reopen, unchanged asset hashes, four-format mastered export and Release ZIP verified in Chromium. Independent standards/device/deployment and medium/large-project performance checks remain release/Batch 005 work; see [BATCH_004_FINAL_ACCEPTANCE.md](./docs/archive/batch-004/BATCH_004_FINAL_ACCEPTANCE.md) |
-| 005 | Performance, Mobile Experience & Production Reliability (005A/005B) | Measured performance/memory improvements, safe large archives, responsive editing, reliable recovery and real-device evidence | IN PROGRESS — 005A.7 is closed for tested desktop scope; 005B.1-5D foundations and 5E.1 PWA acceptance remain as previously documented. The 005B.5F.5 continuation verifies several source/build Arrangement actions at 390x844 and layout-only overflow at seven sizes. QA-01.1 adds targeted source Chromium checks and fixes for Arrangement pinch/drag preview, PWA update recovery, sample-library refresh/removal, mobile form sizing and Device Panel resizing. Connected Sample/Recording/Mastering/Export workflows, clean-origin connected `.EHS`, installed-PWA regression, full viewport gestures and physical-device retest remain open. See [QA-01.1 report](./QA-01_1_EXTENDED_REPORT.md), [BATCH_005B_5F_5_REPORT.md](./BATCH_005B_5F_5_REPORT.md), [MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md), [BATCH_005B_5F_REPORT.md](./BATCH_005B_5F_REPORT.md) and [MOBILE_PERFORMANCE_MODES.md](./MOBILE_PERFORMANCE_MODES.md) |
+| 005 | Performance, Mobile Experience & Production Reliability (005A/005B) | Measured performance/memory improvements, safe large archives, responsive editing, reliable recovery and real-device evidence | IN PROGRESS — Earlier foundations retain their reported scope. QA-01.2 adds real live pinch geometry, picker-refresh fixes, horizontal graphical devices, deterministic factory WAVs and loaded-build/PWA lifecycle improvements. Connected Chromium Sample/Recording/Mastering/WAV/MP3 and clean-origin `.EHS` checks now pass within documented scope; seven-size functional EQ checks are not a full production matrix. Fresh musical-touch/lifecycle, delayed-worker, broader regression and physical/installed-device gates remain open. See [QA-01.2 report](./QA-01_2_REPORT.md), [physical checklist](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md) and earlier [5F.5 report](./BATCH_005B_5F_5_REPORT.md). |
 | 006 | Persistence and portable projects | Versioned save/reopen, sample relink and media archive round-trip | PARTIAL — JSON/localStorage plus versioned `.EHS` archives with embedded/deduplicated media, checksums and schema migration; automated and Chromium round-trips pass, broader compatibility/missing-media acceptance remains |
 | 007 | Mobile UX, accessibility and performance | End-to-end workflow on physical desktop and mobile browsers | PARTIAL — browser-emulated responsive smoke checks only; physical devices, long recordings and memory budgets unverified |
 | 008 | GitHub Pages release verification | Static deployment smoke checks at repository subpath across target browsers | PARTIAL — local static requests passed for the app, workers, worklets and vendors; the previously published revision was checked, but this unpushed worktree has not been deployed |
@@ -659,3 +659,36 @@ confirmation timeout/recovery. These checks are synthetic browser evidence,
 not trusted phone input or an installed-PWA retest. See
 [QA-01.1 report](./QA-01_1_EXTENDED_REPORT.md); physical iPhone, installed
 iPhone PWA and Windows PWA retests are still user acceptance gates.
+
+## QA-01.2 continuation - 2026-11-01
+
+Import now separates decoding from live context activation, refreshes each
+successful picker result and restores unreferenced stored samples lazily.
+Arrangement pinch updates actual ruler/grid/clip/marker geometry rather than
+stretching text; its normal mobile transport replaces redundant Focus layout.
+Shared horizontal devices retain the approved graphical EQ/FFT and all native
+DSP controls. Compact cards are 320px high, with widths appropriate to their
+content; six-column Compressor composition fixes measured content overflow.
+Expanded desktop/mobile editing uses the same DOM/state. Mastering retains
+its real module order and graphical feedback.
+
+Nine original deterministic factory WAVs, lazy source assignment and empty
+instrument guidance now support first-use production without imported audio.
+Versioned shell caching and referenced-only `.EHS` embedding preserve offline
+portability. The footer reports loaded HTML build identity; same-loaded-version
+worker approval completes without a needless reload or weakened safety check.
+A real connected recording/orientation error from detached Focus dialogs was
+fixed and covered by a browser regression.
+
+Validation: 354 Node tests, 147 syntax checks, clean diff hygiene and matching
+79-asset builds `4dfe931160a404bdb167`. Chromium measured real Sampler/Drum audio,
+Master FFT/limiter/render, saved/recovered takes, unchanged original Sample
+bytes, non-silent WAV/MP3 with progress/cancel/retry, clean-origin connected
+`.EHS`, actual worker transitions and offline factory playback. Seven-size EQ
+interactions and final all-band desktop/mobile sweeps passed.
+
+This remains incomplete acceptance, not physical iPhone closure. Fresh musical
+touch/lifecycle, deliberate worker delays, full artwork/release regression,
+dedicated Edge/WebKit and installed/physical-device checks remain open.
+See [QA-01.2 report](./QA-01_2_REPORT.md) and
+[user test checklist](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md).

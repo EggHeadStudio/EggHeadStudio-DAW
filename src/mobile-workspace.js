@@ -59,7 +59,7 @@ export function mountMobileShell(root,{navigate,back,blocked,onBlocked}){
   nav.querySelector('[data-mobile-back]').onclick=()=>{if(blocked()){onBlocked();return}if(!closeExpandedEditor())back()};
   const resize=()=>{
     for(const {element,marker}of homes)if(media.matches)options.append(element);else marker.after(element);
-    tempo.open=!media.matches;
+    tempo.open=!media.matches||root.dataset.workspace==='arrange';
     if(!media.matches){dialog.close();closeExpandedEditor({focus:false})}
   };
   resize();media.addEventListener('change',resize);
@@ -78,6 +78,8 @@ export function mountMobileShell(root,{navigate,back,blocked,onBlocked}){
 }
 
 export function syncMobileShell(root,view,{canBack=false,busy=false}={}){
+  root.dataset.workspace=view;
+  const tempo=root.querySelector('.mobile-tempo');if(tempo)tempo.open=view==='arrange'||!matchMedia('(max-width:850px)').matches;
   const nav=root.querySelector('.mobile-navigation');if(!nav)return;
   nav.querySelector('[data-mobile-back]').disabled=busy||!canBack&&!expanded;
   nav.querySelector('[data-mobile-arrange]').disabled=busy||view==='arrange';
@@ -102,6 +104,7 @@ export function mountExpandedEditors(root,{blocked,onBlocked,onChange=()=>{}}){
     const device=selector==='.device-chain-scroll>.effect-device';
     const key=`${selector}:${element.closest('[data-device-id]')?.dataset.deviceId||element.dataset.mobileEditorId||index}`;
     if(element.closest('[hidden]')&&!mixer)continue;
+    if(selector==='.graphical-eq'&&element.closest('.effect-device'))continue;
     if(element.dataset.mobileExpandable)continue;
     element.dataset.mobileExpandable='true';
     const button=document.createElement('button');button.type='button';button.className='mobile-expand';button.textContent=`Expand ${element.querySelector('h3')?.textContent||name}`;

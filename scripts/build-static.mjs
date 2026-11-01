@@ -35,7 +35,7 @@ export async function buildStatic({source=root,output=join(root,'dist')}={}){
    throw new Error(`PWA manifest references an unsupported or unbundled icon: ${icon.src}`);
  }
  const workerTemplate=await readFile(join(source,'scripts','service-worker-template.js'),'utf8');
- const assets=(await Promise.all(['src','vendor'].map(directory=>filesIn(join(source,directory))))).flat().sort();
+ const assets=(await Promise.all(['src','vendor','assets/factory-samples'].map(directory=>filesIn(join(source,directory))))).flat().sort();
  const hash=createHash('sha256').update(template).update('\0scripts/build-static.mjs\0').update(buildScript)
   .update('\0manifest.webmanifest\0').update(manifest)
   .update('\0service-worker-template.js\0').update(workerTemplate),payloads=[];

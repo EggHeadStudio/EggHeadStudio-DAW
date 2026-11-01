@@ -1,5 +1,6 @@
 import {enhanceParameter} from './ui-controls.js';
 import {DEFAULT_MASTERING_SETTINGS} from './mastering.js';
+import {mountDeviceShell} from './device-ui.js';
 
 function stage(parent,key,title){
   const section=document.createElement('section');section.className='workflow-stage';section.dataset.workflowStage=key;
@@ -101,22 +102,25 @@ export function organizeMasteringStudio(root,settings,focusKey){
   root.querySelector('.mastering-toolbar [data-master-param=outputGainDb]').closest('label').remove();
   output.querySelector('.hint').textContent='Output gain precedes the fixed final limiter. Audio format and release settings are in Export Studio.';
   const map=new Map([['eq','masterEqEnabled'],['saturation','masterSatEnabled'],['imager','masterImagerEnabled'],['multiband','masterMultibandEnabled'],['limiter','masterLimiterEnabled']].map(([key,id])=>[key,root.querySelector(`#${id}`).closest('.master-module')]));
-  const modules=document.createElement('div');modules.className='workflow-master-chain';chain.append(input,modules);
+  const modules=document.createElement('div');modules.className='workflow-master-chain device-chain-scroll';chain.append(input,modules);
   for(const key of [...settings.chainOrder,'output','limiter']){
     const module=key==='output'?output:map.get(key);module.dataset.masterStage=key;modules.append(module);
-    const header=module.querySelector('header'),status=document.createElement('span');status.className='module-status';
+    const header=module.querySelector('header');
     const enabled=header.querySelector('input[type=checkbox]');
-    const paint=()=>{status.textContent=enabled?(enabled.checked?'Active':'Bypassed'):'Output stage';module.classList.toggle('device-bypassed',Boolean(enabled&&!enabled.checked))};
-    header.append(status);enabled?.addEventListener('change',paint);paint();
+    if(enabled)enabled.dataset.effectEnabled='true';
     const index=settings.chainOrder.indexOf(key);
     if(index>=0){
       const actions=[...root.querySelectorAll('.master-chain-order li')][index].querySelectorAll('button');
       for(const [direction,original]of [...actions].entries()){
         const button=document.createElement('button');button.type='button';button.textContent=direction?'Later':'Earlier';
         button.disabled=original.disabled;button.setAttribute('aria-label',original.getAttribute('aria-label'));button.dataset.workflowMasterMove=`${key}-${direction}`;
+        button.dataset[direction?'effectDown':'effectUp']='true';
         button.onclick=()=>original.click();header.append(button);
       }
     }
+    module.classList.add('effect-device');
+    const title={eq:'Master Parametric EQ',saturation:'Master Saturation',imager:'Master Stereo Image',multiband:'Master Multiband',output:'Master Output',limiter:'Master Limiter'}[key];
+    mountDeviceShell(module,{id:`master-${key}`,type:key==='imager'?'utility':key,title});
   }
   root.querySelector('.master-module-grid').remove();
   root.querySelector('.master-chain-order ol').hidden=true;

@@ -343,7 +343,7 @@ button:disabled,.parameter-disabled{opacity:.55}
   .mobile-focus-toolbar>.export-progress{min-height:8px}
 }
 .graphical-eq{min-width:0;width:100%;color:var(--text);--eq-accent:var(--device-eq)}
-.device-chain-scroll>.effect-device[data-device-type=eq]{width:clamp(280px,62vw,720px);flex-basis:clamp(280px,62vw,720px);min-width:min(280px,100%);flex-shrink:0}
+.device-chain-scroll>.effect-device[data-device-type=eq]{width:760px;flex-basis:760px;min-width:760px;max-width:none;flex-shrink:0}
 .device-body>.graphical-eq{grid-column:1/-1}
 .graphical-eq .eq-plot{position:relative;width:100%;height:clamp(170px,25vw,240px);background:var(--surface-input);border:1px solid var(--border);overflow:hidden}
 .eq-plot canvas,.eq-plot svg{display:block;position:absolute;inset:0;width:100%;height:100%}
@@ -369,11 +369,62 @@ button:disabled,.parameter-disabled{opacity:.55}
 .eq-analysis-controls select{max-width:110px}
 .eq-analysis-controls input[type=range]{width:80px}
 .eq-analysis-status{display:block;font:11px var(--font-numeric);color:var(--text-secondary);min-height:30px}
-@media(max-width:600px){.device-chain-scroll>.effect-device[data-device-type=eq]{width:calc(100vw - 54px);flex-basis:calc(100vw - 54px)}.eq-selected-controls>label{flex-basis:82px}.eq-analysis-controls{gap:6px}.eq-selection select{max-width:155px}}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor){height:320px;min-height:320px;max-width:none;overflow:visible;flex-basis:360px}
+.device-chain-scroll>.effect-device[data-device-type=compressor]:not(.mobile-expanded-editor){flex-basis:700px}
+.device-chain-scroll>.effect-device[data-device-type=eq]:not(.mobile-expanded-editor){flex-basis:760px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor)>header{display:flex;flex-wrap:wrap;min-height:70px;flex-shrink:0;align-content:center;gap:4px}
+.effect-device>header .mobile-expand{margin:0;flex:0 0 auto;width:auto}
+.device-advanced{grid-column:1/-1}
+.device-advanced>summary{min-height:30px;padding:4px;font-size:11px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .device-body{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:8px;max-height:none;overflow:visible;align-content:start}
+.device-chain-scroll>.effect-device[data-device-type=compressor]:not(.mobile-expanded-editor) .device-body{grid-template-columns:repeat(6,minmax(0,1fr))}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .parameter-rotary{padding-top:44px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .parameter-dial,
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .parameter-rotary>input[type=range]{width:38px;height:38px;min-height:38px;left:calc(50% - 19px)}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .parameter-dial::after{left:15px;height:11px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .parameter-control>button{display:none}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .parameter-number{display:block;min-height:28px;padding:3px}
+.device-chain-scroll>.effect-device[data-device-type=eq]:not(.mobile-expanded-editor) .device-body{display:block}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .graphical-eq{display:grid;grid-template-columns:minmax(0,1fr) 260px;grid-template-rows:38px 142px 36px;gap:4px 10px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-plot{grid-column:1;grid-row:1/3;height:184px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selection{grid-column:2;grid-row:1;margin:0;flex-wrap:nowrap}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls{grid-column:2;grid-row:2;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;align-content:start}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls>label{font-size:11px;min-width:0}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls>label:nth-child(-n+2){grid-row:2}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls>[data-eq-reset]{grid-column:3;grid-row:2;padding:4px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls>label:has([data-eq-value]){grid-row:1}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-analysis-controls{grid-column:1;grid-row:3;margin:0;gap:4px;flex-wrap:nowrap}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-analysis-controls select{max-width:72px;padding:3px;font-size:11px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-analysis-controls input[type=range]{width:42px}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .eq-analysis-status{grid-column:2;grid-row:3;min-height:0;font-size:10px;overflow-wrap:anywhere}
+.device-chain-scroll>.effect-device:not(.mobile-expanded-editor) .graphical-eq>.hint{display:none}
+.effect-device.mobile-expanded-editor .graphical-eq{display:block}
+.effect-device.mobile-expanded-editor .device-body{max-height:none;overflow:visible}
+.effect-device.mobile-expanded-editor .parameter-control>.parameter-number,
+.effect-device.mobile-expanded-editor .parameter-control>button{display:block}
+.effect-device.mobile-expanded-editor .eq-plot{height:clamp(220px,42dvh,420px)}
+.effect-device .mobile-expand{display:inline-flex;align-items:center}
+.device-panel-resize::after{content:"";position:absolute;top:4px;left:calc(50% - 28px);width:56px;height:4px;background:var(--text-muted);border-radius:4px}
+.bottom-panel{scroll-padding-block:60px 60px}
+.eq-plot{scroll-margin-block:60px}
+.arrangement-zoom-status{position:sticky;bottom:8px;left:220px;z-index:25;padding:4px 8px;background:var(--surface);border:1px solid var(--accent);border-radius:4px;pointer-events:none;font:12px var(--font-numeric)}
+.workflow-master-chain.device-chain-scroll{display:flex;align-items:flex-start;overflow-x:auto;max-width:100%;padding-bottom:12px}
+.workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .device-body>.hint{display:none}
+.workflow-master-chain>.effect-device[data-device-type=multiband]:not(.mobile-expanded-editor){flex-basis:580px;min-width:580px}
+.workflow-master-chain .master-multiband .multiband-display{grid-column:1/-1;min-height:28px}
+.workflow-master-chain .master-multiband .master-filter-controls{grid-column:1/-1;display:flex;gap:12px}
+.workflow-master-chain .master-multiband .master-filter-controls>label{flex:1;min-width:0}
+.workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .multiband-band-grid{display:none}
+.workflow-master-chain>.effect-device.mobile-expanded-editor .device-body{display:block}
+.mobile-focus-surface .workflow-master-chain.device-chain-scroll{display:block;overflow:visible}
+.mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor){height:auto;min-height:0;min-width:0;width:100%;max-width:100%}
+.mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .device-body{display:block}
+.mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .graphical-eq{display:block}
+.mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .eq-plot{height:clamp(220px,42dvh,420px)}
+.mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .eq-selected-controls{display:flex}
+.mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .multiband-band-grid{display:grid}
+.mobile-focus-surface .workflow-master-chain>.effect-device:not(.mobile-expanded-editor) .device-body>.hint{display:block}
 @media(max-width:850px){
-  .devices-compact .device-chain-scroll>.effect-device{height:240px;min-height:240px;overflow:hidden}
-  .devices-compact .device-chain-scroll>.effect-device .device-body{max-height:160px;overflow:hidden}
-  .devices-compact .device-chain-scroll>.effect-device .mobile-expand{grid-column:1/-1;min-height:36px}
-  .devices-compact .device-chain-scroll>.effect-device.mobile-expanded-editor{height:auto!important;min-height:0!important;overflow:auto!important}
-  .devices-compact .device-chain-scroll>.effect-device.mobile-expanded-editor .device-body{max-height:none;overflow:visible}
+  .device-panel-resize{height:24px}
+  .workspace .bottom-panel{padding-top:24px}
 }

@@ -61,13 +61,14 @@ export function wireDrumRackUI(root,{track,assets,buffers,engine,tracks,save,not
     checkpoint();track.pattern.notes.push(...additions);if(track.pattern.lengthBeats)track.pattern.lengthBeats=Math.min(64,length*2);save();refresh();
   };
   const selected=Math.min(selectedPads.get(track.id)||0,visible.length-1);
-  const assign=(index,id)=>{
+  const assign=async(index,id)=>{
+    await assets.get(id)?.load?.();
     if(id&&(!assets.has(id)||!buffers.has(id)))throw new Error('Import and load that sample before assignment.');
     assignPadSource(rack.pads[index],assets.get(id));selectedPads.set(track.id,index);save();refresh();
   };
   root.querySelectorAll('[data-choose-pad]').forEach(button=>button.onclick=()=>showSamplePicker({assets,buffers,preview,notify,onSelect:id=>assign(Number(button.dataset.choosePad),id)}));
   root.querySelectorAll('[data-pad]').forEach(element=>bindSampleDrop(element,id=>assign(Number(element.dataset.pad),id),notify));
-  root.querySelector('#removePadSample').onclick=()=>assign(selected,null);
+  root.querySelector('#removePadSample').onclick=()=>assign(selected,null).catch(error=>notify(error.message));
   root.querySelector('#resetPad').onclick=()=>{resetPad(rack.pads[selected]);save();refresh()};
   root.querySelector('#previewPad').onclick=()=>trigger(selected);
   root.querySelectorAll('[data-pad-name]').forEach(input=>input.onchange=event=>{rack.pads[+event.target.dataset.padName].name=event.target.value.trim()||`Pad ${+event.target.dataset.padName+1}`;save();refresh()});

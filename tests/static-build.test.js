@@ -9,7 +9,8 @@ test('static deployment versions the entire module, Worker, Worklet, vendor and 
  const temporary=await mkdtemp(join(tmpdir(),'ehs-static-test-'));
  try{
   const source=join(temporary,'source'),output=join(temporary,'output');
-  await Promise.all(['src','vendor','icons','scripts'].map(directory=>mkdir(join(source,directory),{recursive:true})));
+  await Promise.all(['src','vendor','icons','scripts','assets/factory-samples/drums'].map(directory=>mkdir(join(source,directory),{recursive:true})));
+  await writeFile(join(source,'assets','factory-samples','drums','kick.wav'),'original-factory-wave');
   await writeFile(join(source,'index.html'),'<html><head><link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" href="./icons/apple-touch-icon.png"><link href="./src/style.css"></head><script src="./src/app.js"></script></html>');
   const iconNames=['icon-192.png','icon-512.png','icon-maskable-512.png','apple-touch-icon.png','icon-1024.png'];
   const manifestNames=['icon-192.png','icon-512.png','icon-maskable-512.png','icon-1024.png'];
@@ -39,6 +40,8 @@ test('static deployment versions the entire module, Worker, Worklet, vendor and 
   for(const name of iconNames)assert.ok(serviceWorker.includes(`./icons/${name}`));
   assert.ok(serviceWorker.includes(`./assets/${first.version}/src/app.js`));
   assert.ok(serviceWorker.includes(`./assets/${first.version}/vendor/dsp.js`));
+  assert.ok(serviceWorker.includes(`./assets/${first.version}/assets/factory-samples/drums/kick.wav`));
+  assert.equal(await readFile(join(output,'assets',first.version,'assets','factory-samples','drums','kick.wav'),'utf8'),'original-factory-wave');
   assert.equal(await readFile(join(output,'icons','icon-maskable-512.png'),'utf8'),'icon:icon-maskable-512.png');
   assert.deepEqual(JSON.parse(await readFile(join(output,'manifest.webmanifest'),'utf8')),manifest);
   await writeFile(join(source,'vendor','dsp.js'),'export const quality=8;');

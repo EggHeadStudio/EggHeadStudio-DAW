@@ -257,7 +257,27 @@ export class AudioEngine{
   if(this.onError)this.onError(error);else console.error(error);
  }
  constructor(){this.ctx=null;this.master=null;this.compressor=null;this.eq=null;this.masteringGraph=null;this.masteringSettings=normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS);this.trackNodes=new Map();this.sources=[];this.sourceNodes=new WeakMap();this.sourceTrackIds=new WeakMap();this.instrumentSignatures=new Map();this.playing=false;this.startedAt=0;this.offset=0;this.timer=null;this.raf=null;this.onTick=()=>{};this.onMeter=()=>{};this.onEnd=()=>{};this.loop=false;this.bpm=120;this.masterSettings={eq:0,threshold:-12,makeup:0,volume:1};this.clipHoldUntil=new Map();this.sidechainReady=false;this.sidechainError=null;this.masteringLimiterReady=false;this.masteringLimiterError=null;}
- async init(){if(!this.ctx){this.ctx=new (window.AudioContext||window.webkitAudioContext)();if(this.ctx.audioWorklet&&typeof globalThis.AudioWorkletNode==='function'){try{await this.ctx.audioWorklet.addModule(new URL('./sidechain-processor.js',import.meta.url));this.sidechainReady=true}catch(error){this.sidechainError=error;console.error('External sidechain processor could not be loaded.',error)}try{await this.ctx.audioWorklet.addModule(new URL('./mastering-processor.js',import.meta.url));this.ctx.masteringLimiterReady=true}catch(error){this.masteringLimiterError=error;console.error('Mastering limiter processor could not be loaded.',error)}}else{this.sidechainError=new Error('AudioWorklet is unavailable in this browser.');this.masteringLimiterError=this.sidechainError}this.eq=this.ctx.createBiquadFilter();this.eq.type='highshelf';this.eq.frequency.value=4500;this.compressor=this.ctx.createDynamicsCompressor();this.master=this.ctx.createGain();this.eq.connect(this.compressor).connect(this.master);this.setMaster(this.masterSettings);this.setMastering(this.masteringSettings)}await this.ctx.resume();if(!this.masteringGraph)this.setMastering(this.masteringSettings);return this.ctx}
+ async init({resume=true}={}){
+  if(!this.ctx){
+   this.ctx=new (window.AudioContext||window.webkitAudioContext)();
+   this.initialization=(async()=>{
+    if(this.ctx.audioWorklet&&typeof globalThis.AudioWorkletNode==='function'){
+     try{await this.ctx.audioWorklet.addModule(new URL('./sidechain-processor.js',import.meta.url));this.sidechainReady=true}
+     catch(error){this.sidechainError=error;console.error('External sidechain processor could not be loaded.',error)}
+     try{await this.ctx.audioWorklet.addModule(new URL('./mastering-processor.js',import.meta.url));this.ctx.masteringLimiterReady=true}
+     catch(error){this.masteringLimiterError=error;console.error('Mastering limiter processor could not be loaded.',error)}
+    }else{
+     this.sidechainError=new Error('AudioWorklet is unavailable in this browser.');this.masteringLimiterError=this.sidechainError;
+    }
+    this.eq=this.ctx.createBiquadFilter();this.eq.type='highshelf';this.eq.frequency.value=4500;
+    this.compressor=this.ctx.createDynamicsCompressor();this.master=this.ctx.createGain();
+    this.eq.connect(this.compressor).connect(this.master);this.setMaster(this.masterSettings);this.setMastering(this.masteringSettings);
+   })();
+  }
+  await Promise.all([this.initialization,resume?this.ctx.resume():undefined]);
+  if(!this.masteringGraph)this.setMastering(this.masteringSettings);
+  return this.ctx;
+ }
  setMaster(s){this.masterSettings={...this.masterSettings,...s};if(!this.ctx)return;const eq=Number(this.masterSettings.eq),threshold=Number(this.masterSettings.threshold),makeup=Number(this.masterSettings.makeup),volume=Number(this.masterSettings.volume);this.eq.gain.value=Number.isFinite(eq)?eq:0;this.compressor.threshold.value=Number.isFinite(threshold)?threshold:-12;this.compressor.ratio.value=3;this.master.gain.value=Math.max(0,Number.isFinite(volume)?volume:1)*Math.pow(10,(Number.isFinite(makeup)?makeup:0)/20)}
  setMastering(settings){const next=normalizeMasteringSettings(settings);if(!this.ctx||!this.master){this.masteringSettings=next;return}this.masteringLimiterReady=Boolean(this.ctx.masteringLimiterReady);if(this.masteringGraph){this.masteringGraph.update(next);this.masteringSettings=next;return}const graph=createMasteringGraph(this.ctx,next,this.ctx.destination);this.master.connect(graph.input);this.masteringGraph=graph;watchGraphProcessors(graph,error=>this.handleProcessorError(error));this.masteringSettings=next}
  syncTracks(tracks,bpm=this.bpm){

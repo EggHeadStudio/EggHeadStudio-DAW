@@ -147,10 +147,10 @@ export function wireSamplerUI(root, {track, tracks, assets, buffers, engine, sav
   root.querySelector('#quantizeNotes').onclick = () => {if(editor.quantize(grid,patternBeats)){track.pattern={notes};save();setGrid(grid)}};
   root.querySelector('#noteVelocity').oninput = event => {if(editor.setVelocity(+event.target.value)){track.pattern={notes};save()}};
   if(sampler){
-    const assign=id=>{assignSamplerSource(sampler,id,buffers.get(id));save();setGrid(grid)};
-    root.querySelector('#samplerAsset').onchange=event=>{try{assign(event.target.value)}catch(error){notify(error.message)}};
+    const assign=async id=>{await assets.get(id)?.load?.();assignSamplerSource(sampler,id,buffers.get(id));if(assets.get(id)?.rootNote!==undefined)sampler.rootNote=assets.get(id).rootNote;save();setGrid(grid)};
+    root.querySelector('#samplerAsset').onchange=event=>assign(event.target.value).catch(error=>notify(error.message));
     root.querySelector('#chooseSamplerSample').onclick=()=>showSamplePicker({assets,buffers,preview,onSelect:assign,notify});
-    root.querySelector('#clearSamplerSample').onclick=()=>assign(null);
+    root.querySelector('#clearSamplerSample').onclick=()=>assign(null).catch(error=>notify(error.message));
     root.querySelector('#previewSamplerSample').onclick=()=>engine.previewNote(track,buffers,sampler.rootNote,.75,tracks).catch(error=>notify(error.message));
     root.querySelector('#editSamplerSample').onclick=()=>openSample(sampler.asset);
     bindSampleDrop(root.querySelector('.sample-source'),assign,notify);

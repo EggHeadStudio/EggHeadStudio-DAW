@@ -183,6 +183,7 @@ export function mountMobileFocus(root,{workspace='workspace',onPerformance=null}
  if(activeFocus)closeMobileFocus({restoreFocus:false});
  mountedRoot=root;mountedWorkspace=workspace;
  if(!root){mountedRoot=null;mountedWorkspace=null;return()=>{}}
+ if(workspace==='arrange'){mountedRoot=null;mountedWorkspace=null;return()=>{}}
  const surface=root.querySelector('.workspace')||root.querySelector('.recording-studio')||root.querySelector('.studio');
  const heading=root.querySelector('.section-title')||root.querySelector('.editor-tools');
  if(!surface||!heading){mountedRoot=null;mountedWorkspace=null;return()=>{}}
@@ -222,6 +223,7 @@ export function mountMobileFocus(root,{workspace='workspace',onPerformance=null}
  continueButton.onclick=()=>answer('continue');
  let wasLandscape=landscapeMobile();
  const onOrientation=()=>{
+  if(!surface.isConnected||!dialog.isConnected){cleanup();return}
   const next=landscapeMobile();
   if(next&&!wasLandscape){
    const saved=preference();

@@ -8,7 +8,10 @@ AudioWorklets inside the repository subpath. Runtime code is content-versioned
 under `assets/<build-version>/`.
 
 The service worker caches only the application shell: the built entry page,
-manifest, version file, icons and versioned application/vendor assets. It does
+manifest, version file, icons, versioned application/vendor assets and the nine
+bundled original factory WAVs. Factory files use the same content version and
+are lazy-decoded by the library; shell caching does not copy them into IndexedDB.
+Referenced factory audio is embedded when saving a portable `.EHS`. It does
 not cache user audio or modify IndexedDB, localStorage, recovery snapshots,
 presets, takes or project schemas. A PWA update is not a backup. Use **Save
 .EHS** to create a portable project archive and retain a separate copy of
@@ -44,6 +47,17 @@ bounded wait expires, the notice returns to an actionable **Retry update** or
 matching version hides the notice immediately before the safe reload. This UI
 recovery does not alter the all-client safety check or force activation.
 
+Network-first navigation can load newer HTML before its worker has activated.
+If the user approves that same already-loaded build, active-worker confirmation
+completes switching and shows **Updated / Dismiss** without an unnecessary
+reload. A different loaded version still reloads only after safe confirmation.
+Matching HTML alone does not approve activation or bypass all-client blockers.
+
+The footer displays the loaded HTML's authoritative `ehs-build` metadata, with
+a short ID and the full diagnostic ID, distinguishing source/unversioned,
+local built and hosted presentation. It does not substitute `version.json` or
+the active worker's version for the code actually loaded, including offline.
+
 An older open tab that does not implement the safety protocol, or a suspended
 tab that cannot answer within the 2.5-second client-query window, prevents
 activation. Close that tab or bring it online/reload it before retrying. This
@@ -76,14 +90,20 @@ After the shell has installed, the cached application can reopen a locally
 stored project, decode locally stored assets, edit/preview samples, edit
 patterns/effects, save project data, and render WAV or `.EHS` without the
 application host. Browser file pickers still allow a user to import a local
-file while offline. Network-backed resources and capabilities remain
-unavailable offline.
+file while offline. Unbundled network-backed resources and capabilities remain unavailable offline.
+Bundled factory WAVs remain available from the installed versioned shell.
 
 The evidence and exact browser scope are recorded in
 [BATCH_005B_5E_1_REPORT.md](./BATCH_005B_5E_1_REPORT.md). That local Chromium
 test stopped the application server, verified a failed network probe, performed
 the production edits/exports through the UI, and opened a fresh tab to confirm
 local project and IndexedDB audio recovery.
+
+[QA-01.2](./QA-01_2_REPORT.md) adds actual local waiting/approval cycles,
+same-loaded-version completion, retained project/audio and offline factory
+insertion/playback. Deliberately delayed real-worker, dedicated cross-browser
+and physical installed-app checks remain open; unit recovery tests are not
+mislabelled as those acceptance tests.
 
 ## Installation acceptance checklist
 

@@ -6,6 +6,13 @@ Historical batch reports, audits and design notes are indexed in the
 [documentation archive](./docs/archive/README.md). Current mobile milestone
 reports remain in the repository root.
 
+Latest continuation: [QA-01.2](./QA-01_2_REPORT.md), with 354 passing Node tests,
+live timeline pinch geometry, picker-refresh fixes, a compact horizontal
+graphical Device Rack and nine original factory WAVs. Connected Chromium
+audio/recording/export/portable-project results are documented with their exact
+scope. Physical iPhone/installed-PWA retests and remaining acceptance gates are
+open; this is not a certified release.
+
 ## Run locally
 
 Option A (Python, no packages):
@@ -30,7 +37,7 @@ Open `http://localhost:5000`.
 
 For cache-versioned deployment, select **Settings → Pages → Source → GitHub Actions**. The supplied `.github/workflows/pages.yml` tests the application, runs `npm run build`, and deploys `dist` on an approved push to `main` or a manual workflow run. No dependency installation is needed for the build: the browser dependencies are already bundled locally. GitHub Pages serves static assets only; the Flask server is **not deployed**. This configuration has been tested locally, not deployed from this worktree.
 
-The deterministic build hashes the HTML, PWA manifest, generated icons, service-worker template and all `src`/`vendor` assets. JavaScript, CSS, nested imports, Workers and AudioWorklets share `assets/<content-version>/`, so cached files from another release cannot be mixed into the new graph. URLs remain relative for repository subpaths. The generated service worker caches only the built application shell, versioned application assets, manifest and app icons; it does not cache project/sample/recording data or clear browser storage. Local source serving remains build-free; install and offline support are provided by the Pages build. Legacy **Deploy from a branch** is not the supported PWA deployment; use Actions.
+The deterministic build hashes the HTML, PWA manifest, generated icons, service-worker template, `src`/`vendor` assets and original factory WAVs. JavaScript, CSS, nested imports, Workers, AudioWorklets and factory files share `assets/<content-version>/`, so cached files from another release cannot be mixed into the new graph. URLs remain relative for repository subpaths. The generated service worker caches the built application shell, versioned application/factory assets, manifest and app icons; it does not cache user project/sample/recording data or clear browser storage. Local source serving remains build-free; install and offline support are provided by the Pages build. Legacy **Deploy from a branch** is not the supported PWA deployment; use Actions.
 
 The installable app uses the official root `icon.png` artwork, proportionally
 resized without cropping for standard icons. The maskable asset adds dark
@@ -50,6 +57,30 @@ blocks the update rather than risking user work. Old versioned shell caches
 remain available to older clients and are cleaned only after all app tabs report
 the new build. Updates never clear project or audio storage; keep portable
 `.EHS` backups of important work.
+
+The footer shows the build actually loaded from HTML, including its full
+diagnostic ID, and labels source/unversioned and local builds separately.
+When newer HTML is already loaded under an older worker, approval of the
+matching worker now completes with Updated/Dismiss without needless reload.
+This still requires the same all-client safety check.
+
+### Factory samples and graphical devices
+
+Sample Browser distinguishes Factory from User audio. The nine original mono
+44.1kHz/16-bit WAVs comprise Kick, Snare, Closed/Open Hat, Clap, Sub/Saw Bass C2,
+Soft Saw C4 and Pluck C4 (704,232 bytes total). They load lazily, work from the
+installed offline shell and are embedded only when referenced by a saved `.EHS`.
+No factory sound is silently assigned when creating an empty instrument.
+Select one through the existing Sampler/pad source controls, then create a
+pattern and play it. Generation/provenance is in the [QA report](./QA-01_2_REPORT.md).
+
+The horizontal rack uses 320px-high compact cards with appropriate device
+widths: ordinary 360px, Compressor 700px, graphical EQ 760px. EQ retains its
+native-DSP response curve, real FFT, all draggable bands/cuts and synchronized
+Frequency/Gain/Q. Use selected-band controls beside the graph, scroll the chain
+horizontally and choose Expand for the full desktop/mobile editor. Expansion
+reuses the same controls/state. Complex sidechain/multiband settings remain
+accessible without turning ordinary cards into vertical scrollers.
 
 Local Chromium acceptance verified failed-install recovery, a two-tab A-to-B
 transition and an offline editing/save/export workflow. The exact scope,
