@@ -1,4 +1,66 @@
 // Continue on the disposable origin prepared by cross-workspace-browser.js.
+export async function runPlayheadAlignmentAcceptance(page){
+  const results=[];
+  const click=async selector=>{
+    const box=await page.locator(selector).boundingBox();
+    if(!box||box.width<=0||box.height<=0)throw new Error(`Timeline control is not visible: ${selector}`);
+    await page.mouse.click(box.x+box.width/2,box.y+box.height/2);
+  };
+  await page.setViewportSize({width:1280,height:800});
+  await page.waitForTimeout(200);
+  if(await page.locator('[data-view=arrange]').getAttribute('aria-current')!=='page')await click('[data-view=arrange]');
+  await click('#toStart');
+  for(const width of [1280,390,844]){
+    await page.setViewportSize({width,height:800});
+    await page.waitForTimeout(150);
+    for(const selector of ['#toggleBrowser','#toggleMixer','#toggleDevices']){
+      if(await page.locator(selector).getAttribute('aria-expanded')==='true')await click(selector);
+    }
+    await click('#toStart');
+    const style=await page.evaluate(()=>{
+      const style=document.createElement('style');
+      style.id='playhead-layout-test';
+      style.textContent='.workspace .track-label{width:105px!important;min-width:105px!important}.workspace .arrangement{border-left:3px solid transparent}';
+      document.head.append(style);
+      return style.id;
+    });
+    try{
+      await page.waitForTimeout(150);
+      for(const scrollLeft of [0,50]){
+        await page.locator('.arrangement').evaluate((element,left)=>element.scrollLeft=left,scrollLeft);
+        const result=await page.locator('.arrangement').evaluate(element=>({
+          ruler:element.querySelector('#ruler').getBoundingClientRect().left,
+          playhead:element.querySelector('#playhead').getBoundingClientRect().left,
+          extraLine:getComputedStyle(element.querySelector('#playhead'),'::before').content,
+          strokeColor:getComputedStyle(element.querySelector('#playhead')).backgroundColor,
+          strokeHeight:element.querySelector('#playhead').getBoundingClientRect().height,
+          scrollLeft:element.scrollLeft
+        }));
+        if(!['none','normal'].includes(result.extraLine))throw new Error(`Extra offset playhead stroke is visible: ${JSON.stringify(result)}`);
+        if(result.strokeColor!=='rgb(233, 174, 180)'||result.strokeHeight<=0)throw new Error(`Playback stroke is not painted: ${JSON.stringify(result)}`);
+        if(Math.abs(result.ruler-result.playhead)>.1)throw new Error(`Playhead/ruler misalignment at ${width}px: ${JSON.stringify(result)}`);
+        results.push({width,...result});
+      }
+    }finally{await page.evaluate(id=>document.getElementById(id).remove(),style)}
+    await page.locator('.arrangement').evaluate(element=>element.scrollLeft=0);
+    const ruler=await page.locator('#ruler').boundingBox();
+    await page.mouse.click(ruler.x+60,ruler.y+ruler.height-10);
+    if(Number(await page.locator('#playhead').getAttribute('aria-valuenow'))<=0)throw new Error('Ruler interaction did not seek to a nonzero position.');
+    for(const zoom of ['#zoomOut','#zoomIn']){
+      await click(zoom);
+      await page.waitForTimeout(150);
+      const result=await page.locator('.arrangement').evaluate(element=>({
+        insertion:element.querySelector('.insertion-marker').getBoundingClientRect().left,
+        playhead:element.querySelector('#playhead').getBoundingClientRect().left
+      }));
+      if(Math.abs(result.insertion-result.playhead)>.1)throw new Error(`Seek/zoom playhead misalignment: ${JSON.stringify(result)}`);
+      results.push({width,zoom,...result});
+    }
+  }
+  await click('#toStart');
+  return results;
+}
+
 export async function runWorkspaceTransportAcceptance(page){
   const check=(condition,message)=>{if(!condition)throw new Error(message)},errors=[];
   const onError=error=>errors.push(error.message);page.on('pageerror',onError);

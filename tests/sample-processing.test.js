@@ -85,6 +85,21 @@ test('timeline origin follows mobile and desktop track headers through horizonta
   }
 });
 
+test('playhead content coordinates align with the ruler inside bordered scrolling containers',()=>{
+  for(const headerWidth of [95,125])for(const scrollLeft of [0,240])for(const clientLeft of [0,1,10]){
+    const container={clientLeft,scrollLeft,getBoundingClientRect:()=>({left:20})};
+    const ruler={getBoundingClientRect:()=>({left:20+clientLeft+headerWidth-scrollLeft})};
+    for(const zoom of [.4,.64,1,4]){
+      const scale=new TimelineScale(120,39*zoom);
+      for(const seconds of [0,2.5,12]){
+        const pixels=scale.timeToPixels(seconds);
+        const lineClientX=20+clientLeft+timelineContentOrigin(ruler,container)+pixels-scrollLeft;
+        assert.ok(Math.abs(lineClientX-ruler.getBoundingClientRect().left-pixels)<1e-10);
+      }
+    }
+  }
+});
+
 test('waveform frame conversions clamp and cache per-channel peaks',()=>{
   const audio=fixture([-1,.5,.75,-.25]);
   assert.equal(frameToX(2,4,100),50);

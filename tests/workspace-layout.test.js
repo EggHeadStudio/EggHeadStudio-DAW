@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {boundedPanelHeight,boundedTrackHeight,COMPACT_TRACK_HEIGHT,DEFAULT_DEVICE_PANEL_HEIGHT,EXPANDED_TRACK_HEIGHT,trackHeight} from '../src/workspace-layout.js';
+
+test('Arrangement suppresses the Piano Roll offset stroke without changing its drag handle',()=>{
+  const arrangement=readFileSync(new URL('../src/arrangement.css',import.meta.url),'utf8');
+  const sampler=readFileSync(new URL('../src/sampler.css',import.meta.url),'utf8');
+  assert.match(arrangement,/\.workspace \.arrangement>\.playhead::before\s*\{\s*content:none\s*\}/);
+  assert.match(arrangement,/\.workspace \.arrangement>\.playhead\{[^}]*background:#e9aeb4/);
+  assert.match(sampler,/\.playhead::before\{[^}]*left:12px/);
+});
 
 test('Arrangement defaults to 84-pixel tracks without adding project fields',()=>{
   const project={tracks:[{id:'one'},{id:'two'}]},before=structuredClone(project),state={};

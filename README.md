@@ -143,6 +143,10 @@ buffered dry audio where possible.
 
 Clip Edit/Range modes let pointer gestures pass through the playhead line;
 seek using the ruler or return to Scroll/select to drag the playhead.
+The playback line follows the ruler's actual content origin after track-header
+or panel layout changes, including while stopped, and stays aligned through zoom and scrolling.
+Arrangement uses a single visible playback stroke at that coordinate; the Piano
+Roll's offset drag-handle stroke is scoped out of the Arrangement.
 On phones, tap a clip for its **Move / Trim / Duplicate / Delete** actions;
 long-press the body to move it, choose **Trim** to enable edge handles, or
 pinch the ruler, a clip, loop control or lane to zoom around the fingers.

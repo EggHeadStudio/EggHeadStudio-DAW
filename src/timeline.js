@@ -34,7 +34,7 @@ export function formatTransportTime(seconds){
 
 export function timelineContentOrigin(ruler,scrollContainer){
   if(!ruler||!scrollContainer)return 0;
-  return ruler.getBoundingClientRect().left-scrollContainer.getBoundingClientRect().left+scrollContainer.scrollLeft;
+  return ruler.getBoundingClientRect().left-scrollContainer.getBoundingClientRect().left-(scrollContainer.clientLeft||0)+scrollContainer.scrollLeft;
 }
 
 export function quantizeBeat(beat,grid=0){return Math.max(0,grid>0?Math.round(beat/grid)*grid:beat)}

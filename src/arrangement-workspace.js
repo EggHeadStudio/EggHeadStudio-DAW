@@ -90,8 +90,13 @@ export function mountArrangementWorkspace(options){
   };
   const queueWaves=()=>{if(!waveFrame)waveFrame=requestAnimationFrame(paintWaves)};
   arrangement.addEventListener('scroll',queueWaves,{passive:true});
-  const waveResize=new ResizeObserver(()=>{if(arrangement.isConnected)queueWaves();else{waveResize.disconnect();disposeInteractions()}});
+  const waveResize=new ResizeObserver(()=>{
+    if(arrangement.isConnected){queueWaves();options.onLayout?.()}
+    else{waveResize.disconnect();disposeInteractions()}
+  });
   waveResize.observe(arrangement);
+  waveResize.observe(ruler);
+  waveResize.observe(ruler.previousElementSibling);
   lanes.forEach(lane=>waveResize.observe(lane));
   document.querySelector('#loop')?.classList.toggle('active',Boolean(project.loop));
   if(state.projectId!==project.id){
