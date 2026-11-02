@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createMasterWaveformPeaks} from '../src/master-waveform.js';
+import {createMasterWaveformPeaks,cropMasterAudioBuffer,fitMasterRange,masterRangeInSeconds} from '../src/master-waveform.js';
 import {playheadHeightToMaster} from '../src/timeline.js';
 
 function buffer(channels,sampleRate){
@@ -33,6 +33,20 @@ test('master waveform rejects invalid audio buffers and resolution',()=>{
  assert.throws(()=>createMasterWaveformPeaks(null),TypeError);
  const output=buffer([new Float32Array([0])],1);
  assert.throws(()=>createMasterWaveformPeaks(output,{samplesPerSecond:0}),RangeError);
+});
+
+test('master export ranges enforce a one-beat minimum and convert using tempo',()=>{
+ assert.deepEqual(fitMasterRange({startBeat:2,endBeat:2.5},0),{startBeat:2,endBeat:3});
+ assert.deepEqual(masterRangeInSeconds({startBeat:4,endBeat:8},120),{start:2,end:4});
+ assert.throws(()=>masterRangeInSeconds({startBeat:0,endBeat:.5},120),RangeError);
+});
+
+test('master crop returns exactly the selected stereo audio frames and pads beyond the render',()=>{
+ const output=buffer([Float32Array.from([0,1,2,3,4,5,6,7]),Float32Array.from([10,11,12,13,14,15,16,17])],4);
+ const crop=cropMasterAudioBuffer(output,{startBeat:1,endBeat:3},60,(channels,length,sampleRate)=>buffer(Array.from({length:channels},()=>new Float32Array(length)),sampleRate));
+ assert.equal(crop.length,8);
+ assert.deepEqual([...crop.getChannelData(0)],[4,5,6,7,0,0,0,0]);
+ assert.deepEqual([...crop.getChannelData(1)],[14,15,16,17,0,0,0,0]);
 });
 
 test('playhead extent ends at the Master row bottom for any track count',()=>{

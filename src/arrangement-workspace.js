@@ -44,6 +44,25 @@ function drawClipWave(canvas,buffer,clip,window,height){
   }
 }
 
+function drawRenderedStereoWave(canvas,peaks,clip,project,window,height){
+ const width=Math.max(1,Math.ceil(window.width)),dpr=Math.min(devicePixelRatio||1,2),start=clip.bar*240/project.bpm,duration=clipDurationSeconds(clip,project.bpm),count=peaks.channels[0].minimum.length;
+ canvas.width=width*dpr;canvas.height=height*dpr;
+ const context=canvas.getContext('2d');context.scale(dpr,dpr);
+ for(let channel=0;channel<Math.min(2,peaks.channels.length);channel++){
+  const data=peaks.channels[channel],center=height*(channel===0?.27:.73),amplitude=height*.22;
+  context.beginPath();
+  for(let x=0;x<width;x++){
+   const firstTime=start+duration*(window.start+(window.end-window.start)*x/width),lastTime=start+duration*(window.start+(window.end-window.start)*(x+1)/width);
+   if(firstTime>=peaks.duration)continue;
+   const first=Math.max(0,Math.min(count-1,Math.floor(firstTime/peaks.duration*count))),last=Math.max(first+1,Math.min(count,Math.ceil(lastTime/peaks.duration*count)));
+   let minimum=1,maximum=-1;
+   for(let index=first;index<last;index++){minimum=Math.min(minimum,data.minimum[index]);maximum=Math.max(maximum,data.maximum[index])}
+   context.moveTo(x,(center-maximum*amplitude));context.lineTo(x,(center-minimum*amplitude));
+  }
+  context.strokeStyle=channel===0?'#10252aaa':'#10252a70';context.lineWidth=1;context.stroke();
+ }
+}
+
 export function arrangementGesture(element,event,move,finish,cancel){
   if(event.button!==0||event.isPrimary===false)return null;
   event.preventDefault();event.stopPropagation();
@@ -85,7 +104,9 @@ export function mountArrangementWorkspace(options){
       canvas.hidden=!window;
       if(!window){canvas.width=0;canvas.height=0;continue}
       canvas.style.left=`${window.offset}px`;canvas.style.width=`${window.width}px`;
-      if(isInstrumentClip(clip))drawPattern(canvas,track,clip,window,height);else drawClipWave(canvas,buffer,clip,window,height);
+      if(state.minimizedTracks?.includes(track.id)){canvas.width=0;canvas.height=0;continue}
+      const rendered=options.getTrackWaveform?.(track.id);
+      if(isInstrumentClip(clip))drawPattern(canvas,track,clip,window,height);else if(rendered)drawRenderedStereoWave(canvas,rendered,clip,project,window,height);else if(options.isTrackWaveformUnavailable?.(track.id)){canvas.width=0;canvas.height=0}else drawClipWave(canvas,buffer,clip,window,height);
     }
   };
   const queueWaves=()=>{if(!waveFrame)waveFrame=requestAnimationFrame(paintWaves)};
@@ -331,7 +352,15 @@ export function mountArrangementWorkspace(options){
   $('#playInsertion').onclick=()=>playFrom(state.insertionBeat);
   $('#followPlayhead').onclick=()=>{state.follow=!state.follow;render()};
   for(const [id,key,selector]of [['toggleBrowser','browserOpen','.browser'],['toggleMixer','mixerOpen','.right-mixer'],['toggleDevices','devicesOpen','.bottom-panel']]){
-    $( `#${id}`).onclick=()=>{state[key]=!state[key];render()};
+    $( `#${id}`).onclick=()=>{
+      state[key]=!state[key];
+      all(selector).forEach(element=>element.hidden=!state[key]);
+      if(id==='toggleMixer'){
+        const master=root.querySelector('.master-strip');
+        if(master)master.hidden=!state.mixerOpen;
+      }
+      render();
+    };
     all(selector).forEach(element=>element.hidden=!state[key]);
   }
   for(const [id,key]of [['rangeStart','startBeat'],['rangeEnd','endBeat']])$(`#${id}`).onchange=event=>{
@@ -503,7 +532,7 @@ export function mountArrangementWorkspace(options){
     instrument.onclick=()=>{state.selectMode=false;options.openClip(selectedClip,selectedTrack)};$('.device-panel').prepend(instrument);
   }
   paintWaves();
-  return{ensureBeat,setZoom:layoutZoom,handleKey(event){
+  return{ensureBeat,setZoom:layoutZoom,refreshWaveforms:queueWaves,handleKey(event){
     const mod=event.ctrlKey||event.metaKey,key=event.key.toLowerCase();
     if(mod&&key==='l'){event.preventDefault();loopFromRange();return true}
     if(mod&&key==='x'){event.preventDefault();cut();return true}

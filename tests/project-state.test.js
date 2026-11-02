@@ -38,6 +38,12 @@ test('project serialization preserves effects, sidechain routing, mixer and arra
   assert.throws(()=>parseProject('{"tracks":[]}'),/Invalid project/);
 });
 
+test('master export selection survives project round trips and rejects invalid ranges',()=>{
+  const project={id:'master-range',schemaVersion:1,name:'Song',bpm:120,masterRange:{startBeat:2,endBeat:10},tracks:[]};
+  assert.deepEqual(parseProject(serializeProject(project)).masterRange,project.masterRange);
+  assert.throws(()=>parseProject(JSON.stringify({...project,masterRange:{startBeat:4,endBeat:4.5}})),/Invalid master export range/);
+});
+
 test('mute and solo routing supports multiple solos and excludes muted tracks',()=>{
   const tracks=[{mute:false,solo:false},{mute:true,solo:false},{mute:false,solo:true},{mute:false,solo:true}];
   assert.deepEqual(tracks.map(track=>isTrackAudible(track,tracks)),[false,false,true,true]);

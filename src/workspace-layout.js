@@ -8,6 +8,14 @@ export function trackHeight(state,id){
   return state.trackHeights?.[id]??COMPACT_TRACK_HEIGHT;
 }
 
+export function trackIsMinimized(state,id){
+  return Boolean(state.minimizedTracks?.includes(id));
+}
+
+export function minimizedTrackHeight(state,id){
+  return trackIsMinimized(state,id)?36:trackHeight(state,id);
+}
+
 export function boundedTrackHeight(value){
   if(!Number.isFinite(value))throw new RangeError('Track height must be finite.');
   return Math.round(Math.max(220,Math.min(400,value)));
@@ -20,11 +28,12 @@ export function boundedPanelHeight(value){
 
 export function mountTrackLayout(root,project,state,moveTrack){
   state.trackHeights??={};
+  state.minimizedTracks??=[];
   for(const label of root.querySelectorAll('.track-label[data-track]')){
     const track=project.tracks[Number(label.dataset.track)],row=label.closest('.track-row');
-    const expanded=trackHeight(state,track.id)>COMPACT_TRACK_HEIGHT;
+    const expanded=trackHeight(state,track.id)>COMPACT_TRACK_HEIGHT,minimized=trackIsMinimized(state,track.id);
     row.dataset.trackId=track.id;row.classList.toggle('track-expanded',expanded);
-    row.style.setProperty('--track-height',`${trackHeight(state,track.id)}px`);
+    row.classList.toggle('track-minimized',minimized);row.style.setProperty('--track-height',`${minimized?36:trackHeight(state,track.id)}px`);
     label.style.setProperty('--track-color',track.color);
     const meta=document.createElement('div');meta.className='track-layout-controls';
     const type=document.createElement('small');type.textContent=track.drumRack?'Drums':track.sampler?'Sampler':'Audio';
@@ -35,8 +44,8 @@ export function mountTrackLayout(root,project,state,moveTrack){
     height.setAttribute('aria-label',`${track.name} track height`);height.hidden=!expanded;
     const paint=value=>{
       state.trackHeights[track.id]=value;
-      const open=value>COMPACT_TRACK_HEIGHT;row.classList.toggle('track-expanded',open);
-      row.style.setProperty('--track-height',`${value}px`);
+      const open=value>COMPACT_TRACK_HEIGHT,minimized=trackIsMinimized(state,track.id);row.classList.toggle('track-expanded',open);row.classList.toggle('track-minimized',minimized);
+      row.style.setProperty('--track-height',`${minimized?36:value}px`);
       toggle.textContent=open?'Compact':'Expand';toggle.setAttribute('aria-expanded',String(open));height.hidden=!open;height.value=String(value);
       // Reorient the same native range: no duplicated Mixer parameter bindings.
       const volume=row.querySelector('[data-vol]');
@@ -53,7 +62,9 @@ export function mountTrackLayout(root,project,state,moveTrack){
     meta.append(type,toggle,height);label.querySelector('.track-select').after(meta);
     const title=document.createElement('div');title.className='track-title-line';
     const select=label.querySelector('.track-select'),pattern=label.querySelector('[data-new-pattern]');
-    select.before(title);title.append(select);
+    const minimize=document.createElement('button');minimize.type='button';minimize.className='track-minimize';minimize.textContent=trackIsMinimized(state,track.id)?'▸':'▾';minimize.setAttribute('aria-label',`${trackIsMinimized(state,track.id)?'Expand':'Minimize'} ${track.name} waveform lane`);minimize.setAttribute('aria-expanded',String(!trackIsMinimized(state,track.id)));
+    minimize.onclick=event=>{event.stopPropagation();const ids=new Set(state.minimizedTracks||[]);if(ids.has(track.id))ids.delete(track.id);else ids.add(track.id);state.minimizedTracks=[...ids];minimize.textContent=ids.has(track.id)?'▸':'▾';minimize.setAttribute('aria-label',`${ids.has(track.id)?'Expand':'Minimize'} ${track.name} waveform lane`);minimize.setAttribute('aria-expanded',String(!ids.has(track.id)));paint(trackHeight(state,track.id))};
+    select.before(title);title.append(minimize,select);
     if(pattern){pattern.textContent='+';pattern.setAttribute('aria-label',`New pattern on ${track.name}`);pattern.title='Create independent pattern';title.append(pattern)}
     const order=document.createElement('div');order.className='track-order-controls';
     const index=project.tracks.indexOf(track);

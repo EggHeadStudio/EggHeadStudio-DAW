@@ -18,6 +18,8 @@ function assertKnownProjectSchema(schemaVersion){
 export function normalizeProjectSchema(project){
   if(!project||typeof project!=='object'||!Array.isArray(project.tracks))throw new Error('Invalid project');
   assertKnownProjectSchema(project.schemaVersion);
+  if(project.masterFx!==undefined&&(!project.masterFx||!Array.isArray(project.masterFx.effects)))throw new Error('Invalid master effect chain');
+  if(project.masterRange!==undefined&&project.masterRange!==null&&(!Number.isFinite(project.masterRange.startBeat)||!Number.isFinite(project.masterRange.endBeat)||project.masterRange.startBeat<0||project.masterRange.endBeat-project.masterRange.startBeat<1))throw new Error('Invalid master export range');
   const typed=hasTypedInstrumentClips(project);
   if(typed){
     for(const track of project.tracks)if(track.patterns!==undefined||(track.clips||[]).some(isInstrumentClip))validateInstrumentData(track);
@@ -67,7 +69,9 @@ export function createEmptyProject(name='Untitled Project'){
     loopEnd:4,
     patternBeats:64,
     tracks:[],
-    masterSettings:{...DEFAULT_MASTER_SETTINGS}
+    masterSettings:{...DEFAULT_MASTER_SETTINGS},
+    masterFx:{effects:[]},
+    masterRange:null
   };
 }
 
@@ -91,6 +95,8 @@ export function parseProject(serialized){
   const typed=hasTypedInstrumentClips(project);
   if(typed&&project.schemaVersion!==INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION)throw new Error('Typed instrument clips require project schema 2.');
   if(!typed&&project.schemaVersion===INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION)throw new Error('Project schema 2 requires typed instrument clips.');
+  if(project.masterFx!==undefined&&(!project.masterFx||!Array.isArray(project.masterFx.effects)))throw new Error('Invalid master effect chain');
+  if(project.masterRange!==undefined&&project.masterRange!==null&&(!Number.isFinite(project.masterRange.startBeat)||!Number.isFinite(project.masterRange.endBeat)||project.masterRange.startBeat<0||project.masterRange.endBeat-project.masterRange.startBeat<1))throw new Error('Invalid master export range');
   if(typed)for(const track of project.tracks)if(track.patterns!==undefined||(track.clips||[]).some(isInstrumentClip))validateInstrumentData(track);
   project.schemaVersion=typed?INSTRUMENT_CLIP_PROJECT_SCHEMA_VERSION:LEGACY_PROJECT_SCHEMA_VERSION;
   project.id||=globalThis.crypto?.randomUUID?.()||`project-${Date.now()}-${Math.random().toString(16).slice(2)}`;

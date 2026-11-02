@@ -81,18 +81,31 @@ export function mountArrangementChrome({root,project,selectedTrack,selectedClip,
   }
   const instrument=root.querySelector('.selected-instrument'),chain=root.querySelector('.device-chain-scroll');
   const master=root.querySelector('.master-strip');
-  master.classList.add('right-mixer');master.hidden=false;
-  const masterRow=document.createElement('div');masterRow.className='track-row master-track-row';
+  master.classList.add('right-mixer');master.hidden=!state.mixerOpen;
+  const masterRow=document.createElement('div');masterRow.className=`track-row master-track-row${state.minimizedTracks?.includes('__master__')?' track-minimized master-track-minimized':''}`;
   const masterLabel=document.createElement('div');masterLabel.className=`track-label master-track-label${state.masterSelected?' track-selected':''}`;
   const masterSelect=document.createElement('button');masterSelect.className='track-select';masterSelect.textContent='Master';masterSelect.setAttribute('aria-label','Select Master track');masterSelect.setAttribute('aria-pressed',String(Boolean(state.masterSelected)));
-  const description=document.createElement('small');description.textContent='Final output · fixed bus';masterLabel.append(masterSelect,description);
+  const minimizeMaster=document.createElement('button');minimizeMaster.type='button';minimizeMaster.className='track-minimize';minimizeMaster.textContent=state.minimizedTracks?.includes('__master__')?'▸':'▾';minimizeMaster.setAttribute('aria-label',`${state.minimizedTracks?.includes('__master__')?'Expand':'Minimize'} Master waveform lane`);minimizeMaster.setAttribute('aria-expanded',String(!state.minimizedTracks?.includes('__master__')));
+  const masterTitle=document.createElement('div');masterTitle.className='track-title-line';masterTitle.append(minimizeMaster,masterSelect);
+  const description=document.createElement('small');description.textContent='Final output · fixed bus';masterLabel.append(masterTitle,description);
   const masterLane=document.createElement('div');masterLane.className='lane master-track-lane';masterLane.style.width=root.querySelector('#ruler').style.width;
   masterRow.append(masterLabel,masterLane,master);
   root.querySelector('#playhead').before(masterRow);
   const masterMeter=document.createElement('div');masterMeter.className='stereo-meter master-output-meter';masterMeter.dataset.meter='master';masterMeter.dataset.trackName='Master';masterMeter.setAttribute('aria-label','Master stereo output level');masterMeter.innerHTML='<span class="meter-channel"><i data-meter-left></i></span><span class="meter-channel"><i data-meter-right></i></span><b data-clip-warning hidden>CLIP</b>';
   master.append(masterMeter);
+  minimizeMaster.onclick=event=>{
+    event.stopPropagation();
+    const ids=new Set(state.minimizedTracks||[]);if(ids.has('__master__'))ids.delete('__master__');else ids.add('__master__');
+    state.minimizedTracks=[...ids];
+    const minimized=ids.has('__master__');masterRow.classList.toggle('track-minimized',minimized);masterRow.classList.toggle('master-track-minimized',minimized);
+    minimizeMaster.textContent=minimized?'▸':'▾';minimizeMaster.setAttribute('aria-label',`${minimized?'Expand':'Minimize'} Master waveform lane`);minimizeMaster.setAttribute('aria-expanded',String(!minimized));
+    if(minimized)masterRow.style.setProperty('--master-track-height','36px');else masterRow.style.removeProperty('--master-track-height');
+    root.querySelector('.arrangement').dispatchEvent(new Event('scroll'));
+  };
+  if(state.minimizedTracks?.includes('__master__'))masterRow.style.setProperty('--master-track-height','36px');
   const activateMaster=()=>selectMaster?.();
   masterSelect.onclick=activateMaster;
+  masterLane.onclick=event=>{if(!event.target.closest('.master-export-range'))activateMaster()};
   master.onclick=event=>{if(!event.target.closest('input,button'))activateMaster()};
   for(const label of root.querySelectorAll('.track-label[data-track]'))label.classList.toggle('track-selected',!state.masterSelected&&Number(label.dataset.track)===selectedTrack);
   root.querySelector('.bottom-panel>.mixer').remove();

@@ -8,7 +8,7 @@ import {ArrangementHistory,copyTimeRange,pasteTimeRange,duplicateClip,moveClipTo
 import {createInstrumentClip,isInstrumentClip,instrumentType,makePatternIndependent,migrateInstrumentArrangement,patternForClip} from './instrument-clips.js';
 import {selectedPatternContext,setPatternLength} from './pattern-editor.js';
 import {TimelineScale,anchoredTimelineScrollLeft,formatTransportTime,playheadBeatAtSeconds,playheadHeightToMaster,timelineBeatsAtClientX as timelineBeatsAtScale,timelineContentOrigin,timelinePixelsAtClientX} from './timeline.js';
-import {createMasterWaveformPeaks} from './master-waveform.js';
+import {createMasterWaveformPeaks,fitMasterRange,masterRangeInSeconds} from './master-waveform.js';
 import {createEmptyProject,createProjectTrack,deleteProjectTrack,DEFAULT_MASTER_SETTINGS,normalizeArrangementLoop,normalizeProjectSchema,parseProject,planProjectReset,serializeProject} from './project-state.js';
 import {createEmptySampleSession,resolveRecordingChunks,shouldConfirmSampleDiscard} from './sample-lifecycle.js';
 import {DEFAULT_MASTERING_SETTINGS,MASTERING_PRESETS,analyzeMasterBufferAsync,normalizeMasteringSettings,createMasteringGraph} from './mastering.js';
@@ -71,7 +71,7 @@ function disposeEqEditors(){eqEditors.forEach(editor=>editor.dispose());eqEditor
 function refreshEqEditors(){eqEditors.forEach(editor=>editor.refresh())}
 const arrangementWorkspaceState={selection:null,insertionBeat:0,selectMode:false,clipMode:null,follow:false,browserOpen:true,mixerOpen:true,devicesOpen:true,compactDevices:true,libraryFilter:'',masterSelected:false};
 let arrangementWorkspace=null;
-const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={id:uid(),schemaVersion:1,name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,releaseMetadata:{},exportSettings:normalizeExportSettings(),tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null,exportController=null,exportRun=null,exportDownloadUrl=null,releaseZipController=null,releaseArtworkBlob=null,releaseArtworkSourceBlob=null,releaseArtworkUrl=null;
+const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={id:uid(),schemaVersion:1,name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,releaseMetadata:{},exportSettings:normalizeExportSettings(),tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),masterFx:{effects:[]},mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null,exportController=null,exportRun=null,exportDownloadUrl=null,releaseZipController=null,releaseArtworkBlob=null,releaseArtworkSourceBlob=null,releaseArtworkUrl=null;
 let portableImportController=null,assetImportController=null;
 let sampleCapturePending=false;
 let sampleCaptureFinalizing=false,projectImportPending=false,sampleLoadPending=false,sampleSavePending=false,assetImportPending=false;
@@ -79,7 +79,7 @@ let pointerGesturePending=false,keyboardGesturePending=false;
 let portableExportController=null;
 let recoverySnapshot=null;
 let renderedWorkspace=null,transportPending=false;
-let masterWavePeaks=null,masterWaveSignature='',masterWaveTimer=0,masterWaveController=null,masterWaveGeneration=0,masterWaveDrawFrame=0,masterWaveBufferId=0;
+let masterWavePeaks=null,masterWaveSignature='',masterWaveTimer=0,masterWaveController=null,masterWaveGeneration=0,masterWaveDrawFrame=0,masterWaveBufferId=0,trackWavePeaks=new Map(),trackWaveFailures=new Set();
 const masterWaveBufferIds=new WeakMap();
 const portableBufferDigests=new WeakMap();
 const dbp=new Promise((resolve,reject)=>{const r=indexedDB.open('pulse-studio-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('assets');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
@@ -141,7 +141,7 @@ async function dbSet(k,v){const db=await dbp;return new Promise((res,rej)=>{cons
 async function dbSetMany(entries){const db=await dbp;return new Promise((resolve,reject)=>{const tx=db.transaction('assets','readwrite'),store=tx.objectStore('assets');for(const[key,value]of entries)value===null?store.delete(key):store.put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Asset cache transaction was aborted.'))})}
 function notify(s){$('#toast').textContent=s;$('#toast').classList.add('show');setTimeout(()=>$('#toast')?.classList.remove('show'),3500)}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function captureProjectSnapshot(markDirty=true){project.id ||= uid();normalizeProjectSchema(project);project.modifiedAt=new Date().toISOString();project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.masterSettings={...engine.masterSettings};project.mastering=normalizeMasteringSettings(engine.masteringSettings);if(engine.playing){const playback=recordingStudio.busy?recordingStudio.playbackProject():project;engine.syncTracks(playback.tracks,project.bpm);engine.updatePlayback(playback,buffers)}if(markDirty)projectDirty=true;return serializeProject(project)}
+function captureProjectSnapshot(markDirty=true){project.id ||= uid();normalizeProjectSchema(project);project.modifiedAt=new Date().toISOString();project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.masterSettings={...engine.masterSettings};project.mastering=normalizeMasteringSettings(engine.masteringSettings);if(engine.playing){const playback=recordingStudio.busy?recordingStudio.playbackProject():project;engine.syncTracks(playback.tracks,project.bpm,project.masterFx);engine.updatePlayback(playback,buffers)}if(markDirty)projectDirty=true;return serializeProject(project)}
 function save(markDirty=true){
  if(markDirty&&view!=='master'){masteringPreview=null;masteringPausedOffset=0}
  try{
@@ -166,15 +166,31 @@ function masterWaveformStateKey(){
   if(!masterWaveBufferIds.has(buffer))masterWaveBufferIds.set(buffer,++masterWaveBufferId);
   return[id,masterWaveBufferIds.get(buffer)];
  });
- return JSON.stringify({bpm:project.bpm,loop:project.loop,loopStart:project.loopStart,loopEnd:project.loopEnd,tracks:project.tracks,masterSettings:engine.masterSettings,mastering:engine.masteringSettings,sources});
+ return JSON.stringify({bpm:project.bpm,loop:project.loop,loopStart:project.loopStart,loopEnd:project.loopEnd,tracks:project.tracks,masterFx:project.masterFx,masterSettings:engine.masterSettings,mastering:engine.masteringSettings,sources});
+}
+function effectiveMasterRange(){
+ const duration=masterWavePeaks?.duration||estimateProjectRender(project,buffers).durationSeconds;
+ return fitMasterRange(project.masterRange||{startBeat:0,endBeat:Math.max(1,duration*project.bpm/60)},0);
+}
+function paintMasterExportRange(){
+ const lane=$('.master-track-lane'),region=$('#masterExportRange');if(!lane||!region)return;
+ const range=effectiveMasterRange(),scale=timelineScale();
+ region.style.left=`${scale.beatsToPixels(range.startBeat)}px`;
+ region.style.width=`${Math.max(1,scale.beatsToPixels(range.endBeat-range.startBeat))}px`;
+ region.setAttribute('aria-label',`Export selection, beats ${range.startBeat.toFixed(2)} to ${range.endBeat.toFixed(2)}`);
+ region.querySelector('[data-range-edge="start"]').setAttribute('aria-label',`Move export start, beat ${range.startBeat.toFixed(2)}`);
+ region.querySelector('[data-range-edge="end"]').setAttribute('aria-label',`Move export end, beat ${range.endBeat.toFixed(2)}`);
+ region.querySelector('.master-range-body').setAttribute('aria-label',`Move export selection, beats ${range.startBeat.toFixed(2)} to ${range.endBeat.toFixed(2)}`);
 }
 function drawMasterOutputWaveform(){
  const canvas=$('#masterOutputWaveform'),lane=$('.master-track-lane'),arrangement=$('.arrangement'),ruler=$('#ruler');
  if(!canvas||!lane||!arrangement||!ruler)return;
+ paintMasterExportRange();
  if(!masterWavePeaks){canvas.width=0;canvas.height=0;return}
  const dpr=Math.min(devicePixelRatio||1,2),origin=timelineContentOrigin(ruler,arrangement),left=Math.max(0,arrangement.scrollLeft-origin),width=Math.max(1,Math.min(arrangement.clientWidth,lane.scrollWidth-left)),height=Math.max(1,lane.clientHeight);
  canvas.style.left=`${left}px`;canvas.style.width=`${width}px`;canvas.width=Math.ceil(width*dpr);canvas.height=Math.ceil(height*dpr);
  const context=canvas.getContext('2d');context.scale(dpr,dpr);context.clearRect(0,0,width,height);
+ const range=effectiveMasterRange(),rangeStart=range.startBeat*60/project.bpm,rangeEnd=range.endBeat*60/project.bpm;
  const pixelsPerSecond=timelineScale().pixelsPerBeat*project.bpm/60,bins=masterWavePeaks.channels[0].minimum.length;
  for(let channel=0;channel<Math.min(2,masterWavePeaks.channels.length);channel++){
   const peaks=masterWavePeaks.channels[channel],center=height*(channel===0?.27:.73),amplitude=height*.22;
@@ -185,10 +201,13 @@ function drawMasterOutputWaveform(){
    const first=Math.max(0,Math.min(bins-1,Math.floor(fromSeconds/masterWavePeaks.duration*bins))),last=Math.max(first+1,Math.min(bins,Math.ceil(toSeconds/masterWavePeaks.duration*bins)));
    let minimum=1,maximum=-1;
    for(let index=first;index<last;index++){minimum=Math.min(minimum,peaks.minimum[index]);maximum=Math.max(maximum,peaks.maximum[index])}
+   context.globalAlpha=(fromSeconds<rangeEnd&&toSeconds>rangeStart)?1:.22;
    context.moveTo(x+.5,center-maximum*amplitude);context.lineTo(x+.5,center-minimum*amplitude);
   }
   context.strokeStyle=channel===0?'#9ce8d6':'#72bfb0';context.lineWidth=1;context.stroke();
  }
+ context.globalAlpha=1;
+ paintMasterExportRange();
 }
 function queueMasterWaveformDraw(){
  if(masterWaveDrawFrame)cancelAnimationFrame(masterWaveDrawFrame);
@@ -207,12 +226,13 @@ function cancelMasterWaveformRender(){
 function requestMasterWaveformRender(){
  if(view!=='arrange')return;
  clearTimeout(masterWaveTimer);masterWaveController?.abort();masterWaveController=null;const generation=++masterWaveGeneration,status=$('#masterWaveformStatus');
- if(masterWavePeaks&&masterWaveformStateKey()!==masterWaveSignature){masterWavePeaks=null;queueMasterWaveformDraw()}
+ if(masterWavePeaks&&masterWaveformStateKey()!==masterWaveSignature){masterWavePeaks=null;trackWavePeaks.clear();trackWaveFailures.clear();queueMasterWaveformDraw()}
  if(status){status.textContent=engine.playing?'Waiting for playback to stop…':'Updating final output…';status.title='Rendered from the complete arrangement and its active track and master processing.'}
  masterWaveTimer=setTimeout(async()=>{
   masterWaveTimer=0;if(generation!==masterWaveGeneration||view!=='arrange'||engine.playing)return;
   const key=masterWaveformStateKey();
-  if(key===masterWaveSignature&&masterWavePeaks){if(status)status.textContent=`Final output · ${masterWavePeaks.duration.toFixed(1)} s`;queueMasterWaveformDraw();return}
+  const targets=project.tracks.filter(track=>instrumentType(track)==='audio'&&track.clips.some(clip=>clip.asset));
+  if(key===masterWaveSignature&&masterWavePeaks&&targets.every(track=>trackWavePeaks.has(track.id))){if(status)status.textContent=`Final output · ${masterWavePeaks.duration.toFixed(1)} s`;queueMasterWaveformDraw();return}
   const controller=new AbortController();masterWaveController=controller;
   try{
    const rendered=await engine.render(project,buffers,{signal:controller.signal});
@@ -221,6 +241,25 @@ function requestMasterWaveformRender(){
    masterWavePeaks=createMasterWaveformPeaks(rendered);masterWaveSignature=key;
    if(status)status.textContent=`Final output · ${masterWavePeaks.duration.toFixed(1)} s`;
    queueMasterWaveformDraw();
+   trackWavePeaks.clear();
+   for(const track of project.tracks){
+    if(instrumentType(track)!=='audio'||!track.clips.some(clip=>clip.asset))continue;
+    if(controller.signal.aborted||generation!==masterWaveGeneration||view!=='arrange')return;
+    const isolated=structuredClone(project);
+    for(const item of isolated.tracks){item.solo=item.id===track.id;if(item.id!==track.id)item.mute=true}
+    if(status)status.textContent=`Final output · rendering ${track.name} stereo waveform…`;
+    let trackBuffer;
+    try{trackBuffer=await engine.render(isolated,buffers,{signal:controller.signal})}
+    catch(error){
+     if(controller.signal.aborted||error.name==='AbortError')return;
+     trackWaveFailures.add(track.id);console.error(`Could not render the stereo waveform for ${track.name}.`,error);$('.arrangement')?.dispatchEvent(new Event('scroll'));continue;
+    }
+    if(controller.signal.aborted||generation!==masterWaveGeneration||view!=='arrange')return;
+    if(key!==masterWaveformStateKey()){requestMasterWaveformRender();return}
+    trackWavePeaks.set(track.id,createMasterWaveformPeaks(trackBuffer));trackWaveFailures.delete(track.id);
+    $('.arrangement')?.dispatchEvent(new Event('scroll'));
+   }
+   if(status){status.textContent=`Final output · ${masterWavePeaks.duration.toFixed(1)} s${trackWaveFailures.size?` · ${trackWaveFailures.size} track waveform(s) unavailable`:''}`;if(trackWaveFailures.size)status.title=`Final output rendered; stereo waveform rendering failed for: ${project.tracks.filter(track=>trackWaveFailures.has(track.id)).map(track=>track.name).join(', ')}`}
   }catch(error){
    if(controller.signal.aborted||error.name==='AbortError')return;
    if(status){status.textContent='Output waveform unavailable';status.title=`Could not render the final output waveform: ${error.message}`}
@@ -232,12 +271,51 @@ function mountMasterOutputWaveform(){
  const lane=$('.master-track-lane'),arrangement=$('.arrangement'),ruler=$('#ruler');if(!lane||!arrangement||!ruler)return;
  lane.style.width=ruler.style.width;
  const canvas=document.createElement('canvas');canvas.id='masterOutputWaveform';canvas.className='master-output-waveform';canvas.setAttribute('role','img');canvas.setAttribute('aria-label','Rendered final stereo output waveform');
+ const range=document.createElement('div');range.id='masterExportRange';range.className='master-export-range';range.tabIndex=0;range.setAttribute('role','group');
+ range.innerHTML='<button type="button" class="master-range-handle" data-range-edge="start" aria-label="Move export start"></button><button type="button" class="master-range-body" aria-label="Move export selection"></button><button type="button" class="master-range-handle" data-range-edge="end" aria-label="Move export end"></button>';
+ range.onclick=()=>{if(!arrangementWorkspaceState.masterSelected){arrangementWorkspaceState.masterSelected=true;arrangementWorkspaceState.devicesOpen=true;render()}};
  const status=document.createElement('output');status.id='masterWaveformStatus';status.className='master-waveform-status';status.setAttribute('aria-live','polite');status.textContent=masterWavePeaks?`Final output · ${masterWavePeaks.duration.toFixed(1)} s`:'Rendering final output…';
- lane.append(canvas,status);
+ lane.append(canvas,range,status);
+ const snap=beat=>snapGrid?Math.round(beat/snapGrid)*snapGrid:beat;
+ const updateRange=(next,persist=false)=>{project.masterRange=fitMasterRange(next,0);paintMasterExportRange();if(persist){save();range.focus({preventScroll:true})}};
+ range.onpointerdown=event=>{
+  if(event.button!==0)return;
+  const edge=event.target.closest('[data-range-edge]')?.dataset.rangeEdge,body=event.target.closest('.master-range-body');
+  if(!edge&&!body)return;
+  event.preventDefault();event.stopPropagation();range.setPointerCapture(event.pointerId);
+  const original=effectiveMasterRange(),origin=snap(timelineBeatsAtClientX(event.clientX)),pointer=event.pointerId;let moved=false;
+  const move=next=>{
+   if(next.pointerId!==pointer)return;
+   const beat=snap(timelineBeatsAtClientX(next.clientX)),delta=beat-origin;moved||=Math.abs(delta)>.001;
+   if(edge==='start')updateRange({startBeat:Math.max(0,Math.min(original.endBeat-1,original.startBeat+delta)),endBeat:original.endBeat});
+   else if(edge==='end')updateRange({startBeat:original.startBeat,endBeat:Math.max(original.startBeat+1,original.endBeat+delta)});
+   else{const shift=Math.max(-original.startBeat,delta);updateRange({startBeat:original.startBeat+shift,endBeat:original.endBeat+shift})}
+  };
+  const finish=next=>{
+   if(next.pointerId!==pointer)return;
+   range.removeEventListener('pointermove',move);range.removeEventListener('pointerup',finish);range.removeEventListener('pointercancel',cancel);
+   if(range.hasPointerCapture(pointer))range.releasePointerCapture(pointer);
+   if(moved)save();
+  };
+  const cancel=next=>{
+   if(next.pointerId!==pointer)return;
+   range.removeEventListener('pointermove',move);range.removeEventListener('pointerup',finish);range.removeEventListener('pointercancel',cancel);
+   if(range.hasPointerCapture(pointer))range.releasePointerCapture(pointer);
+   updateRange(original);
+  };
+  range.addEventListener('pointermove',move);range.addEventListener('pointerup',finish);range.addEventListener('pointercancel',cancel);
+ };
+ range.onkeydown=event=>{
+  if(!['ArrowLeft','ArrowRight'].includes(event.key))return;
+  event.preventDefault();const step=Math.max(.0625,snapGrid||.25)*(event.key==='ArrowRight'?1:-1),current=effectiveMasterRange(),edge=event.target.closest('[data-range-edge]')?.dataset.rangeEdge;
+  if(edge==='start')updateRange({startBeat:Math.max(0,Math.min(current.endBeat-1,current.startBeat+step)),endBeat:current.endBeat},true);
+  else if(edge==='end')updateRange({startBeat:current.startBeat,endBeat:Math.max(current.startBeat+1,current.endBeat+step)},true);
+  else{const shift=Math.max(-current.startBeat,step);updateRange({startBeat:current.startBeat+shift,endBeat:current.endBeat+shift},true)}
+ };
  const refresh=()=>{if(!lane.isConnected){observer.disconnect();arrangement.removeEventListener('scroll',queueMasterWaveformDraw);return}lane.style.width=ruler.style.width;queueMasterWaveformDraw()};
  const observer=new ResizeObserver(refresh);observer.observe(ruler);observer.observe(lane);observer.observe(arrangement);
  arrangement.addEventListener('scroll',queueMasterWaveformDraw,{passive:true});
- refresh();requestMasterWaveformRender();
+ paintMasterExportRange();refresh();requestMasterWaveformRender();
 }
 function barSeconds(){return 240/project.bpm}
 function beatsWidth(){return 156*zoom}
@@ -381,7 +459,7 @@ function applyNewProject(choice){
  const plan=planProjectReset(project,choice);
  if(!plan.project)return false;
  if(plan.serialized)saveProjectFile(plan.serialized,project.name);
- engine.stop(true);engine.syncTracks([]);engine.setMaster({...DEFAULT_MASTER_SETTINGS});engine.setMastering(DEFAULT_MASTERING_SETTINGS);
+ engine.stop(true);engine.syncTracks([],plan.project.bpm,plan.project.masterFx);engine.setMaster({...DEFAULT_MASTER_SETTINGS});engine.setMastering(DEFAULT_MASTERING_SETTINGS);
  project=plan.project;projectDirty=false;selectedTrack=0;selectedClip=null;playhead=0;zoom=1;snapGrid=.25;arrangementClipboard=null;
  resetArrangementEditing();
  resetTemporarySample();save(false);view='arrange';shell();notify('Empty project created. Your sample library and folder access are preserved.');return true;
@@ -406,7 +484,7 @@ function wireShell(){
  $('#clock').insertAdjacentHTML('afterend','<output id="elapsedTime" class="elapsed-time" aria-label="Arrangement time (minutes:seconds.milliseconds)" title="Arrangement position · minutes:seconds.milliseconds">00:00.000</output>');
  $('#elapsedTime').textContent=formatTransportTime(engine.position());
  $('#projectName').onchange=e=>{project.name=e.target.value;save()};
- $('#bpm').onchange=async e=>{const playing=engine.playing,beat=(playing?engine.position():playhead)*project.bpm/60;project.bpm=Math.max(40,Math.min(240,+e.target.value||120));playhead=beat*60/project.bpm;if(playing)engine.stop();engine.offset=playhead;engine.syncTracks(project.tracks,project.bpm);save();render();if(playing)try{await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}};
+ $('#bpm').onchange=async e=>{const playing=engine.playing,beat=(playing?engine.position():playhead)*project.bpm/60;project.bpm=Math.max(40,Math.min(240,+e.target.value||120));playhead=beat*60/project.bpm;if(playing)engine.stop();engine.offset=playhead;engine.syncTracks(project.tracks,project.bpm,project.masterFx);save();render();if(playing)try{await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}};
  $('#loop').onclick=()=>{checkpointArrangement();project.loop=!project.loop;save();$('#loop').classList.toggle('active',project.loop);if(view==='arrange')render()};
  $('#newProject').onclick=openNewProjectDialog;
  $('#play').onclick=()=>toggleWorkspacePlayback().catch(error=>notify(error.message));
@@ -516,13 +594,14 @@ async function restoreAssets(){
 function normalizeProject(){project=normalizeProjectData(project)}
 function normalizeProjectData(input){
  const project=structuredClone(input);
-  normalizeArrangementLoop(project);project.id ||= uid();project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.bpm=Math.max(40,Math.min(240,Number(project.bpm)||120));project.patternBeats ||= 64;project.exportSettings=normalizeExportSettings(project.exportSettings);
+  normalizeArrangementLoop(project);project.id ||= uid();project.releaseMetadata=normalizeReleaseMetadata(project.releaseMetadata,project);project.bpm=Math.max(40,Math.min(240,Number(project.bpm)||120));project.patternBeats ||= 64;project.exportSettings=normalizeExportSettings(project.exportSettings);project.masterFx??={effects:[]};
   for(const track of project.tracks){
    track.clips ||= [];if(!track.patterns){track.pattern ||= {notes:[]};track.pattern.notes ||= []}
    if(!track.drumRack)continue;
    normalizeDrumRack(track,uid);
   }
   migrateInstrumentArrangement(project,uid);normalizeProjectSchema(project);
+  if(engine.ctx)engine.syncTracks(project.tracks,project.bpm,project.masterFx);
  return project;
 }
 function checkpointArrangement(){arrangementHistory.checkpoint(project.tracks,project)}
@@ -727,7 +806,7 @@ function render(){
  $$('[data-view]').forEach(b=>{b.classList.toggle('selected',b.dataset.view===view);if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
  if(view==='arrange'){
   renderArrange();$$('.lane').forEach(lane=>lane.style.backgroundSize=`${beatsWidth()*(snapGrid||.0625)/4}px 100%`);renderSamplerBlocks();addArrangementControls();
-  arrangementWorkspace=mountArrangementWorkspace({root:$('#main'),project,buffers,state:arrangementWorkspaceState,scale:timelineScale(),zoom,grid:()=>snapGrid,selectedTrack,selectedClip,checkpoint:checkpointArrangement,commit:commitArrangement,save,notify,idFactory:uid,render,onLayout:()=>tick(playhead),openClip:openInstrumentClip,openClipEditor:(id,index)=>{selectedClip=id;selectedTrack=index;render();requestAnimationFrame(()=>$('.clip-device')?.scrollIntoView({behavior:'smooth',block:'nearest'}))},createClip:addPatternClip,selectTrack:selectArrangementTrack,selectClip:(id,index)=>{selectedClip=id;selectedTrack=index;render()},activateClip:(id,index)=>{selectedClip=id;selectedTrack=index},setZoom:setArrangementZoom,seek:async seconds=>{const playing=engine.playing;if(playing)engine.stop();playhead=seconds;engine.offset=seconds;tick(seconds);if(playing)try{await engine.play(project,buffers,seconds)}catch(error){notify(error.message)}},playFrom:async beat=>{try{playhead=beat*60/project.bpm;await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}},copyClip:copySelectedClip,pasteClip,duplicateClip:duplicateSelectedClip,deleteClip:deleteSelectedClip});
+  arrangementWorkspace=mountArrangementWorkspace({root:$('#main'),project,buffers,state:arrangementWorkspaceState,scale:timelineScale(),zoom,grid:()=>snapGrid,selectedTrack,selectedClip,checkpoint:checkpointArrangement,commit:commitArrangement,save,notify,idFactory:uid,render,onLayout:()=>tick(playhead),getTrackWaveform:id=>trackWavePeaks.get(id),openClip:openInstrumentClip,openClipEditor:(id,index)=>{selectedClip=id;selectedTrack=index;render();requestAnimationFrame(()=>$('.clip-device')?.scrollIntoView({behavior:'smooth',block:'nearest'}))},createClip:addPatternClip,selectTrack:selectArrangementTrack,selectClip:(id,index)=>{selectedClip=id;selectedTrack=index;render()},activateClip:(id,index)=>{selectedClip=id;selectedTrack=index},setZoom:setArrangementZoom,seek:async seconds=>{const playing=engine.playing;if(playing)engine.stop();playhead=seconds;engine.offset=seconds;tick(seconds);if(playing)try{await engine.play(project,buffers,seconds)}catch(error){notify(error.message)}},playFrom:async beat=>{try{playhead=beat*60/project.bpm;await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}},copyClip:copySelectedClip,pasteClip,duplicateClip:duplicateSelectedClip,deleteClip:deleteSelectedClip});
   mountArrangementChrome({root:$('#main'),project,selectedTrack,selectedClip,state:arrangementWorkspaceState,addTrack:openTrackSetup,moveTrack:moveArrangementTrack,addEffect:type=>{arrangementWorkspaceState.devicesOpen=true;const select=$('#addTrackEffect');select.value=type;select.dispatchEvent(new Event('change',{bubbles:true}))},selectMaster:()=>{arrangementWorkspaceState.masterSelected=true;arrangementWorkspaceState.devicesOpen=true;render()},selectContext:(id,index)=>{selectedClip=id;selectArrangementTrack(index)}});
   mountMasterOutputWaveform();
   restoreDeviceUi($('#main'),deviceUi);
@@ -770,18 +849,24 @@ function eqResponsePath(bands,sampleRate=48000,lowCut=20,highCut=20000){
  return points.join(' ');
 }
 function renderTrackEffects(track){
- if(arrangementWorkspaceState.masterSelected)return renderMasterDeviceContext();
+ if(arrangementWorkspaceState.masterSelected)return renderMasterTrackEffects()+renderMasterDeviceContext();
  if(!track)return'<div class="effect-chain"><strong>No track selected</strong><p class="hint">Add a track to open its independent effect chain.</p></div>';
  const labels={eq:'Parametric EQ',compressor:'Compressor',delay:'Delay',reverb:'Reverb',saturation:'Saturation',limiter:'Limiter',utility:'Utility'};
  const controls=EFFECT_CONTROLS;
  const effects=track.fx?.effects||[];
  return `<div class="effect-chain"><div class="effect-chain-title"><strong>Track effects</strong><label>Add effect <select id="addTrackEffect"><option value="">Choose…</option>${Object.entries(labels).map(([type,label])=>`<option value="${type}">${label}</option>`).join('')}</select></label></div><div class="effect-presets"><label>Preset name <input id="effectPresetName" maxlength="60" placeholder="My chain"></label><button id="saveEffectPreset">Save preset</button><select id="effectPresetSelect" aria-label="Effect preset"><option value="">Choose preset…</option></select><button id="loadEffectPreset">Load preset</button></div>${effects.length?effects.map((effect,index)=>`<article class="effect-device"><header><label><input type="checkbox" data-effect-enabled="${index}" ${effect.enabled?'checked':''}> ${labels[effect.type]||esc(effect.type)}</label><div><button data-effect-up="${index}" ${index===0?'disabled':''} aria-label="Move effect up">↑</button><button data-effect-down="${index}" ${index===effects.length-1?'disabled':''} aria-label="Move effect down">↓</button><button data-effect-remove="${index}" aria-label="Remove effect">×</button></div></header>${effect.type==='eq'?`<svg class="eq-response" viewBox="0 0 420 120" role="img" aria-label="Equalizer frequency response"><path class="eq-zero" d="M0 60H420"/><path data-eq-response="${index}" d="${eqResponsePath(effect.params?.bands||[{frequency:effect.params?.frequency||1000,gain:effect.params?.gain||0,q:effect.params?.q||1},{frequency:500,gain:0,q:1},{frequency:2500,gain:0,q:1},{frequency:10000,gain:0,q:1}],engine.ctx?.sampleRate||48000,effect.params?.lowCut||20,effect.params?.highCut||20000)}"/></svg><label>Low-cut (Hz)<input type="range" min="20" max="20000" step="1" value="${effect.params?.lowCut??20}" data-effect-param="${index}" data-param="lowCut"><output>${Math.round(effect.params?.lowCut??20)}</output></label><label>High-cut (Hz)<input type="range" min="20" max="20000" step="1" value="${effect.params?.highCut??20000}" data-effect-param="${index}" data-param="highCut"><output>${Math.round(effect.params?.highCut??20000)}</output></label>${(effect.params?.bands||[{frequency:effect.params?.frequency??1000,gain:effect.params?.gain??0,q:effect.params?.q??1},{frequency:500,gain:0,q:1},{frequency:2500,gain:0,q:1},{frequency:10000,gain:0,q:1}]).map((band,bandIndex)=>`<fieldset class="eq-band"><legend>Band ${bandIndex+1}</legend>${[['frequency','Hz',20,20000,1],['gain','dB',-24,24,.5],['q','Q',.1,18,.1]].map(([key,label,min,max,step])=>`<label>${label}<input type="range" min="${min}" max="${max}" step="${step}" value="${band[key]}" data-effect-param="${index}" data-eq-band="${bandIndex}" data-param="${key}"><output>${Number(band[key]).toFixed(key==='frequency'?0:1)}</output></label>`).join('')}</fieldset>`).join('')}`:(controls[effect.type]||[]).map(([key,label,min,max,step,scale])=>`<label>${label}<input type="range" min="${min}" max="${max}" step="${step}" value="${Number(effect.params?.[key]??0)*(scale==='ms'?1000:1)}" data-scale="${scale==='ms'?'1000':'1'}" data-effect-param="${index}" data-param="${key}"><output>${Number(effect.params?.[key]??0)*(scale==='ms'?1000:1)}</output></label>`).join('')}${effect.type==='delay'?`<label>Tempo sync <input type="checkbox" data-effect-toggle="${index}" data-param="sync" ${effect.params?.sync?'checked':''}></label><label>Beat division <select data-effect-choice="${index}" data-param="division">${[[.25,'1/16'],[.5,'1/8'],[.75,'1/8 dotted'],[1,'1/4'],[1.5,'1/4 dotted'],[2,'1/2'],[4,'1 bar']].map(([value,label])=>`<option value="${value}" ${Number(effect.params?.division??1)===value?'selected':''}>${label}</option>`).join('')}</select></label>`:''}${effect.type==='utility'?`<label>Invert polarity <input type="checkbox" data-effect-toggle="${index}" data-param="invert" ${effect.params?.invert?'checked':''}></label>`:''}${effect.type==='compressor'?`<label class="reduction-meter">Gain reduction <output data-compressor-meter="${esc(effect.id)}" data-meter-track="${esc(track.id)}">0.0 dB</output></label>`:''}</article>`).join(''):'<p class="hint">Add an effect to process this track during playback and WAV export.</p>'}</div>`;
 }
+function renderMasterTrackEffects(){
+ const labels={eq:'Parametric EQ',compressor:'Compressor',delay:'Delay',reverb:'Reverb',saturation:'Saturation',limiter:'Limiter',utility:'Utility'},effects=project.masterFx?.effects||[];
+ const controls=EFFECT_CONTROLS;
+ const cards=effects.map((effect,index)=>`<article class="effect-device"><header><label><input type="checkbox" data-effect-enabled="${index}" ${effect.enabled?'checked':''}> ${labels[effect.type]}</label><div><button data-effect-up="${index}" ${index===0?'disabled':''} aria-label="Move master effect earlier">↑</button><button data-effect-down="${index}" ${index===effects.length-1?'disabled':''} aria-label="Move master effect later">↓</button><button data-effect-remove="${index}" aria-label="Remove master effect">×</button></div></header>${effect.type==='eq'?`<svg class="eq-response" viewBox="0 0 420 120" aria-label="Master track equalizer response"><path class="eq-zero" d="M0 60H420"/><path data-eq-response="${index}" d="${eqResponsePath(effect.params.bands,engine.ctx?.sampleRate||48000,effect.params.lowCut,effect.params.highCut)}"/></svg><label>Low-cut (Hz)<input type="range" min="20" max="20000" step="1" value="${effect.params.lowCut}" data-effect-param="${index}" data-param="lowCut"><output>${Math.round(effect.params.lowCut)}</output></label><label>High-cut (Hz)<input type="range" min="20" max="20000" step="1" value="${effect.params.highCut}" data-effect-param="${index}" data-param="highCut"><output>${Math.round(effect.params.highCut)}</output></label>${effect.params.bands.map((band,bandIndex)=>`<fieldset class="eq-band"><legend>Band ${bandIndex+1}</legend>${[['frequency','Hz',20,20000,1],['gain','dB',-24,24,.5],['q','Q',.1,18,.1]].map(([key,label,min,max,step])=>`<label>${label}<input type="range" min="${min}" max="${max}" step="${step}" value="${band[key]}" data-effect-param="${index}" data-eq-band="${bandIndex}" data-param="${key}"><output>${Number(band[key]).toFixed(key==='frequency'?0:1)}</output></label>`).join('')}</fieldset>`).join('')}`:(controls[effect.type]||[]).map(([key,label,min,max,step,scale])=>`<label>${label}<input type="range" min="${min}" max="${max}" step="${step}" value="${Number(effect.params[key]??0)*(scale==='ms'?1000:1)}" data-scale="${scale==='ms'?'1000':'1'}" data-effect-param="${index}" data-param="${key}"><output>${Number(effect.params[key]??0)*(scale==='ms'?1000:1)}</output></label>`).join('')}${effect.type==='delay'?`<label>Tempo sync <input type="checkbox" data-effect-toggle="${index}" data-param="sync" ${effect.params.sync?'checked':''}></label><label>Beat division <select data-effect-choice="${index}" data-param="division">${[[.25,'1/16'],[.5,'1/8'],[.75,'1/8 dotted'],[1,'1/4'],[1.5,'1/4 dotted'],[2,'1/2'],[4,'1 bar']].map(([value,label])=>`<option value="${value}" ${Number(effect.params.division??1)===value?'selected':''}>${label}</option>`).join('')}</select></label>`:''}${effect.type==='utility'?`<label>Invert polarity <input type="checkbox" data-effect-toggle="${index}" data-param="invert" ${effect.params.invert?'checked':''}></label>`:''}${effect.type==='compressor'?`<label class="reduction-meter">Gain reduction <output data-compressor-meter="${esc(effect.id)}" data-meter-track="master">0.0 dB</output></label>`:''}</article>`).join('');
+ return`<div class="effect-chain master-track-effects"><div class="effect-chain-title"><strong>Master Track Effects</strong><label>Add effect <select id="addTrackEffect"><option value="">Choose…</option>${Object.entries(labels).map(([type,label])=>`<option value="${type}">${label}</option>`).join('')}</select></label></div><div class="effect-presets"><label>Preset name <input id="effectPresetName" maxlength="60" placeholder="My chain"></label><button id="saveEffectPreset">Save preset</button><select id="effectPresetSelect" aria-label="Master effect preset"><option value="">Choose preset…</option></select><button id="loadEffectPreset">Load preset</button></div>${cards||'<p class="hint">Add an effect to process the final mix before Mastering Studio and export.</p>'}</div>`;
+}
 function renderMasterDeviceContext(){
  const settings=engine.masteringSettings,order=[...(settings.chainOrder||[]),'output','limiter'];
  const labels={eq:'Master EQ',saturation:'Saturation',imager:'Stereo Imager',multiband:'Multiband Dynamics',output:'Output',limiter:'Lookahead Limiter'};
  const states={eq:settings.eq?.enabled!==false,saturation:Boolean(settings.saturation?.enabled),imager:Boolean(settings.imager?.enabled),multiband:Boolean(settings.multiband?.enabled),output:true,limiter:Boolean(settings.limiter?.enabled)};
- return`<div class="effect-chain master-device-context"><div class="effect-chain-title"><strong>Master Devices</strong><span>Shared master bus · authoritative project settings</span></div><ol>${order.map(type=>`<li><span>${labels[type]||esc(type)}</span><output>${states[type]?'Enabled':'Bypassed'}</output></li>`).join('')}</ol><p>Master volume, EQ, compressor and the ordered mastering chain remain on the existing shared output bus.</p><button id="openMasteringFromRack">Open Mastering Studio</button></div>`;
+ return`<details class="effect-chain master-device-context"><summary>Mastering Studio · shared output processing</summary><div class="master-device-context-body"><ol>${order.map(type=>`<li><span>${labels[type]||esc(type)}</span><output>${states[type]?'Enabled':'Bypassed'}</output></li>`).join('')}</ol><p>Master volume, EQ, compressor and ordered mastering processing remain on the shared output bus.</p><button id="openMasteringFromRack">Open Mastering Studio</button></div></details>`;
 }
 function renderArrange(){
  const t=project.tracks[selectedTrack];
@@ -789,7 +874,7 @@ function renderArrange(){
  drawList(arrangementWorkspaceState.libraryFilter);wireArrange();wireTrackEffects();tick(playhead);
 }
 function wireTrackEffects(){
- if(arrangementWorkspaceState.masterSelected)return;
+ if(arrangementWorkspaceState.masterSelected){wireMasterTrackEffects();return}
  const track=project.tracks[selectedTrack];
  if(!track)return;
  track.fx ||= {filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25};
@@ -824,7 +909,7 @@ function wireTrackEffects(){
   }
   article.append(section);
  }
- const refresh=()=>{engine.syncTracks(project.tracks,project.bpm);save();refreshEqEditors()};
+ const refresh=()=>{engine.syncTracks(project.tracks,project.bpm,project.masterFx);save();refreshEqEditors()};
  const readPresets=()=>{const value=JSON.parse(localStorage.getItem('egghead-effect-presets')||'[]');if(!Array.isArray(value))throw new Error('Stored effect presets are invalid.');return value};
  const populatePresets=()=>{const select=$('#effectPresetSelect'),presets=readPresets();select.replaceChildren(new Option('Choose preset…',''));presets.forEach((preset,index)=>select.add(new Option(preset.name,String(index))))};
  try{populatePresets()}catch(error){notify(`Could not load effect presets: ${error.message}`)}
@@ -858,7 +943,38 @@ function wireTrackEffects(){
   input.nextElementSibling.value=Number(input.value).toFixed(input.step.includes('.')?2:0);refresh();
  });
  enhanceDeviceChain($('#main'),track);
- eqEditors.push(...mountTrackEqs($('#main'),track,engine,persist=>{engine.syncTracks(project.tracks,project.bpm);if(persist)save()},error=>notify(`EQ visualization failed: ${error.message}`)));
+ eqEditors.push(...mountTrackEqs($('#main'),track,engine,persist=>{engine.syncTracks(project.tracks,project.bpm,project.masterFx);if(persist)save()},error=>notify(`EQ visualization failed: ${error.message}`)));
+}
+function wireMasterTrackEffects(){
+ project.masterFx??={effects:[]};
+ const track={id:'__master__',name:'Master',fx:project.masterFx};
+ const refresh=()=>{engine.syncTracks(project.tracks,project.bpm,project.masterFx);save();refreshEqEditors()};
+ const effects=()=>project.masterFx.effects;
+ const readPresets=()=>{const value=JSON.parse(localStorage.getItem('egghead-effect-presets')||'[]');if(!Array.isArray(value))throw new Error('Stored effect presets are invalid.');return value};
+ const populatePresets=()=>{const select=$('#effectPresetSelect'),presets=readPresets();select.replaceChildren(new Option('Choose preset…',''));presets.forEach((preset,index)=>select.add(new Option(preset.name,String(index))))};
+ try{populatePresets()}catch(error){notify(`Could not load effect presets: ${error.message}`)}
+ $('#saveEffectPreset').onclick=()=>{const name=$('#effectPresetName').value.trim();if(!name)return notify('Enter a name for this effect preset.');try{const presets=readPresets();presets.push({name,effects:JSON.parse(JSON.stringify(effects()))});localStorage.setItem('egghead-effect-presets',JSON.stringify(presets));populatePresets();notify(`Saved effect preset “${name}”.`)}catch(error){notify(`Could not save effect preset: ${error.message}`)}};
+ $('#loadEffectPreset').onclick=()=>{const value=$('#effectPresetSelect').value,index=Number(value);if(value===''||!Number.isInteger(index)||index<0)return notify('Choose an effect preset to load.');try{const preset=readPresets()[index];if(!preset||!Array.isArray(preset.effects)||preset.effects.some(effect=>!['eq','compressor','delay','reverb','saturation','limiter','utility'].includes(effect.type)||!effect.params||typeof effect.params!=='object'))throw new Error('Preset data is invalid.');project.masterFx.effects=JSON.parse(JSON.stringify(preset.effects));refresh();render()}catch(error){notify(`Could not load effect preset: ${error.message}`)}};
+ $('#addTrackEffect').onchange=event=>{
+  if(!event.target.value)return;
+  const effect=createTrackEffect(event.target.value);
+  effects().push(effect);refresh();render();
+ };
+ $$('[data-effect-enabled]').forEach(input=>input.onchange=()=>{effects()[Number(input.dataset.effectEnabled)].enabled=input.checked;refresh()});
+ $$('[data-effect-remove]').forEach(button=>button.onclick=()=>{effects().splice(Number(button.dataset.effectRemove),1);refresh();render()});
+ $$('[data-effect-up],[data-effect-down]').forEach(button=>button.onclick=()=>{const from=Number(button.dataset.effectUp??button.dataset.effectDown),to=from+(button.hasAttribute('data-effect-up')?-1:1);[effects()[from],effects()[to]]=[effects()[to],effects()[from]];refresh();render()});
+ $$('[data-effect-param]').forEach(input=>input.oninput=()=>{
+  const effect=effects()[Number(input.dataset.effectParam)],key=input.dataset.param,value=Number(input.value)/Number(input.dataset.scale||1);
+  if(effect.type==='eq'){
+   if(input.dataset.eqBand!==undefined)effect.params.bands[Number(input.dataset.eqBand)][key]=value;else effect.params[key]=value;
+   const path=$('#main').querySelector(`[data-eq-response="${input.dataset.effectParam}"]`);if(path)path.setAttribute('d',eqResponsePath(effect.params.bands,engine.ctx?.sampleRate||48000,effect.params.lowCut,effect.params.highCut));
+  }else effect.params[key]=value;
+  input.nextElementSibling.value=Number(input.value).toFixed(input.step.includes('.')?2:0);refresh();
+ });
+ $$('[data-effect-toggle]').forEach(input=>input.onchange=()=>{effects()[Number(input.dataset.effectToggle)].params[input.dataset.param]=input.checked;refresh()});
+ $$('[data-effect-choice]').forEach(select=>select.onchange=()=>{effects()[Number(select.dataset.effectChoice)].params[select.dataset.param]=Number(select.value);refresh()});
+ enhanceDeviceChain($('#main'),track);
+ eqEditors.push(...mountTrackEqs($('#main'),track,engine,persist=>{engine.syncTracks(project.tracks,project.bpm,project.masterFx);if(persist)save()},error=>notify(`Master EQ visualization failed: ${error.message}`)));
 }
 function clipControls(){
  const c=project.tracks.flatMap(t=>t.clips).find(c=>c.id===selectedClip);if(!c)return '';
@@ -1006,12 +1122,12 @@ function wireArrange(){
  $('#addTrack').onclick=()=>openTrackSetup();
  $('#zoomIn').onclick=event=>setArrangementZoom(zoom*1.25,event.clientX);$('#zoomOut').onclick=event=>setArrangementZoom(zoom/1.25,event.clientX);
  $$('[data-track]').forEach(e=>e.onclick=()=>selectArrangementTrack(+e.dataset.track));
- $$('[data-mute]').forEach(b=>b.onclick=e=>{e.stopPropagation();const index=+b.dataset.mute;project.tracks[index].mute=!project.tracks[index].mute;engine.syncTracks(project.tracks);save();selectArrangementTrack(index)});
- $$('[data-solo]').forEach(b=>b.onclick=e=>{e.stopPropagation();const index=+b.dataset.solo;project.tracks[index].solo=!project.tracks[index].solo;engine.syncTracks(project.tracks);save();selectArrangementTrack(index)});
+ $$('[data-mute]').forEach(b=>b.onclick=e=>{e.stopPropagation();const index=+b.dataset.mute;project.tracks[index].mute=!project.tracks[index].mute;engine.syncTracks(project.tracks,project.bpm,project.masterFx);save();selectArrangementTrack(index)});
+ $$('[data-solo]').forEach(b=>b.onclick=e=>{e.stopPropagation();const index=+b.dataset.solo;project.tracks[index].solo=!project.tracks[index].solo;engine.syncTracks(project.tracks,project.bpm,project.masterFx);save();selectArrangementTrack(index)});
  $$('[data-fx]').forEach(button=>button.onclick=event=>{event.stopPropagation();arrangementWorkspaceState.devicesOpen=true;selectArrangementTrack(Number(button.dataset.fx));$('.effect-chain')?.scrollIntoView({behavior:'smooth',block:'nearest'})});
- $$('[data-remove]').forEach(b=>b.onclick=e=>{e.stopPropagation();const index=Number(b.dataset.remove),track=project.tracks[index];if(!window.confirm(`Delete track “${track.name}” and its clips/instrument settings? Shared samples will remain in your library.`))return;if(!deleteProjectTrack(project,index))return;selectedTrack=project.tracks.length?Math.min(selectedTrack>index?selectedTrack-1:index,project.tracks.length-1):0;selectedClip=null;engine.syncTracks(project.tracks);save();render()});
- $$('[data-vol]').forEach(e=>e.oninput=()=>{project.tracks[+e.dataset.vol].volume=+e.value;engine.syncTracks(project.tracks);save()});
- $$('[data-pan]').forEach(e=>e.oninput=()=>{project.tracks[+e.dataset.pan].pan=+e.value;engine.syncTracks(project.tracks);save()});
+ $$('[data-remove]').forEach(b=>b.onclick=e=>{e.stopPropagation();const index=Number(b.dataset.remove),track=project.tracks[index];if(!window.confirm(`Delete track “${track.name}” and its clips/instrument settings? Shared samples will remain in your library.`))return;if(!deleteProjectTrack(project,index))return;selectedTrack=project.tracks.length?Math.min(selectedTrack>index?selectedTrack-1:index,project.tracks.length-1):0;selectedClip=null;engine.syncTracks(project.tracks,project.bpm,project.masterFx);save();render()});
+ $$('[data-vol]').forEach(e=>e.oninput=()=>{project.tracks[+e.dataset.vol].volume=+e.value;engine.syncTracks(project.tracks,project.bpm,project.masterFx);save()});
+ $$('[data-pan]').forEach(e=>e.oninput=()=>{project.tracks[+e.dataset.pan].pan=+e.value;engine.syncTracks(project.tracks,project.bpm,project.masterFx);save()});
  const masterVolume=$('#masterVolume');masterVolume.oninput=()=>{engine.setMaster({volume:Number(masterVolume.value)});$('#masterVolumeValue').value=`${Math.round(Number(masterVolume.value)*100)}%`;save()};
  $$('[data-lane]').forEach(lane=>lane.ondragover=event=>event.preventDefault());
  const c=project.tracks.flatMap(track=>track.clips).find(clip=>clip.id===selectedClip);if(!c)return;
@@ -1378,7 +1494,7 @@ async function runReleasePackage(){
  try{
   const settings=normalizeExportSettings(project.exportSettings);
   setExportStatus('Rendering the arrangement once for selected release formats…');
-  await engine.init();const buffer=await engine.render(project,buffers,{bypassMastering:!settings.mastering,signal:controller.signal,onProgress:progress=>setExportStatus(`Rendering release audio · ${Math.round(progress*100)}%`,progress)});
+  await engine.init();const buffer=await engine.render(project,buffers,{bypassMastering:!settings.mastering,range:effectiveMasterRange(),signal:controller.signal,onProgress:progress=>setExportStatus(`Rendering release audio · ${Math.round(progress*100)}%`,progress)});
   if(controller.signal.aborted)throw controller.signal.reason;
   const entries={},audioEntries=[];
   for(const format of selected){
@@ -1421,7 +1537,7 @@ async function runExport(){
   if(metadataErrors.length)throw new Error(`Invalid release metadata: ${metadataErrors.join(' ')}`);
   await engine.init();
   setExportStatus('Rendering arrangement offline…');
-  const buffer=await engine.render(project,buffers,{bypassMastering:!settings.mastering,signal:controller.signal,onProgress:progress=>setExportStatus(`Rendering arrangement · ${Math.round(progress*100)}%`,progress)});
+  const buffer=await engine.render(project,buffers,{bypassMastering:!settings.mastering,range:effectiveMasterRange(),signal:controller.signal,onProgress:progress=>setExportStatus(`Rendering arrangement · ${Math.round(progress*100)}%`,progress)});
   if(controller.signal.aborted)throw controller.signal.reason;
   const memory=estimateExportMemory(buffer.duration,settings,buffer.sampleRate);
   if(!memory.allowed)throw new RangeError(`This render needs an estimated ${Math.ceil(memory.estimatedPeakBytes/1024/1024)} MiB. Reduce output rate or project duration and export again.`);

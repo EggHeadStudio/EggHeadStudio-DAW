@@ -69,7 +69,7 @@ export class RecordingStudio{
       const id=input.dataset.backing??input.dataset.backingVolume,state=this.selection.get(id)||{enabled:true,volume:1};
       if(input.dataset.backing!==undefined)state.enabled=input.checked;else state.volume=Number(input.value);
       this.selection.set(id,state);
-      if(this.engine.playing)this.engine.syncTracks(this.playbackProject().tracks,project.bpm);
+      if(this.engine.playing){const playback=this.playbackProject();this.engine.syncTracks(playback.tracks,project.bpm,playback.masterFx)}
     });
     const find=id=>target.clips.find(clip=>clip.id===id);
     const bind=(attribute,action)=>root.querySelectorAll(`[${attribute}]`).forEach(input=>input.onchange=()=>{try{action(input,find(input.getAttribute(attribute)));this.save();this.mount(root)}catch(error){this.notify(error.message)}});
@@ -157,7 +157,7 @@ export class RecordingStudio{
     clearInterval(this.clock);this.engine.stop();
     document.removeEventListener('visibilitychange',this.onVisibility);this.engine.ctx?.removeEventListener('statechange',this.onContext);
     for(const source of this.clicks){source.onended=null;try{source.stop()}catch(error){if(error.name!=='InvalidStateError')console.error('Could not stop recording click',error)}source.disconnect()}this.clicks=[];
-    this.engine.syncTracks(this.getProject().tracks,this.getProject().bpm);
+    const project=this.getProject();this.engine.syncTracks(project.tracks,project.bpm,project.masterFx);
   }
   async finish(){
     if(!['count-in','pre-roll','recording','unsaved'].includes(this.state))return;
@@ -216,7 +216,7 @@ export class RecordingStudio{
     this.capture?.cancel();this.cleanup();this.capture=null;this.pending=null;this.state='idle';this.update();this.notify('Recording cancelled; previous takes and source assets are unchanged.');
   }
   async previewTake(track,clip){
-    const ctx=await this.engine.init();this.engine.syncTracks(this.getProject().tracks,this.getProject().bpm);
+    const project=this.getProject(),ctx=await this.engine.init();this.engine.syncTracks(project.tracks,project.bpm,project.masterFx);
     this.engine.stop();
     const source=ctx.createBufferSource(),gain=ctx.createGain();source.buffer=this.buffers.get(clip.asset);source.playbackRate.value=clip.rate||1;source.connect(gain).connect(this.engine.trackNodes.get(track.id).input);scheduleClipSource(ctx,source,gain,clip,ctx.currentTime,0,(clip.end-clip.start)/(clip.rate||1));this.engine.registerSource(source,[gain],track.id);
   }

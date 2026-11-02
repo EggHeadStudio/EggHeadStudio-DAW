@@ -6,6 +6,7 @@ import {instrumentEvents,scheduleInstrumentEvent} from './instrument-playback.js
 import {renderOfflineWindows} from './offline-scheduler.js';
 import {trackEqFilters} from './eq-model.js';
 import {createOrderedAudioBus} from './ordered-audio-bus.js';
+import {cropMasterAudioBuffer} from './master-waveform.js';
 
 export const uid=()=>crypto.randomUUID();
 export function patternLengthBeats(track){
@@ -241,7 +242,10 @@ export function estimateProjectRender(project,buffers){
    :effect.type==='delay'?Math.min(20,delayTimeSeconds(effect.params,project.bpm)/(1-Math.min(.85,Number(effect.params?.feedback)||0))):0),
   track.fx?.delay>0?(track.fx.delayTime||.25)/(1-Math.min(.75,track.fx.feedback||0)):0
  ));
- const effectTail=Math.max(.3,...tails),tail=effectTail+Math.max(0,finalInstrumentAudioEnd-end);
+ const masterTails=(project.masterFx?.effects||[]).filter(effect=>effect.enabled).map(effect=>effect.type==='reverb'
+  ?Math.max(.1,Number(effect.params?.decay)||1.5)*1.5
+  :effect.type==='delay'?Math.min(20,delayTimeSeconds(effect.params,project.bpm)/(1-Math.min(.85,Number(effect.params?.feedback)||0))):0);
+ const effectTail=Math.max(.3,...tails,...masterTails),tail=effectTail+Math.max(0,finalInstrumentAudioEnd-end);
  return{programSeconds:end,tailSeconds:tail,durationSeconds:end+tail};
 }
 function watchGraphProcessors(graph,onError){
@@ -253,10 +257,10 @@ export class AudioEngine{
   this.stop();
   for(const graph of this.trackNodes.values())graph.disconnect();
   this.trackNodes.clear();
-  this.masteringGraph?.disconnect();this.masteringGraph=null;this.master?.disconnect();
+  this.masteringGraph?.disconnect();this.masteringGraph=null;this.masterFxGraph?.disconnect();this.masterFxGraph=null;this.masterFxInput=null;this.masterFxSignature='';this.master?.disconnect();
   if(this.onError)this.onError(error);else console.error(error);
  }
- constructor(){this.ctx=null;this.master=null;this.compressor=null;this.eq=null;this.masteringGraph=null;this.masterMeterBufferLeft=null;this.masterMeterBufferRight=null;this.masteringSettings=normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS);this.trackNodes=new Map();this.sources=[];this.sourceNodes=new WeakMap();this.sourceTrackIds=new WeakMap();this.instrumentSignatures=new Map();this.playing=false;this.startedAt=0;this.offset=0;this.timer=null;this.raf=null;this.onTick=()=>{};this.onMeter=()=>{};this.onEnd=()=>{};this.loop=false;this.bpm=120;this.masterSettings={eq:0,threshold:-12,makeup:0,volume:1};this.clipHoldUntil=new Map();this.sidechainReady=false;this.sidechainError=null;this.masteringLimiterReady=false;this.masteringLimiterError=null;}
+ constructor(){this.ctx=null;this.master=null;this.compressor=null;this.eq=null;this.masteringGraph=null;this.masterFxGraph=null;this.masterFxInput=null;this.masterFx={effects:[]};this.masterFxSignature='';this.masterMeterBufferLeft=null;this.masterMeterBufferRight=null;this.masteringSettings=normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS);this.trackNodes=new Map();this.sources=[];this.sourceNodes=new WeakMap();this.sourceTrackIds=new WeakMap();this.instrumentSignatures=new Map();this.playing=false;this.startedAt=0;this.offset=0;this.timer=null;this.raf=null;this.onTick=()=>{};this.onMeter=()=>{};this.onEnd=()=>{};this.loop=false;this.bpm=120;this.masterSettings={eq:0,threshold:-12,makeup:0,volume:1};this.clipHoldUntil=new Map();this.sidechainReady=false;this.sidechainError=null;this.masteringLimiterReady=false;this.masteringLimiterError=null;}
  async init({resume=true}={}){
   if(!this.ctx){
    this.ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -280,12 +284,20 @@ export class AudioEngine{
  }
  setMaster(s){this.masterSettings={...this.masterSettings,...s};if(!this.ctx)return;const eq=Number(this.masterSettings.eq),threshold=Number(this.masterSettings.threshold),makeup=Number(this.masterSettings.makeup),volume=Number(this.masterSettings.volume);this.eq.gain.value=Number.isFinite(eq)?eq:0;this.compressor.threshold.value=Number.isFinite(threshold)?threshold:-12;this.compressor.ratio.value=3;this.master.gain.value=Math.max(0,Number.isFinite(volume)?volume:1)*Math.pow(10,(Number.isFinite(makeup)?makeup:0)/20)}
  setMastering(settings){const next=normalizeMasteringSettings(settings);if(!this.ctx||!this.master){this.masteringSettings=next;return}this.masteringLimiterReady=Boolean(this.ctx.masteringLimiterReady);if(this.masteringGraph){this.masteringGraph.update(next);this.masteringSettings=next;return}const graph=createMasteringGraph(this.ctx,next,this.ctx.destination);this.master.connect(graph.input);this.masteringGraph=graph;watchGraphProcessors(graph,error=>this.handleProcessorError(error));this.masteringSettings=next}
- syncTracks(tracks,bpm=this.bpm){
+ syncTracks(tracks,bpm=this.bpm,masterFx=this.masterFx){
   if(!this.ctx)return;
   const needsSidechain=tracks.some(track=>(track.fx?.effects||[]).some(effect=>effect.enabled&&effect.type==='compressor'&&effect.params?.sidechain?.enabled));
   if(needsSidechain&&!this.sidechainReady)throw this.sidechainError||new Error('External sidechain compression is unavailable because its AudioWorklet processor has not been initialized.');
   if(!this.eq)return;
   this.bpm=Number.isFinite(Number(bpm))&&Number(bpm)>0?Number(bpm):120;
+  const nextMasterFx=masterFx&&Array.isArray(masterFx.effects)?masterFx:{effects:[]},masterFxTrack={id:'__master__',name:'Master',volume:1,pan:0,mute:false,solo:false,fx:nextMasterFx},nextMasterFxSignature=trackGraphSignature(masterFxTrack),masterFxChanged=nextMasterFxSignature!==this.masterFxSignature;
+  this.masterFx=nextMasterFx;
+  if(masterFxChanged){
+   this.masterFxGraph?.disconnect();this.masterFxGraph=null;this.masterFxInput=null;
+   if(nextMasterFx.effects.length){this.masterFxInput=this.ctx.createGain();this.masterFxGraph=createTrackGraph(this.ctx,masterFxTrack,this.eq,this.masterFxInput,this.bpm);watchGraphProcessors(this.masterFxGraph,error=>this.handleProcessorError(error));this.masterFxGraph.update(masterFxTrack,false,this.bpm,true)}
+   this.masterFxSignature=nextMasterFxSignature;
+  }else if(this.masterFxGraph)this.masterFxGraph.update(masterFxTrack,false,this.bpm,true);
+  const trackOutput=this.masterFxGraph?.input||this.eq;
   const ids=new Set(tracks.map(track=>track.id)),solo=tracks.some(track=>track.solo);
   for(const graph of this.trackNodes.values())graph.disconnectSidechains();
   for(const [id,graph]of this.trackNodes)if(!ids.has(id)){this.releaseTrackSources(id);graph.disconnect();this.trackNodes.delete(id);this.instrumentSignatures.delete(id);this.clipHoldUntil.delete(id)}
@@ -295,7 +307,7 @@ export class AudioEngine{
    this.instrumentSignatures.set(track.id,sourceSignature);
    const signature=trackGraphSignature(track);
    let graph=this.trackNodes.get(track.id);
-   if(!graph||graph.signature!==signature){const input=graph?.input;graph?.disconnect();graph=createTrackGraph(this.ctx,track,this.eq,input,this.bpm);watchGraphProcessors(graph,error=>this.handleProcessorError(error));this.trackNodes.set(track.id,graph)}
+   if(!graph||graph.signature!==signature||masterFxChanged){const input=graph?.input;graph?.disconnect();graph=createTrackGraph(this.ctx,track,trackOutput,input,this.bpm);watchGraphProcessors(graph,error=>this.handleProcessorError(error));this.trackNodes.set(track.id,graph)}
    graph.update(track,solo,this.bpm,isTrackAudible(track,tracks));
   }
   connectTrackSidechains(tracks,this.trackNodes,this.ctx);
@@ -327,7 +339,7 @@ export class AudioEngine{
   const loop=this.transportLoop;
   return this.playing&&loop&&position>=loop.end?loop.start+(position-loop.start)%(loop.end-loop.start):position;
  }
- readMeters(){const now=performance.now(),meters={};for(const[id,graph]of this.trackNodes){const levels=graph.readMeter(),clipped=levels.leftPeak>=.999||levels.rightPeak>=.999;if(clipped)this.clipHoldUntil.set(id,now+1000);meters[id]={...levels,clipped:(this.clipHoldUntil.get(id)||0)>now}}const{leftMeter,rightMeter}=this.masteringGraph||{};if(leftMeter&&rightMeter){if(!this.masterMeterBufferLeft||this.masterMeterBufferLeft.length!==leftMeter.fftSize)this.masterMeterBufferLeft=new Float32Array(leftMeter.fftSize);if(!this.masterMeterBufferRight||this.masterMeterBufferRight.length!==rightMeter.fftSize)this.masterMeterBufferRight=new Float32Array(rightMeter.fftSize);leftMeter.getFloatTimeDomainData(this.masterMeterBufferLeft);rightMeter.getFloatTimeDomainData(this.masterMeterBufferRight);let leftPeak=0,rightPeak=0;for(const value of this.masterMeterBufferLeft)leftPeak=Math.max(leftPeak,Math.abs(value));for(const value of this.masterMeterBufferRight)rightPeak=Math.max(rightPeak,Math.abs(value));meters.master={leftPeak,rightPeak,clipped:leftPeak>=.999||rightPeak>=.999}}return meters}
+ readMeters(){const now=performance.now(),meters={};for(const[id,graph]of this.trackNodes){const levels=graph.readMeter(),clipped=levels.leftPeak>=.999||levels.rightPeak>=.999;if(clipped)this.clipHoldUntil.set(id,now+1000);meters[id]={...levels,clipped:(this.clipHoldUntil.get(id)||0)>now}}const{leftMeter,rightMeter}=this.masteringGraph||{};if(leftMeter&&rightMeter){if(!this.masterMeterBufferLeft||this.masterMeterBufferLeft.length!==leftMeter.fftSize)this.masterMeterBufferLeft=new Float32Array(leftMeter.fftSize);if(!this.masterMeterBufferRight||this.masterMeterBufferRight.length!==rightMeter.fftSize)this.masterMeterBufferRight=new Float32Array(rightMeter.fftSize);leftMeter.getFloatTimeDomainData(this.masterMeterBufferLeft);rightMeter.getFloatTimeDomainData(this.masterMeterBufferRight);let leftPeak=0,rightPeak=0;for(const value of this.masterMeterBufferLeft)leftPeak=Math.max(leftPeak,Math.abs(value));for(const value of this.masterMeterBufferRight)rightPeak=Math.max(rightPeak,Math.abs(value));meters.master={leftPeak,rightPeak,clipped:leftPeak>=.999||rightPeak>=.999,reductions:this.masterFxGraph?.readMeter().reductions||{}}}return meters}
  async startPreviewNote(track,buffers,midi,velocity=.85,tracks=[track]){
   if(!Number.isInteger(midi)||midi<0||midi>127)throw new RangeError('Sampler performance pitch must be a MIDI note from 0 to 127.');
   await this.init();this.syncTracks(tracks);
@@ -392,7 +404,7 @@ export class AudioEngine{
  }
  async previewNote(track,buffers,midi,duration=.35,tracks=[track]){await this.init();this.syncTracks(tracks);const rack=track.drumRack,pad=rack?.pads.find(item=>item.note===midi),sampler=track.sampler,asset=pad?.asset||(sampler&&!rack?sampler.asset:null),buffer=buffers.get(asset);if(!buffer||pad?.mute)return false;const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner(),rate=pad?2**((pad.pitch||0)/12):sampler.mode==='oneShot'?1:2**((midi-(sampler.rootNote||60)+(sampler.transpose||0)+(sampler.fineTune||0)/100)/12),start=pad?0:Math.max(0,sampler.start||0),end=pad?buffer.duration:Math.min(buffer.duration,sampler.end||buffer.duration),region=Math.max(.01,end-start),length=Math.min(duration,region/rate),now=this.ctx.currentTime; source.buffer=buffer;source.playbackRate.value=rate;if(sampler?.mode==='loop'&&!pad){source.loop=true;source.loopStart=start;source.loopEnd=end}pan.pan.value=pad?.pan||0;source.connect(gain).connect(pan).connect(this.trackNodes.get(track.id).input);if(pad||sampler.mode==='oneShot')gain.gain.value=(pad?.volume??1)*.8;else{const attack=Math.min(sampler.attack||.005,length*.4),decay=Math.min(sampler.decay||.1,Math.max(0,length-attack)*.4),sustain=Math.max(0,Math.min(1,sampler.sustain??.8)),release=Math.min(sampler.release||.03,length*.4),noteOff=now+length;gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.8,now+attack);gain.gain.linearRampToValueAtTime(.8*sustain,now+attack+decay);gain.gain.setValueAtTime(.8*sustain,Math.max(now+attack+decay,noteOff-release));gain.gain.linearRampToValueAtTime(0,noteOff)}source.start(now,start);source.stop(now+length);this.registerSource(source,[gain,pan],track.id);return true}
  async play(project,buffers,from=this.offset,{when}={}){
-  await this.init();this.stop();this.syncTracks(project.tracks,project.bpm);
+  await this.init();  this.stop();this.syncTracks(project.tracks,project.bpm,project.masterFx);
   this.playing=true;this.playbackSignature=null;this.updatePlayback(project,buffers,from,when);
   this.timer=setInterval(()=>this.scheduleAhead(),25);
   const tick=()=>{if(this.playing){this.onTick(this.position());this.onMeter(this.readMeters());this.raf=requestAnimationFrame(tick)}};tick();
@@ -445,7 +457,7 @@ export class AudioEngine{
    }
   }
  }
- async render(project,buffers,{bypassMastering=false,signal,onProgress}={}){
+ async render(project,buffers,{bypassMastering=false,signal,onProgress,range}={}){
   if(signal?.aborted)throw signal.reason||new DOMException('Offline rendering cancelled.','AbortError');
   project=structuredClone(project);buffers=new Map(buffers);
   const masterSettings={...this.masterSettings};
@@ -454,7 +466,9 @@ export class AudioEngine{
   const sr=44100,masteringSettings=normalizeMasteringSettings(project.mastering||this.masteringSettings);
   const hasMasteringLimiter=!bypassMastering&&typeof globalThis.AudioWorkletNode==='function',latencyFrames=hasMasteringLimiter?Math.round(masteringSettings.limiter.lookaheadMs/1000*sr)+8:0,ctx=new OfflineAudioContext(2,Math.ceil((end+tail)*sr)+latencyFrames,sr),eq=ctx.createBiquadFilter(),comp=ctx.createDynamicsCompressor(),master=ctx.createGain();
   const hasSidechain=project.tracks.some(track=>(track.fx?.effects||[]).some(effect=>effect.enabled&&effect.type==='compressor'&&effect.params?.sidechain?.enabled));
-  const offlineTrackNodes=new Map(),voiceBuses=new Map(),masterBus=createOrderedAudioBus(ctx,eq),voices=new Set();let masteringGraph=null,disposed=false;
+  const masterFx=project.masterFx&&Array.isArray(project.masterFx.effects)?project.masterFx:{effects:[]},masterFxTrack={id:'__master__',name:'Master',volume:1,pan:0,mute:false,solo:false,fx:masterFx};
+  const offlineTrackNodes=new Map(),voiceBuses=new Map(),voices=new Set();let masteringGraph=null,masterFxGraph=null,disposed=false;
+  let masterBus=null;
   const releaseVoices=(time=Infinity)=>{
    for(const voice of voices)if(voice.endTime<=time){
     voice.source.disconnect();for(const node of voice.nodes)node.disconnect();voice.busInput.disconnect();voices.delete(voice);
@@ -465,10 +479,12 @@ export class AudioEngine{
    releaseVoices();
    for(const graph of offlineTrackNodes.values())graph.disconnect();
    for(const bus of voiceBuses.values())bus.disconnect();
-   masterBus.disconnect();
-   masteringGraph?.disconnect();eq.disconnect();comp.disconnect();master.disconnect();
+   masterBus?.disconnect();
+   masteringGraph?.disconnect();masterFxGraph?.disconnect();eq.disconnect();comp.disconnect();master.disconnect();
   };
   try{
+  if(masterFx.effects.length){masterFxGraph=createTrackGraph(ctx,masterFxTrack,eq,null,project.bpm);masterFxGraph.update(masterFxTrack,false,project.bpm,true)}
+  masterBus=createOrderedAudioBus(ctx,masterFxGraph?.input||eq);
   if(hasSidechain){
    if(!ctx.audioWorklet||typeof globalThis.AudioWorkletNode!=='function')throw new Error('Offline sidechain rendering requires AudioWorklet support in this browser.');
    await ctx.audioWorklet.addModule(new URL('./sidechain-processor.js',import.meta.url));
@@ -512,10 +528,12 @@ export class AudioEngine{
    }
   };
   const rendered=await renderOfflineWindows(ctx,{schedule,release:releaseVoices,dispose,signal,failure:processorFailure,onProgress});
-  if(!masteringGraph?.latencyFrames)return rendered;
-  const trimFrames=masteringGraph.latencyFrames,trimmed=ctx.createBuffer(rendered.numberOfChannels,rendered.length-trimFrames,rendered.sampleRate);
-  for(let channel=0;channel<rendered.numberOfChannels;channel++)trimmed.getChannelData(channel).set(rendered.getChannelData(channel).subarray(trimFrames));
-  return trimmed;
+  let output=rendered;
+  if(masteringGraph?.latencyFrames){
+   const trimFrames=masteringGraph.latencyFrames;output=ctx.createBuffer(rendered.numberOfChannels,rendered.length-trimFrames,rendered.sampleRate);
+   for(let channel=0;channel<rendered.numberOfChannels;channel++)output.getChannelData(channel).set(rendered.getChannelData(channel).subarray(trimFrames));
+  }
+  return range?cropMasterAudioBuffer(output,range,project.bpm,(channels,length,sampleRate)=>ctx.createBuffer(channels,length,sampleRate)):output;
   }finally{
    dispose();
   }

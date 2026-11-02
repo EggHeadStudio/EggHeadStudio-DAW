@@ -316,6 +316,17 @@ track identity and uses Arrangement Undo/Redo. Compact/expanded volume is the
 same real parameter, not two competing faders. Track height is a transient
 workspace preference, not new project data.
 
+The Master row is selectable across its Arrangement lane and displays the
+rendered stereo output. Its shaded range can be moved or resized from either
+edge; that project-saved range is used by WAV/MP3 and release-package renders,
+with waveform outside the range dimmed for context. Audio clips show rendered
+left/right waveforms after track and master processing. The small chevron beside
+a track name reduces its lane to colored clip blocks and retains only M/S plus
+the level meter in its compact Mixer. Master can also be reduced; its volume
+control is hidden in that mode.
+Master Track Effects use the same ordered device chain and presets as track
+effects, before the collapsible Mastering Studio summary.
+
 The bottom Device Panel supports height dragging or keyboard Arrow Up/Down,
 Home/End, **Compact devices** and **Hide devices**. Piano Roll groups note setup,
 view and note operations, shows selected-note/source context and folds advanced

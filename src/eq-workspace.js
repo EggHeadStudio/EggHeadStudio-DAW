@@ -41,7 +41,7 @@ export function mountTrackEqs(root,track,engine,commit,onError,beforeChange=()=>
         if(next.gain!==undefined)next.gain=Math.max(-24,Math.min(24,next.gain));
         if(next.q!==undefined)next.q=Math.max(.1,Math.min(18,next.q));
         updateEq(effect.params,key,next);commit(persist);
-      },getTap:position=>engine.trackNodes.get(track.id)?.eqTaps.get(effect.id)?.[position],onError});
+      },getTap:position=>(track.id==='__master__'?engine.masterFxGraph:engine.trackNodes.get(track.id))?.eqTaps.get(effect.id)?.[position],onError});
     editors.push(editor);
   }
   return editors;

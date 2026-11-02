@@ -273,11 +273,53 @@ button:disabled,.parameter-disabled{opacity:.55}
 .devices-compact .device-chain-scroll>.effect-device header{gap:2px}
 .device-chain-scroll>.effect-device .device-body{max-height:none;overflow:visible;scrollbar-gutter:auto}
 .workspace .clip-selected{outline:2px solid var(--focus);outline-offset:-2px}
+.workspace .track-row:has(.track-label[data-track]){height:var(--track-height,124px);min-height:0}
+.workspace .track-row.track-minimized{height:36px!important;min-height:36px!important}
+.workspace .track-minimized .track-label{overflow:hidden;padding:2px 6px}
+.workspace .track-minimized .track-label>*:not(.track-title-line){display:none!important}
+.workspace .track-minimized .track-title-line{display:flex;align-items:center;gap:3px;min-width:0}
+.workspace .track-minimized .track-title-line>.track-select{min-width:0;padding:1px;font-size:10px}
+.workspace .track-title-line>.track-minimize{flex:none;width:18px;height:18px;min-width:18px;min-height:18px;padding:0;border:0;border-radius:3px;background:transparent;font-size:10px;line-height:16px}
+.workspace .track-title-line>.track-minimize:hover{background:#ffffff16}
+.workspace .track-minimized .track-title-line>[data-new-pattern]{display:none}
+.workspace .track-minimized .lane{height:36px;min-height:36px}
+.workspace .track-minimized .clip-waveform,
+.workspace .track-minimized .clip>span,.workspace .track-minimized .clip-handle{display:none!important}
+.workspace .track-minimized .clip{top:0;bottom:0;padding:0;border-radius:2px}
+.workspace .track-minimized .right-mixer:not(.master-strip){display:grid!important;grid-template-columns:repeat(2,minmax(28px,1fr)) minmax(32px,1.4fr);grid-template-rows:1fr;gap:4px;align-items:center;padding:2px 6px}
+.workspace .track-row.track-minimized:not(.track-expanded) .right-mixer:not(.master-strip):not(.mobile-expanded-editor){grid-template-columns:repeat(2,minmax(28px,1fr)) minmax(32px,1.4fr);grid-template-rows:minmax(0,1fr);align-content:center;align-items:center}
+.workspace .track-minimized .right-mixer:not(.master-strip)>.strip-title,
+.workspace .track-minimized .right-mixer:not(.master-strip)>label,
+.workspace .track-minimized .right-mixer:not(.master-strip)>.parameter-control{display:none!important}
+.workspace .track-minimized .right-mixer:not(.master-strip) .track-actions{grid-column:1/3;grid-row:1;display:flex;align-items:center;gap:3px;margin:0}
+.workspace .track-row.track-minimized:not(.track-expanded) .right-mixer:not(.master-strip):not(.mobile-expanded-editor) .track-actions{grid-column:1/3;grid-row:1;align-self:center}
+.workspace .track-minimized .right-mixer:not(.master-strip) .track-actions{align-self:center;height:24px}
+.workspace .track-minimized .right-mixer:not(.master-strip) .track-actions button{display:none!important}
+.workspace .track-minimized .right-mixer:not(.master-strip) .track-actions [data-mute],
+.workspace .track-minimized .right-mixer:not(.master-strip) .track-actions [data-solo]{display:inline-flex!important;align-items:center;justify-content:center;min-height:24px;min-width:26px;padding:1px 5px;text-align:center}
+.workspace .track-minimized .right-mixer:not(.master-strip) .stereo-meter{grid-column:3;grid-row:1;align-self:center;min-height:8px;margin:0}
+.workspace .track-row.track-minimized:not(.track-expanded) .right-mixer:not(.master-strip):not(.mobile-expanded-editor) .stereo-meter{grid-column:3;grid-row:1;align-self:center}
+.workspace .track-minimized .right-mixer:not(.master-strip) .meter-peak{display:none}
+.workspace .master-track-row.master-track-minimized{height:var(--master-track-height,36px)!important;min-height:var(--master-track-height,36px)!important;max-height:var(--master-track-height,36px)!important}
+.workspace .master-track-row.master-track-minimized>.master-track-label,
+.workspace .master-track-row.master-track-minimized>.master-track-lane,
+.workspace .master-track-row.master-track-minimized>.master-strip{height:var(--master-track-height,36px)!important;min-height:var(--master-track-height,36px)!important}
+.workspace .master-track-row.master-track-minimized>.master-track-label{display:flex;align-items:center;gap:3px;padding:2px 6px}
+.workspace .master-track-row.master-track-minimized>.master-track-label small,
+.workspace .master-track-row.master-track-minimized>.master-strip label,
+.workspace .master-track-row.master-track-minimized>#masterVolumeValue{display:none!important}
+.workspace .master-track-row.master-track-minimized>.master-strip{display:grid!important;grid-template-columns:1fr;grid-template-rows:minmax(0,1fr);align-content:center;align-items:center}
+.workspace .track-row.master-track-row.master-track-minimized>.master-strip:not(.mobile-expanded-editor){grid-template-columns:1fr;grid-template-rows:minmax(0,1fr);align-content:center;align-items:center}
+.workspace .master-track-row.master-track-minimized .master-output-meter{grid-column:1;grid-row:1;align-self:center}
+.workspace .track-row.master-track-row.master-track-minimized>.master-strip .stereo-meter.master-output-meter{grid-column:1;grid-row:1;align-self:center}
+.workspace .track-row.track-minimized .right-mixer[hidden]{display:none!important}
 @media(max-width:850px){
   .workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .parameter-control>input[type=range]{min-height:28px}
   .workspace .track-label .track-actions button,.workspace .track-label [data-new-pattern]{min-height:26px}
   .track-layout-controls button{min-height:26px}
   .workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .track-actions button{min-height:36px}
+  .workspace .track-row.track-minimized .right-mixer:not(.master-strip) .track-actions [data-mute],
+  .workspace .track-row.track-minimized .right-mixer:not(.master-strip) .track-actions [data-solo]{min-height:24px}
   .workspace .track-label{width:132px;min-width:132px}
 }
 .workspace .clip-handle{width:9px;background:transparent;opacity:0}
@@ -341,6 +383,11 @@ button:disabled,.parameter-disabled{opacity:.55}
 .master-track-lane{height:100%;position:relative;overflow:hidden;background:#18212d}
 .master-output-waveform{position:absolute;top:0;bottom:0;display:block;height:100%;pointer-events:none}
 .master-waveform-status{position:absolute;top:3px;left:6px;z-index:1;padding:1px 4px;border-radius:3px;background:#10131bcc;color:var(--text-secondary);font-size:9px;pointer-events:none}
+.master-export-range{position:absolute;top:0;bottom:0;z-index:2;display:flex;min-width:2px;border:1px solid #9ce8d6;background:#9ce8d626;touch-action:none}
+.master-range-body{flex:1;min-width:0;padding:0;border:0;border-radius:0;background:transparent;cursor:grab;touch-action:none}
+.master-range-handle{flex:none;width:14px;min-width:14px;padding:0;border:0;border-radius:0;background:#9ce8d67a;cursor:ew-resize;touch-action:none}
+.master-range-handle:hover,.master-range-handle:focus-visible{background:var(--focus)}
+.master-export-range:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .master-track-row .master-strip{height:100%;min-height:0;box-sizing:border-box}
 .master-output-meter{grid-column:1/-1;min-height:16px}
 .master-device-context ol{display:flex;gap:8px;flex-wrap:wrap;list-style:none;padding:0}
@@ -527,3 +574,7 @@ button:disabled,.parameter-disabled{opacity:.55}
 .workspace .master-track-row>.master-track-label,.workspace .master-track-row>.master-track-lane{height:84px;min-height:84px}
 .workspace .master-track-row>.master-strip{width:226px;min-width:226px;padding:4px 8px;align-content:center}
 .workspace .master-track-row>.master-strip label{display:flex;gap:6px;align-items:center}
+@media(max-width:850px){
+  .master-export-range>.master-range-handle{width:30px;min-width:30px}
+  .master-export-range>.master-range-body{min-height:44px}
+}
