@@ -37,6 +37,11 @@ export function timelineContentOrigin(ruler,scrollContainer){
   return ruler.getBoundingClientRect().left-scrollContainer.getBoundingClientRect().left-(scrollContainer.clientLeft||0)+scrollContainer.scrollLeft;
 }
 
+export function playheadHeightToMaster(masterRowTop,masterRowHeight,playheadTop){
+  if(![masterRowTop,masterRowHeight,playheadTop].every(Number.isFinite)||masterRowTop<0||masterRowHeight<0||playheadTop<0)throw new RangeError('Arrangement playhead coordinates must be finite and non-negative.');
+  return Math.max(0,masterRowTop+masterRowHeight-playheadTop);
+}
+
 export function quantizeBeat(beat,grid=0){return Math.max(0,grid>0?Math.round(beat/grid)*grid:beat)}
 
 export function draggedClipStart(pointerBeat,grabOffsetBeat,grid=0){

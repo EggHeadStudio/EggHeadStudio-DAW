@@ -338,7 +338,9 @@ button:disabled,.parameter-disabled{opacity:.55}
 .master-track-row .master-track-label{display:grid;align-content:center;gap:4px;position:sticky;left:0;z-index:6;background:#263142;border-left:3px solid var(--accent)}
 .master-track-label .track-select{font-weight:800;text-align:left}
 .master-track-label small{color:var(--text-secondary);font-size:10px}
-.master-track-lane{height:100%;background:#18212d}
+.master-track-lane{height:100%;position:relative;overflow:hidden;background:#18212d}
+.master-output-waveform{position:absolute;top:0;bottom:0;display:block;height:100%;pointer-events:none}
+.master-waveform-status{position:absolute;top:3px;left:6px;z-index:1;padding:1px 4px;border-radius:3px;background:#10131bcc;color:var(--text-secondary);font-size:9px;pointer-events:none}
 .master-track-row .master-strip{height:100%;min-height:0;box-sizing:border-box}
 .master-output-meter{grid-column:1/-1;min-height:16px}
 .master-device-context ol{display:flex;gap:8px;flex-wrap:wrap;list-style:none;padding:0}
