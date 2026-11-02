@@ -1,5 +1,16 @@
 import {getWaveformRangePeaks} from './waveform.js';
 
+export function createTrackWaveformProject(project,trackId){
+ const isolated=structuredClone(project),target=isolated.tracks.find(track=>track.id===trackId);
+ if(!target)throw new RangeError(`Cannot render a waveform for unknown track ${trackId}.`);
+ for(const track of isolated.tracks){
+  track.solo=track===target;
+  track.mute=track!==target;
+ }
+ target.mute=false;
+ return isolated;
+}
+
 export function createMasterWaveformPeaks(buffer,{samplesPerSecond=120,maxSamples=65536}={}){
  if(!buffer||!Number.isInteger(buffer.length)||buffer.length<1||!Number.isFinite(buffer.sampleRate)||buffer.sampleRate<=0||!Number.isInteger(buffer.numberOfChannels)||buffer.numberOfChannels<1)throw new TypeError('A decoded audio buffer is required to build the master waveform.');
  if(!Number.isFinite(samplesPerSecond)||samplesPerSecond<=0||!Number.isInteger(maxSamples)||maxSamples<1)throw new RangeError('Master waveform resolution must be positive.');

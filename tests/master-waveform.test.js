@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createMasterWaveformPeaks,cropMasterAudioBuffer,fitMasterRange,masterRangeInSeconds} from '../src/master-waveform.js';
+import {createMasterWaveformPeaks,createTrackWaveformProject,cropMasterAudioBuffer,fitMasterRange,masterRangeInSeconds} from '../src/master-waveform.js';
 import {playheadHeightToMaster} from '../src/timeline.js';
 
 function buffer(channels,sampleRate){
@@ -33,6 +33,23 @@ test('master waveform rejects invalid audio buffers and resolution',()=>{
  assert.throws(()=>createMasterWaveformPeaks(null),TypeError);
  const output=buffer([new Float32Array([0])],1);
  assert.throws(()=>createMasterWaveformPeaks(output,{samplesPerSecond:0}),RangeError);
+});
+
+test('isolated track waveform renders muted tracks without changing project mute or solo state',()=>{
+ const project={tracks:[
+  {id:'muted-audio',mute:true,solo:false,clips:[]},
+  {id:'other',mute:false,solo:true,clips:[]}
+ ]};
+ const isolated=createTrackWaveformProject(project,'muted-audio');
+ assert.deepEqual(isolated.tracks.map(({mute,solo})=>({mute,solo})),[
+  {mute:false,solo:true},
+  {mute:true,solo:false}
+ ]);
+ assert.deepEqual(project.tracks.map(({mute,solo})=>({mute,solo})),[
+  {mute:true,solo:false},
+  {mute:false,solo:true}
+ ]);
+ assert.throws(()=>createTrackWaveformProject(project,'missing'),RangeError);
 });
 
 test('master export ranges enforce a one-beat minimum and convert using tempo',()=>{

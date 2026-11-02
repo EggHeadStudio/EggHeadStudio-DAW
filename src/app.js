@@ -8,7 +8,7 @@ import {ArrangementHistory,copyTimeRange,pasteTimeRange,duplicateClip,moveClipTo
 import {createInstrumentClip,isInstrumentClip,instrumentType,makePatternIndependent,migrateInstrumentArrangement,patternForClip} from './instrument-clips.js';
 import {selectedPatternContext,setPatternLength} from './pattern-editor.js';
 import {TimelineScale,anchoredTimelineScrollLeft,formatTransportTime,playheadBeatAtSeconds,playheadHeightToMaster,timelineBeatsAtClientX as timelineBeatsAtScale,timelineContentOrigin,timelinePixelsAtClientX} from './timeline.js';
-import {createMasterWaveformPeaks,fitMasterRange,masterRangeInSeconds} from './master-waveform.js';
+import {createMasterWaveformPeaks,createTrackWaveformProject,fitMasterRange,masterRangeInSeconds} from './master-waveform.js';
 import {createEmptyProject,createProjectTrack,deleteProjectTrack,DEFAULT_MASTER_SETTINGS,normalizeArrangementLoop,normalizeProjectSchema,parseProject,planProjectReset,serializeProject} from './project-state.js';
 import {createEmptySampleSession,resolveRecordingChunks,shouldConfirmSampleDiscard} from './sample-lifecycle.js';
 import {DEFAULT_MASTERING_SETTINGS,MASTERING_PRESETS,analyzeMasterBufferAsync,normalizeMasteringSettings,createMasteringGraph} from './mastering.js';
@@ -226,12 +226,14 @@ function cancelMasterWaveformRender(){
 function requestMasterWaveformRender(){
  if(view!=='arrange')return;
  clearTimeout(masterWaveTimer);masterWaveController?.abort();masterWaveController=null;const generation=++masterWaveGeneration,status=$('#masterWaveformStatus');
- if(masterWavePeaks&&masterWaveformStateKey()!==masterWaveSignature){masterWavePeaks=null;trackWavePeaks.clear();trackWaveFailures.clear();queueMasterWaveformDraw()}
+ if(masterWavePeaks&&masterWaveformStateKey()!==masterWaveSignature){masterWavePeaks=null;trackWaveFailures.clear();queueMasterWaveformDraw()}
  if(status){status.textContent=engine.playing?'Waiting for playback to stop…':'Updating final output…';status.title='Rendered from the complete arrangement and its active track and master processing.'}
  masterWaveTimer=setTimeout(async()=>{
   masterWaveTimer=0;if(generation!==masterWaveGeneration||view!=='arrange'||engine.playing)return;
   const key=masterWaveformStateKey();
   const targets=project.tracks.filter(track=>instrumentType(track)==='audio'&&track.clips.some(clip=>clip.asset));
+  const targetIds=new Set(targets.map(track=>track.id));
+  for(const id of trackWavePeaks.keys())if(!targetIds.has(id))trackWavePeaks.delete(id);
   if(key===masterWaveSignature&&masterWavePeaks&&targets.every(track=>trackWavePeaks.has(track.id))){if(status)status.textContent=`Final output · ${masterWavePeaks.duration.toFixed(1)} s`;queueMasterWaveformDraw();return}
   const controller=new AbortController();masterWaveController=controller;
   try{
@@ -241,12 +243,9 @@ function requestMasterWaveformRender(){
    masterWavePeaks=createMasterWaveformPeaks(rendered);masterWaveSignature=key;
    if(status)status.textContent=`Final output · ${masterWavePeaks.duration.toFixed(1)} s`;
    queueMasterWaveformDraw();
-   trackWavePeaks.clear();
-   for(const track of project.tracks){
-    if(instrumentType(track)!=='audio'||!track.clips.some(clip=>clip.asset))continue;
+   for(const track of targets){
     if(controller.signal.aborted||generation!==masterWaveGeneration||view!=='arrange')return;
-    const isolated=structuredClone(project);
-    for(const item of isolated.tracks){item.solo=item.id===track.id;if(item.id!==track.id)item.mute=true}
+    const isolated=createTrackWaveformProject(project,track.id);
     if(status)status.textContent=`Final output · rendering ${track.name} stereo waveform…`;
     let trackBuffer;
     try{trackBuffer=await engine.render(isolated,buffers,{signal:controller.signal})}

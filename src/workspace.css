@@ -384,7 +384,7 @@ button:disabled,.parameter-disabled{opacity:.55}
 .master-output-waveform{position:absolute;top:0;bottom:0;display:block;height:100%;pointer-events:none}
 .master-waveform-status{position:absolute;top:3px;left:6px;z-index:1;padding:1px 4px;border-radius:3px;background:#10131bcc;color:var(--text-secondary);font-size:9px;pointer-events:none}
 .master-export-range{position:absolute;top:0;bottom:0;z-index:2;display:flex;min-width:2px;border:1px solid #9ce8d6;background:#9ce8d626;touch-action:none}
-.master-range-body{flex:1;min-width:0;padding:0;border:0;border-radius:0;background:transparent;cursor:grab;touch-action:none}
+.master-range-body,.master-range-body:hover,.master-range-body:active,.master-range-body:focus-visible{flex:1;min-width:0;padding:0;border:0;border-radius:0;background:transparent!important;cursor:grab;touch-action:none}
 .master-range-handle{flex:none;width:14px;min-width:14px;padding:0;border:0;border-radius:0;background:#9ce8d67a;cursor:ew-resize;touch-action:none}
 .master-range-handle:hover,.master-range-handle:focus-visible{background:var(--focus)}
 .master-export-range:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}

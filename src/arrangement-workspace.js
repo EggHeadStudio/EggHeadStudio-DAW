@@ -28,19 +28,26 @@ function drawPattern(canvas,track,clip,window,height){
 function drawClipWave(canvas,buffer,clip,window,height){
   const width=Math.max(1,Math.ceil(window.width)),dpr=Math.min(devicePixelRatio||1,2),rate=clip.rate||1;
   canvas.width=width*dpr;canvas.height=height*dpr;
-  const context=canvas.getContext('2d');context.scale(dpr,dpr);context.strokeStyle='#10252aa0';
+  const context=canvas.getContext('2d');context.scale(dpr,dpr);
   const start=Math.floor(clip.start*buffer.sampleRate),end=Math.min(buffer.length,Math.ceil(clip.end*buffer.sampleRate)),cycle=end-start;
   if(cycle<=0)return;
   const sourceFrames=(clip.loop?clipDurationSeconds(clip)*rate:clip.end-clip.start)*buffer.sampleRate;
   const offset=sourceFrames*window.start,span=sourceFrames*(window.end-window.start)/width;
-  for(let x=0;x<width;x++){
-    const phase=clip.loop?Math.floor((clip.loopOffset||0)*buffer.sampleRate+offset+x*span)%cycle:Math.floor(offset+x*span),from=start+phase;
-    const peaks=clip.loop&&span>=cycle?getWaveformRangePeaks(buffer,0,start,end):getWaveformRangePeaks(buffer,0,from,Math.min(end,Math.ceil(from+span)));
-    if(clip.loop&&span<cycle&&from+span>end){
-      const head=getWaveformRangePeaks(buffer,0,start,Math.ceil(start+from+span-end));
-      peaks.minimum=Math.min(peaks.minimum,head.minimum);peaks.maximum=Math.max(peaks.maximum,head.maximum);
+  const channels=Math.min(2,buffer.numberOfChannels||1);
+  for(let channel=0;channel<2;channel++){
+    const sourceChannel=Math.min(channel,channels-1),center=height*(channel===0?.27:.73),amplitude=height*.22;
+    context.strokeStyle=channel===0?'#10252aaa':'#10252a70';
+    context.beginPath();
+    for(let x=0;x<width;x++){
+      const phase=clip.loop?Math.floor((clip.loopOffset||0)*buffer.sampleRate+offset+x*span)%cycle:Math.floor(offset+x*span),from=start+phase;
+      const peaks=clip.loop&&span>=cycle?getWaveformRangePeaks(buffer,sourceChannel,start,end):getWaveformRangePeaks(buffer,sourceChannel,from,Math.min(end,Math.ceil(from+span)));
+      if(clip.loop&&span<cycle&&from+span>end){
+        const head=getWaveformRangePeaks(buffer,sourceChannel,start,Math.ceil(start+from+span-end));
+        peaks.minimum=Math.min(peaks.minimum,head.minimum);peaks.maximum=Math.max(peaks.maximum,head.maximum);
+      }
+      context.moveTo(x,center-peaks.maximum*amplitude);context.lineTo(x,center-peaks.minimum*amplitude);
     }
-    context.beginPath();context.moveTo(x,(1-peaks.maximum)*height/2);context.lineTo(x,(1-peaks.minimum)*height/2);context.stroke();
+    context.stroke();
   }
 }
 
