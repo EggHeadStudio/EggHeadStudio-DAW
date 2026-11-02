@@ -25,6 +25,7 @@ function fakeContext(){
     createBiquadFilter(){const result=node('biquad');nodes.push(result);return result},
     createWaveShaper(){const result=node('waveshaper');nodes.push(result);return result},
     createDynamicsCompressor(){const result=node('compressor');nodes.push(result);return result},
+    createAnalyser(){const result=node('analyser');nodes.push(result);return result},
     createChannelSplitter(){const result=node('splitter');nodes.push(result);return result},
     createChannelMerger(){const result=node('merger');nodes.push(result);return result}
   };
@@ -81,13 +82,16 @@ test('mastering graph routes modules in order and updates live parameters',()=>{
   assert.ok(graph.latencyFrames>0);
   assert.ok(Math.abs(graph.inputTrim.gain.value-10**(6/20))<1e-6);
   assert.equal(context.nodes.find(item=>item.type==='waveshaper').oversample,'4x');
+  const meterSink=context.nodes.find(item=>item!==destination&&item.type==='gain'&&item.connections.some(connection=>connection.target===destination));
+  assert.ok(meterSink);
+  assert.equal(meterSink.gain.value,0);
   const inverter=context.nodes.filter(item=>item.type==='gain').find(item=>item.gain.value===-1);
   assert.ok(inverter);
   graph.update({...settings,imager:{enabled:true,width:.5},limiter:{enabled:false,ceiling:-1}});
   assert.equal(graph.limiter.messages.at(-1).settings.enabled,false);
   assert.equal(graph.input.connections[0].target.type,'gain');
-  assert.equal(graph.input.connections[0].target.connections[0].target.type,'highpass');
-  assert.ok(graph.nodes.at(-1).connections.includes(destination));
+  assert.ok(graph.input.connections[0].target.connections.some(connection=>connection.target.type==='highpass'));
+  assert.ok(graph.nodes.some(node=>node.connections.some(connection=>connection.target===destination)));
 });
 
 test('master presets change real DSP parameters and are independent of defaults',()=>{

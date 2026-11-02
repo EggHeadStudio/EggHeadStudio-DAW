@@ -77,6 +77,7 @@
 .workspace .browser{min-width:150px;max-width:320px;resize:horizontal;overflow:auto}
 @media(max-width:850px){
   .workspace .clip{touch-action:none}
+  .workspace .clip{touch-action:none}
   .workspace .lane{touch-action:pan-x pan-y}
   .workspace .editor{min-height:650px;height:calc(100dvh - 230px)}
   .workspace .browser{max-width:100%;resize:none}
@@ -101,8 +102,8 @@
   .workspace .clip:not(.clip-selected) .clip-handle{pointer-events:none;opacity:0}
   .workspace .arrangement:not(.clip-edit-mode):not(.range-mode):not(.mobile-clip-trim-mode) .clip-selected .clip-handle{pointer-events:none}
   .workspace .arrangement.mobile-clip-trim-mode .clip-selected .clip-handle{pointer-events:auto}
-  .workspace .clip-selected .clip-handle{width:30px;background:#fff2;opacity:1}
-  .workspace .clip-selected .clip-handle::after{left:13px;width:3px;background:#fff}
+  .workspace .arrangement.mobile-clip-trim-mode .clip-selected .clip-handle{width:24px;background:#fff3;opacity:1}
+  .workspace .arrangement.mobile-clip-trim-mode .clip-selected .clip-handle::after{left:3px;width:2px;background:#fff}
   .workspace .clip-move-active{outline:2px solid #ffdd85;outline-offset:1px;filter:brightness(.65)}
   .workspace .pinch-preview{will-change:transform}
 }

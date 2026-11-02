@@ -139,7 +139,10 @@ export function createMasteringGraph(ctx,settings,destination){
  if(current.limiter.enabled&&!limiterAvailable)throw new Error('The mastering limiter requires AudioWorklet support in this browser.');
  const limiter=limiterAvailable?new globalThis.AudioWorkletNode(ctx,'egghead-lookahead-limiter',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[2],channelCount:2,channelCountMode:'explicit',processorOptions:{channels:2,lookaheadSeconds:current.limiter.lookaheadMs/1000,settings:{enabled:current.limiter.enabled,ceilingDbtp:current.limiter.ceiling,releaseSeconds:current.limiter.release}}}):null;
  const preAnalyser=ctx.createAnalyser?.()||null,postAnalyser=ctx.createAnalyser?.()||null;
+ const meterSplitter=postAnalyser&&ctx.createChannelSplitter?.(2),leftMeter=meterSplitter&&ctx.createAnalyser?.(),rightMeter=meterSplitter&&ctx.createAnalyser?.(),meterSink=leftMeter&&rightMeter&&ctx.createGain?.();
  for(const analyser of [preAnalyser,postAnalyser])if(analyser){analyser.fftSize=2048;analyser.smoothingTimeConstant=.75;analyser.minDecibels=-90;analyser.maxDecibels=0;nodes.push(analyser)}
+ for(const analyser of [leftMeter,rightMeter])if(analyser){analyser.fftSize=2048;analyser.smoothingTimeConstant=0;nodes.push(analyser)}
+ if(meterSplitter&&leftMeter&&rightMeter&&meterSink){meterSink.gain.value=0;nodes.push(meterSplitter,meterSink);postAnalyser.connect(meterSplitter);meterSplitter.connect(leftMeter,0);meterSplitter.connect(rightMeter,1);leftMeter.connect(meterSink);rightMeter.connect(meterSink);meterSink.connect(destination)}
  if(preAnalyser)inputTrim.connect(preAnalyser);
  const modules={
   eq:{input:highpass,output:lowpass},
@@ -197,7 +200,7 @@ export function createMasteringGraph(ctx,settings,destination){
  multiband?.port.start?.();
  if(limiter)limiter.port.onmessage=event=>{if(event.data?.type==='gain-reduction')graph.gainReductionDb=Math.max(0,Number(event.data.db)||0)};
  if(multiband)multiband.port.onmessage=event=>{if(event.data?.type==='gain-reduction')graph.multibandGainReduction=event.data.bands||[0,0,0]};
- const graph={input,nodes,eqFilters,bands,get eqTaps(){return{pre:eqPre,post:eqActive?lowpass:eqPre}},limiter,multiband,inputTrim,preAnalyser,postAnalyser,gainReductionDb:0,multibandGainReduction:[0,0,0],get moduleOrder(){return [...connectedOrder]},get latencyFrames(){return latencyFrames},disconnect(){input.disconnect();for(const node of nodes){disposeProcessor(node);node.disconnect()}},update};
+ const graph={input,nodes,eqFilters,bands,get eqTaps(){return{pre:eqPre,post:eqActive?lowpass:eqPre}},limiter,multiband,inputTrim,preAnalyser,postAnalyser,leftMeter,rightMeter,gainReductionDb:0,multibandGainReduction:[0,0,0],get moduleOrder(){return [...connectedOrder]},get latencyFrames(){return latencyFrames},disconnect(){input.disconnect();for(const node of nodes){disposeProcessor(node);node.disconnect()}},update};
  return graph;
 }
 

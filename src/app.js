@@ -31,9 +31,15 @@ import {closeMobileFocus,mountMobileFocus,mobileFocusStage} from './mobile-focus
 import {mountPianoPerformance,mountDrumPerformance} from './mobile-performance.js';
 import {mountPwaUpdates} from './pwa-updates.js';
 import {registerFactoryLibrary,registerLazySample} from './factory-library.js';
+import {SAMPLE_LIBRARY_KEY,buildLibraryTree,createSampleLibrary,findLibraryDuplicate,libraryFolderForAsset,moveLibraryAsset,moveLibraryFolder,normalizeLibraryPath,registerLibraryAsset,removeLibraryFolder,renameLibraryFolder,unpackSamplePack} from './sample-library.js';
 import {mountBuildIdentity} from './build-identity.js';
 const workspaceNavigation=new WorkspaceNavigation();
 const HIDDEN_LIBRARY_ASSETS_KEY='pulse-hidden-library-assets-v1';
+function loadSampleLibrary(){
+ try{return createSampleLibrary(JSON.parse(localStorage.getItem(SAMPLE_LIBRARY_KEY)||'null'))}
+ catch(error){console.warn('Could not restore sample-library folders.',error);return createSampleLibrary()}
+}
+const sampleLibrary=loadSampleLibrary();
 function loadHiddenLibraryAssets(){
  try{
   const saved=JSON.parse(localStorage.getItem(HIDDEN_LIBRARY_ASSETS_KEY)||'[]');
@@ -62,10 +68,10 @@ function mobileBack(){
 let eqEditors=[];
 function disposeEqEditors(){eqEditors.forEach(editor=>editor.dispose());eqEditors=[]}
 function refreshEqEditors(){eqEditors.forEach(editor=>editor.refresh())}
-const arrangementWorkspaceState={selection:null,insertionBeat:0,selectMode:false,clipMode:null,follow:false,browserOpen:true,mixerOpen:true,devicesOpen:true,compactDevices:true,libraryFilter:''};
+const arrangementWorkspaceState={selection:null,insertionBeat:0,selectMode:false,clipMode:null,follow:false,browserOpen:true,mixerOpen:true,devicesOpen:true,compactDevices:true,libraryFilter:'',masterSelected:false};
 let arrangementWorkspace=null;
 const $=s=>document.querySelector(s),app=$('#app'),engine=new AudioEngine(),arrangementHistory=new ArrangementHistory();let project={id:uid(),schemaVersion:1,name:'Untitled Project',bpm:120,loop:false,loopStart:0,loopEnd:4,patternBeats:64,releaseMetadata:{},exportSettings:normalizeExportSettings(),tracks:['Drums','Bass','Synth','Audio'].map((name,i)=>({id:uid(),name,volume:.85,pan:0,mute:false,solo:false,color:['#df8c72','#77bdb2','#9b91dc','#d3b66c'][i],clips:[],fx:{filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25}})),mastering:normalizeMasteringSettings(DEFAULT_MASTERING_SETTINGS)},assets=new Map(),buffers=new Map(),folderHandle=null,selectedTrack=0,selectedClip=null,playhead=0,recordStream=null,recorder=null,chunks=[],recordBlob=null,recordBuffer=null,sampleEditor=null,savedSampleId=null,previewSource=null,previewCursorFrame=0,previewRaf=0,recordingRaf=0,recordingStartedAt=0,recordingAnalyser=null,recordingSource=null,recordingToken=0,projectDirty=false,view='arrange',zoom=1,snapGrid=.25,arrangementClipboard=null,masteringPreview=null,masteringPreviewRevision=0,masteringRevision=0,masteringAB='B',masteringPlayback=null,masteringPausedOffset=0,masterLevelMatch=true,masterMonitorMode='stereo',masterSpectrumPeak=null,masterSpectrumHoldTime=0,masteringAnalysisController=null,exportController=null,exportRun=null,exportDownloadUrl=null,releaseZipController=null,releaseArtworkBlob=null,releaseArtworkSourceBlob=null,releaseArtworkUrl=null;
-let portableImportController=null;
+let portableImportController=null,assetImportController=null;
 let sampleCapturePending=false;
 let sampleCaptureFinalizing=false,projectImportPending=false,sampleLoadPending=false,sampleSavePending=false,assetImportPending=false;
 let pointerGesturePending=false,keyboardGesturePending=false;
@@ -75,7 +81,7 @@ let renderedWorkspace=null,transportPending=false;
 const portableBufferDigests=new WeakMap();
 const dbp=new Promise((resolve,reject)=>{const r=indexedDB.open('pulse-studio-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('assets');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
 const recordingStudio=new RecordingStudio({engine,getProject:()=>project,assets,buffers,save,notify,
- storeAsset:async(id,file,buffer)=>{await dbSet(id,file);buffers.set(id,buffer);assets.set(id,{id,name:file.name,path:file.name,size:file.size,duration:buffer.duration})},
+ storeAsset:async(id,file,buffer)=>{await dbSet(id,file);buffers.set(id,buffer);assets.set(id,{id,name:file.name,path:file.name,size:file.size,duration:buffer.duration});registerLibraryAsset(sampleLibrary,id,{folder:''});persistSampleLibrary()},
  createTrack:()=>{const track=createProjectTrack({name:`Recording ${project.tracks.length+1}`,color:'#db8a70'},uid());project.tracks.push(track);save();return track},
  openSample:openInstrumentSample,
  openArrangement:(trackId,clipId)=>{selectedTrack=project.tracks.findIndex(track=>track.id===trackId);selectedClip=clipId;view='arrange';render()},
@@ -128,7 +134,7 @@ function pwaUpdateBlockers(){
  if(engine.playing||masteringPlayback||sampleStudioPreviewPlaying())blockers.push('Stop audio playback before updating.');
  return blockers;
 }
-async function dbSet(k,v){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets','readwrite');t.objectStore('assets').put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}async function dbGet(k){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets');const r=t.objectStore('assets').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+async function dbSet(k,v){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets','readwrite');t.objectStore('assets').put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}async function dbGet(k){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets');const r=t.objectStore('assets').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}async function dbDelete(k){const db=await dbp;return new Promise((res,rej)=>{const t=db.transaction('assets','readwrite');t.objectStore('assets').delete(k);t.oncomplete=res;t.onerror=()=>rej(t.error)})}
 async function dbSetMany(entries){const db=await dbp;return new Promise((resolve,reject)=>{const tx=db.transaction('assets','readwrite'),store=tx.objectStore('assets');for(const[key,value]of entries)value===null?store.delete(key):store.put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Asset cache transaction was aborted.'))})}
 function notify(s){$('#toast').textContent=s;$('#toast').classList.add('show');setTimeout(()=>$('#toast')?.classList.remove('show'),3500)}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -315,7 +321,7 @@ function wireShell(){
  $('#loop').onclick=()=>{checkpointArrangement();project.loop=!project.loop;save();$('#loop').classList.toggle('active',project.loop);if(view==='arrange')render()};
  $('#newProject').onclick=openNewProjectDialog;
  $('#play').onclick=()=>toggleWorkspacePlayback().catch(error=>notify(error.message));
- $('#stop').onclick=()=>{if(recordingStudio.busy){if(recordingStudio.state==='requesting')recordingStudio.cancel();else recordingStudio.finish();return}if(view==='sample'){$('#stopPreview')?.click();return}if(view==='master'){stopMasteringPlayback();return}engine.stop();playhead=engine.offset;$('#play').textContent='▶';tick(playhead)};
+ $('#stop').onclick=()=>{if(recordingStudio.busy){if(recordingStudio.state==='requesting')recordingStudio.cancel();else recordingStudio.finish();return}if(view==='sample'){$('#stopPreview')?.click();return}if(view==='master'){stopMasteringPlayback();return}const wasPlaying=engine.playing;engine.stop(!wasPlaying);playhead=engine.offset;$('#play').textContent='▶';tick(playhead)};
  $('#toStart').onclick=()=>{if(recordingStudio.busy||recorder?.state==='recording'){notify('Finish microphone recording before returning to start.');return}if(view==='sample'){$('#stopPreview')?.click();return}if(view==='master'){stopMasteringPlayback();return}engine.stop(true);playhead=0;tick(0);$('#play').textContent='▶'};
  $('#saveProject').onclick=()=>saveProjectFile();
  $('#saveEhs').onclick=savePortableProject;
@@ -326,7 +332,7 @@ function wireShell(){
  $('#exportMix').onclick=()=>openExportStudio();
  $$('[data-view]').forEach(b=>b.onclick=()=>navigateWorkspace(b.dataset.view));
  $('#importFiles').onchange=e=>{const files=[...e.target.files];e.target.value='';importFiles(files).catch(error=>notify(`Sample import failed: ${error.message}`))};
- $('#importFolder').onchange=e=>{const files=[...e.target.files];e.target.value='';importFiles(files).catch(error=>notify(`Folder import failed: ${error.message}`))};
+ $('#importFolder').onchange=e=>{const base=selectedUserFolder();const files=[...e.target.files].map(file=>({file,folder:[base,(file.webkitRelativePath||'').split('/').slice(0,-1).join('/')].filter(Boolean).join('/')}));e.target.value='';importFiles(files).catch(error=>notify(`Folder import failed: ${error.message}`))};
  engine.onTick=t=>{playhead=t;tick(t);updateTransportButton()};
  engine.onMeter=meters=>updateTrackMeters(app,meters);
  engine.onEnd=()=>$('#play').textContent='▶';
@@ -335,29 +341,67 @@ function wireShell(){
  mountMobileShell(app,{navigate:navigateWorkspace,back:mobileBack,blocked:navigationBlocked,onBlocked:navigationWarning});
 }
 const $$=s=>[...document.querySelectorAll(s)];
-async function addAsset(file){
- const path=file.webkitRelativePath||file.name;
+function persistSampleLibrary(){
+ try{localStorage.setItem(SAMPLE_LIBRARY_KEY,JSON.stringify(sampleLibrary));return true}
+ catch(error){notify(`Could not save sample-library organization: ${error.message}`);return false}
+}
+function selectedUserFolder(){
+ const selected=sampleLibrary.selected||'';
+ if(selected==='User'||selected==='User Library')return'';
+ if(selected.startsWith('User/'))return selected.slice(5);
+ return sampleLibrary.folders.includes(selected)?selected:'';
+}
+function mutateSampleLibrary(update){
+ const previous=structuredClone(sampleLibrary);
+ try{update();if(!persistSampleLibrary()){Object.assign(sampleLibrary,previous);return false}return true}
+ catch(error){Object.assign(sampleLibrary,previous);throw error}
+}
+async function addAsset(file,folder){
+ const relativePath=file.webkitRelativePath||'',path=relativePath||file.name;
+ const targetFolder=normalizeLibraryPath(folder===undefined?(relativePath?relativePath.split('/').slice(0,-1).join('/'):selectedUserFolder()):folder);
  const existing=[...assets.values()].find(asset=>asset.name===file.name&&asset.path===path&&asset.size===file.size&&(asset.lastModified||0)===(file.lastModified||0));
  if(existing){if(hiddenLibraryAssets.has(existing.id)){const next=new Set(hiddenLibraryAssets);next.delete(existing.id);if(!persistHiddenLibraryAssets(next))throw new Error('The sample was already in the library, but its hidden state could not be updated.')}await existing.load?.();return existing.id}
- const bytes=await file.arrayBuffer(),ctx=await engine.init({resume:false}),buffer=await ctx.decodeAudioData(bytes),id=uid();
+ const bytes=await file.arrayBuffer();
+ if(!globalThis.crypto?.subtle)throw new Error('Sample deduplication requires Web Crypto in a secure browser context.');
+ const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(value=>value.toString(16).padStart(2,'0')).join(''),duplicate=findLibraryDuplicate(sampleLibrary,digest)||await findLegacyLibraryDuplicate(digest,file.size);
+ if(duplicate){await assets.get(duplicate)?.load?.();if(hiddenLibraryAssets.has(duplicate)){const next=new Set(hiddenLibraryAssets);next.delete(duplicate);if(!persistHiddenLibraryAssets(next))throw new Error('Matching audio exists but its hidden library state could not be updated.')}return duplicate}
+ const ctx=await engine.init({resume:false}),buffer=await ctx.decodeAudioData(bytes.slice(0)),id=uid();
  await dbSet(id,file);
- assets.set(id,{id,name:file.name,path,size:file.size,lastModified:file.lastModified||0,duration:buffer.duration});buffers.set(id,buffer);return id;
+ const previousLibrary=structuredClone(sampleLibrary);
+ registerLibraryAsset(sampleLibrary,id,{folder:targetFolder,sha256:digest});
+ if(!persistSampleLibrary()){Object.assign(sampleLibrary,previousLibrary);await dbDelete(id);throw new Error('Sample audio was not added because its folder metadata could not be saved.')}
+ assets.set(id,{id,name:file.name,path:targetFolder?`User / ${targetFolder} / ${file.name}`:`User / ${file.name}`,size:file.size,lastModified:file.lastModified||0,duration:buffer.duration});buffers.set(id,buffer);return id;
+}
+async function findLegacyLibraryDuplicate(digest,size){
+ let changed=false;const previous=structuredClone(sampleLibrary);
+ for(const[id,record]of Object.entries(sampleLibrary.assets)){
+  if(record.sha256)continue;
+  const file=await dbGet(id);if(!(file instanceof Blob)||file.size!==size)continue;
+  const bytes=await file.arrayBuffer(),hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(value=>value.toString(16).padStart(2,'0')).join('');
+  record.sha256=hash;changed=true;
+  if(hash===digest){if(!persistSampleLibrary()){Object.assign(sampleLibrary,previous);throw new Error('Matching legacy sample found, but its library metadata could not be saved.')}return id}
+ }
+ if(changed&&!persistSampleLibrary()){Object.assign(sampleLibrary,previous);throw new Error('Legacy sample fingerprints could not be saved.')}
+ return null;
 }
 function persistHiddenLibraryAssets(next){
  try{localStorage.setItem(HIDDEN_LIBRARY_ASSETS_KEY,JSON.stringify([...next]));hiddenLibraryAssets.clear();for(const id of next)hiddenLibraryAssets.add(id);return true}
  catch(error){notify(`Could not update the sample library: ${error.message}`);return false}
 }
-async function importFiles(files){
+async function importFiles(files,{progressLabel='sample files'}={}){
  if(assetImportPending){notify('A sample import is already in progress. Wait for it to finish before importing again.');return}
- let imported=0,failed=0;assetImportPending=true;
+ let imported=0,failed=0;assetImportPending=true;assetImportController ||= new AbortController();
  try{
-  for(const file of files){
-   if(!/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(file.name)&&!file.type.startsWith('audio/'))continue;
-   try{await addAsset(file);imported++;drawList($('#search')?.value??arrangementWorkspaceState.libraryFilter)}catch(error){failed++;console.warn(`Could not import ${file.name}.`,error);notify(`Could not import ${file.name}: ${error.message}`)}
+  const entries=[...files];
+  for(let index=0;index<entries.length;index++){
+   if(assetImportController.signal.aborted)break;
+   const entry=entries[index],file=entry.file||entry,folder=entry.folder;
+   if(!/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(file.name)&&!file.type.startsWith('audio/')){failed++;notify(`Unsupported sample format: ${file.name}`);continue}
+   try{await addAsset(file,folder);imported++;drawList($('#search')?.value??arrangementWorkspaceState.libraryFilter);const status=$('#sampleImportStatus');if(status)status.textContent=`Imported ${imported}/${entries.length} ${progressLabel}.`}catch(error){failed++;console.warn(`Could not import ${file.name}.`,error);notify(`Could not import ${file.name}: ${error.message}`)}
   }
   drawList($('#search')?.value||'');
-  notify(`Imported ${imported} audio files${failed?`; ${failed} failed` : ''}. Files are cached locally.`);
- }finally{assetImportPending=false}
+  notify(`${assetImportController.signal.aborted?'Import cancelled. ':''}Imported ${imported} audio files${failed?`; ${failed} failed` : ''}. Files are cached locally.`);
+ }finally{assetImportPending=false;assetImportController=null;const cancel=$('#cancelSampleImport');if(cancel)cancel.hidden=true}
 }
 async function restoreAssets(){
  const db=await dbp;
@@ -368,12 +412,16 @@ async function restoreAssets(){
   if(buffers.has(id))continue;
   const file=await dbGet(id);
   if(file instanceof Blob&&!file.type.startsWith('image/')){
-   const asset=registerLazySample(assets,buffers,{...assets.get(id),id,name:file.name||'Sample',path:file.webkitRelativePath||file.name,size:file.size,lastModified:file.lastModified||0},()=>file.arrayBuffer(),async bytes=>(await engine.init({resume:false})).decodeAudioData(bytes));
+   const stored=sampleLibrary.assets[id],relative=file.webkitRelativePath||'';
+   if(!stored)registerLibraryAsset(sampleLibrary,id,{folder:relative?relative.split('/').slice(0,-1).join('/'):'',sha256:''});
+   const folder=sampleLibrary.assets[id]?.folder||'',assetPath=stored?.path||(folder?`User / ${folder} / ${file.name||'Sample'}`:`User / ${file.name||'Sample'}`);
+   const asset=registerLazySample(assets,buffers,{...assets.get(id),id,name:file.name||'Sample',path:assetPath,size:file.size,lastModified:file.lastModified||0},()=>file.arrayBuffer(),async bytes=>(await engine.init({resume:false})).decodeAudioData(bytes));
    if(referenced.has(id)){try{await asset.load()}catch(error){console.warn(`Could not restore sample ${file.name||id}.`,error);notify(`Could not restore sample ${file.name||id}: ${error.message}`)}}
   }else if(referenced.has(id)){
    if(assets.get(id)?.factory){try{await assets.get(id).load()}catch(error){notify(error.message)}}
    else notify(`Could not restore referenced sample ${id}: local audio is missing.`);
   }
+  persistSampleLibrary();
  }
 }
 function normalizeProject(){project=normalizeProjectData(project)}
@@ -590,7 +638,7 @@ function render(){
  if(view==='arrange'){
   renderArrange();$$('.lane').forEach(lane=>lane.style.backgroundSize=`${beatsWidth()*(snapGrid||.0625)/4}px 100%`);renderSamplerBlocks();addArrangementControls();
   arrangementWorkspace=mountArrangementWorkspace({root:$('#main'),project,buffers,state:arrangementWorkspaceState,scale:timelineScale(),zoom,grid:()=>snapGrid,selectedTrack,selectedClip,checkpoint:checkpointArrangement,commit:commitArrangement,save,notify,idFactory:uid,render,onLayout:()=>tick(playhead),openClip:openInstrumentClip,openClipEditor:(id,index)=>{selectedClip=id;selectedTrack=index;render();requestAnimationFrame(()=>$('.clip-device')?.scrollIntoView({behavior:'smooth',block:'nearest'}))},createClip:addPatternClip,selectTrack:selectArrangementTrack,selectClip:(id,index)=>{selectedClip=id;selectedTrack=index;render()},activateClip:(id,index)=>{selectedClip=id;selectedTrack=index},setZoom:setArrangementZoom,seek:async seconds=>{const playing=engine.playing;if(playing)engine.stop();playhead=seconds;engine.offset=seconds;tick(seconds);if(playing)try{await engine.play(project,buffers,seconds)}catch(error){notify(error.message)}},playFrom:async beat=>{try{playhead=beat*60/project.bpm;await engine.play(project,buffers,playhead)}catch(error){notify(error.message)}},copyClip:copySelectedClip,pasteClip,duplicateClip:duplicateSelectedClip,deleteClip:deleteSelectedClip});
-  mountArrangementChrome({root:$('#main'),project,selectedTrack,selectedClip,state:arrangementWorkspaceState,addTrack:openTrackSetup,moveTrack:moveArrangementTrack,addEffect:type=>{arrangementWorkspaceState.devicesOpen=true;const select=$('#addTrackEffect');select.value=type;select.dispatchEvent(new Event('change',{bubbles:true}))},selectContext:(id,index)=>{selectedClip=id;selectArrangementTrack(index)}});
+  mountArrangementChrome({root:$('#main'),project,selectedTrack,selectedClip,state:arrangementWorkspaceState,addTrack:openTrackSetup,moveTrack:moveArrangementTrack,addEffect:type=>{arrangementWorkspaceState.devicesOpen=true;const select=$('#addTrackEffect');select.value=type;select.dispatchEvent(new Event('change',{bubbles:true}))},selectMaster:()=>{arrangementWorkspaceState.masterSelected=true;arrangementWorkspaceState.devicesOpen=true;render()},selectContext:(id,index)=>{selectedClip=id;selectArrangementTrack(index)}});
   restoreDeviceUi($('#main'),deviceUi);
   $('.arrangement').scrollLeft=scrollLeft;$('.arrangement').scrollTop=scrollTop;tick(playhead);
  }
@@ -601,6 +649,7 @@ function render(){
 }
 function selectArrangementTrack(index){
  selectedTrack=index;
+ arrangementWorkspaceState.masterSelected=false;
  if(!project.tracks[index]?.clips.some(clip=>clip.id===selectedClip))selectedClip=null;
  render();
 }
@@ -630,11 +679,18 @@ function eqResponsePath(bands,sampleRate=48000,lowCut=20,highCut=20000){
  return points.join(' ');
 }
 function renderTrackEffects(track){
+ if(arrangementWorkspaceState.masterSelected)return renderMasterDeviceContext();
  if(!track)return'<div class="effect-chain"><strong>No track selected</strong><p class="hint">Add a track to open its independent effect chain.</p></div>';
  const labels={eq:'Parametric EQ',compressor:'Compressor',delay:'Delay',reverb:'Reverb',saturation:'Saturation',limiter:'Limiter',utility:'Utility'};
  const controls=EFFECT_CONTROLS;
  const effects=track.fx?.effects||[];
  return `<div class="effect-chain"><div class="effect-chain-title"><strong>Track effects</strong><label>Add effect <select id="addTrackEffect"><option value="">Choose…</option>${Object.entries(labels).map(([type,label])=>`<option value="${type}">${label}</option>`).join('')}</select></label></div><div class="effect-presets"><label>Preset name <input id="effectPresetName" maxlength="60" placeholder="My chain"></label><button id="saveEffectPreset">Save preset</button><select id="effectPresetSelect" aria-label="Effect preset"><option value="">Choose preset…</option></select><button id="loadEffectPreset">Load preset</button></div>${effects.length?effects.map((effect,index)=>`<article class="effect-device"><header><label><input type="checkbox" data-effect-enabled="${index}" ${effect.enabled?'checked':''}> ${labels[effect.type]||esc(effect.type)}</label><div><button data-effect-up="${index}" ${index===0?'disabled':''} aria-label="Move effect up">↑</button><button data-effect-down="${index}" ${index===effects.length-1?'disabled':''} aria-label="Move effect down">↓</button><button data-effect-remove="${index}" aria-label="Remove effect">×</button></div></header>${effect.type==='eq'?`<svg class="eq-response" viewBox="0 0 420 120" role="img" aria-label="Equalizer frequency response"><path class="eq-zero" d="M0 60H420"/><path data-eq-response="${index}" d="${eqResponsePath(effect.params?.bands||[{frequency:effect.params?.frequency||1000,gain:effect.params?.gain||0,q:effect.params?.q||1},{frequency:500,gain:0,q:1},{frequency:2500,gain:0,q:1},{frequency:10000,gain:0,q:1}],engine.ctx?.sampleRate||48000,effect.params?.lowCut||20,effect.params?.highCut||20000)}"/></svg><label>Low-cut (Hz)<input type="range" min="20" max="20000" step="1" value="${effect.params?.lowCut??20}" data-effect-param="${index}" data-param="lowCut"><output>${Math.round(effect.params?.lowCut??20)}</output></label><label>High-cut (Hz)<input type="range" min="20" max="20000" step="1" value="${effect.params?.highCut??20000}" data-effect-param="${index}" data-param="highCut"><output>${Math.round(effect.params?.highCut??20000)}</output></label>${(effect.params?.bands||[{frequency:effect.params?.frequency??1000,gain:effect.params?.gain??0,q:effect.params?.q??1},{frequency:500,gain:0,q:1},{frequency:2500,gain:0,q:1},{frequency:10000,gain:0,q:1}]).map((band,bandIndex)=>`<fieldset class="eq-band"><legend>Band ${bandIndex+1}</legend>${[['frequency','Hz',20,20000,1],['gain','dB',-24,24,.5],['q','Q',.1,18,.1]].map(([key,label,min,max,step])=>`<label>${label}<input type="range" min="${min}" max="${max}" step="${step}" value="${band[key]}" data-effect-param="${index}" data-eq-band="${bandIndex}" data-param="${key}"><output>${Number(band[key]).toFixed(key==='frequency'?0:1)}</output></label>`).join('')}</fieldset>`).join('')}`:(controls[effect.type]||[]).map(([key,label,min,max,step,scale])=>`<label>${label}<input type="range" min="${min}" max="${max}" step="${step}" value="${Number(effect.params?.[key]??0)*(scale==='ms'?1000:1)}" data-scale="${scale==='ms'?'1000':'1'}" data-effect-param="${index}" data-param="${key}"><output>${Number(effect.params?.[key]??0)*(scale==='ms'?1000:1)}</output></label>`).join('')}${effect.type==='delay'?`<label>Tempo sync <input type="checkbox" data-effect-toggle="${index}" data-param="sync" ${effect.params?.sync?'checked':''}></label><label>Beat division <select data-effect-choice="${index}" data-param="division">${[[.25,'1/16'],[.5,'1/8'],[.75,'1/8 dotted'],[1,'1/4'],[1.5,'1/4 dotted'],[2,'1/2'],[4,'1 bar']].map(([value,label])=>`<option value="${value}" ${Number(effect.params?.division??1)===value?'selected':''}>${label}</option>`).join('')}</select></label>`:''}${effect.type==='utility'?`<label>Invert polarity <input type="checkbox" data-effect-toggle="${index}" data-param="invert" ${effect.params?.invert?'checked':''}></label>`:''}${effect.type==='compressor'?`<label class="reduction-meter">Gain reduction <output data-compressor-meter="${esc(effect.id)}" data-meter-track="${esc(track.id)}">0.0 dB</output></label>`:''}</article>`).join(''):'<p class="hint">Add an effect to process this track during playback and WAV export.</p>'}</div>`;
+}
+function renderMasterDeviceContext(){
+ const settings=engine.masteringSettings,order=[...(settings.chainOrder||[]),'output','limiter'];
+ const labels={eq:'Master EQ',saturation:'Saturation',imager:'Stereo Imager',multiband:'Multiband Dynamics',output:'Output',limiter:'Lookahead Limiter'};
+ const states={eq:settings.eq?.enabled!==false,saturation:Boolean(settings.saturation?.enabled),imager:Boolean(settings.imager?.enabled),multiband:Boolean(settings.multiband?.enabled),output:true,limiter:Boolean(settings.limiter?.enabled)};
+ return`<div class="effect-chain master-device-context"><div class="effect-chain-title"><strong>Master Devices</strong><span>Shared master bus · authoritative project settings</span></div><ol>${order.map(type=>`<li><span>${labels[type]||esc(type)}</span><output>${states[type]?'Enabled':'Bypassed'}</output></li>`).join('')}</ol><p>Master volume, EQ, compressor and the ordered mastering chain remain on the existing shared output bus.</p><button id="openMasteringFromRack">Open Mastering Studio</button></div>`;
 }
 function renderArrange(){
  const t=project.tracks[selectedTrack];
@@ -642,6 +698,7 @@ function renderArrange(){
  drawList(arrangementWorkspaceState.libraryFilter);wireArrange();wireTrackEffects();tick(playhead);
 }
 function wireTrackEffects(){
+ if(arrangementWorkspaceState.masterSelected)return;
  const track=project.tracks[selectedTrack];
  if(!track)return;
  track.fx ||= {filterType:'lowpass',cutoff:20000,resonance:.7,delay:0,delayTime:.25,feedback:.25};
@@ -728,16 +785,106 @@ function removeAssetFromLibrary(id){
  const next=new Set(hiddenLibraryAssets);next.add(id);
  if(persistHiddenLibraryAssets(next)){drawList($('#search')?.value||'');notify('Sample hidden from the library. Existing project audio remains available.')}
 }
+function drawLibraryFolders(){
+ const target=$('#sampleList');if(!target)return;
+ const roots=buildLibraryTree([...assets.values()].filter(asset=>!hiddenLibraryAssets.has(asset.id)),sampleLibrary);
+ const matches=asset=>!librarySearch||`${asset.name} ${libraryFolderForAsset(asset,sampleLibrary)} ${asset.factory?'Factory':'User'}`.toLowerCase().includes(librarySearch);
+ const hasMatches=[...assets.values()].some(asset=>!hiddenLibraryAssets.has(asset.id)&&matches(asset));
+ const sampleMenu=asset=>asset.factory?`<details class="library-context library-sample-context"><summary aria-label="Factory sample information">⋯</summary><div><span>Factory samples are read-only.</span></div></details>`:`<details class="library-context library-sample-context"><summary aria-label="Actions for ${esc(asset.name)}">⋯</summary><div><label>Move to<select data-move-sample="${esc(asset.id)}"><option value="">My Samples</option>${sampleLibrary.folders.map(path=>`<option value="${esc(path)}" ${sampleLibrary.assets[asset.id]?.folder===path?'selected':''}>${esc(path)}</option>`).join('')}</select></label><button data-hide-sample="${esc(asset.id)}">Remove from library</button></div></details>`;
+ const sampleRow=(asset,depth)=>`<div class="sample-item library-sample-row" style="--folder-depth:${depth}" draggable="true" data-asset="${esc(asset.id)}"><span title="${esc(asset.path)}">♫ ${esc(asset.name)}</span><button data-preview="${esc(asset.id)}" title="Preview" aria-label="Preview ${esc(asset.name)}">▶</button><button data-add="${esc(asset.id)}" title="Add at the snapped playhead" aria-label="Add ${esc(asset.name)} to selected track">＋</button>${sampleMenu(asset)}</div>`;
+ const menu=path=>`<details class="library-context"><summary aria-label="Folder actions">⋯</summary><div><button data-library-action="create" data-library-path="${esc(path)}">Create subfolder</button><button data-library-action="import-files" data-library-path="${esc(path)}">Import files here</button><button data-library-action="import-folder" data-library-path="${esc(path)}">Import folder here</button><button data-library-action="import-zip" data-library-path="${esc(path)}">Import ZIP pack here</button>${path==='User'?'':`<button data-library-action="rename" data-library-path="${esc(path)}">Rename</button><button data-library-action="move" data-library-path="${esc(path)}">Move</button><button data-library-action="remove" data-library-path="${esc(path)}">Remove folder</button>`}</div></details>`;
+ const readOnlyMenu='<details class="library-context"><summary aria-label="Factory folder information">⋯</summary><div><span>Factory folders are read-only.</span></div></details>';
+ const children=(node,rootName,depth)=>{
+  const nested=Object.values(node.children).sort((a,b)=>a.name.localeCompare(b.name)),key=rootName==='Factory'?`Factory/${node.path}`:node.path,selectedKey=rootName==='Factory'?key:`User/${node.path}`,open=librarySearch||sampleLibrary.expanded[key]!==false;
+  const sampleRows=node.assets.filter(matches).map(asset=>sampleRow(asset,depth+1)).join('');
+  return`<div class="library-node"><div class="library-folder-row ${sampleLibrary.selected===selectedKey?'library-folder-selected':''}" style="--folder-depth:${depth}"><button class="library-folder-toggle" data-library-folder="${esc(key)}" data-library-select="${esc(selectedKey)}" aria-expanded="${open}"><span class="library-chevron">${open?'▾':'▸'}</span><span class="library-folder-icon" aria-hidden="true"><svg viewBox="0 0 16 14" focusable="false"><path class="folder-tab" d="M1.5 2.5h4l1.4 1.6h7.6v1.4H1.5z"/><path class="folder-body" d="M1.5 4.5h13l-1.2 7.8H2.7z"/></svg></span><span class="library-folder-name">${esc(node.name)}</span></button>${rootName==='User'?menu(node.path):readOnlyMenu}</div>${open?`${sampleRows}${nested.map(child=>children(child,rootName,depth+1)).join('')}`:''}</div>`;
+ };
+ const root=(node,rootName)=>{
+  const key=rootName==='Factory'?'Factory':'User',open=librarySearch||sampleLibrary.expanded[key]!==false,nested=Object.values(node.children).sort((a,b)=>a.name.localeCompare(b.name));
+  const count=tree=>tree.assets.length+Object.values(tree.children).reduce((sum,item)=>sum+count(item),0);
+  const sampleRows=node.assets.filter(matches).map(asset=>sampleRow(asset,1)).join('');
+  return`<div class="library-node"><div class="library-folder-row library-root-row ${sampleLibrary.selected===key?'library-folder-selected':''}" style="--folder-depth:0"><button class="library-folder-toggle" data-library-folder="${key}" aria-expanded="${open}"><span class="library-chevron">${open?'▾':'▸'}</span><span class="library-folder-icon" aria-hidden="true"><svg viewBox="0 0 16 14" focusable="false"><path class="folder-tab" d="M1.5 2.5h4l1.4 1.6h7.6v1.4H1.5z"/><path class="folder-body" d="M1.5 4.5h13l-1.2 7.8H2.7z"/></svg></span><span class="library-folder-name">${rootName==='Factory'?'Factory Library':'My Samples'}</span><small>${count(node)}</small></button>${rootName==='User'?menu('User'):readOnlyMenu}</div>${open?`${sampleRows}${nested.map(child=>children(child,rootName,1)).join('')}`:''}</div>`;
+ };
+ target.classList.add('sample-folder-tree');
+ target.innerHTML=`${root(roots.Factory,'Factory')}${root(roots.User,'User')}${librarySearch&&!hasMatches?'<div class="empty">No matching samples.</div>':''}`;
+ target.querySelectorAll('[data-library-folder]').forEach(button=>button.onclick=event=>{if(button.dataset.longPressed){button.dataset.longPressed='';event.preventDefault();return}const key=button.dataset.libraryFolder;if(!mutateSampleLibrary(()=>{sampleLibrary.selected=button.dataset.librarySelect||key;sampleLibrary.expanded[key]=sampleLibrary.expanded[key]===false}))return;drawList($('#search')?.value||'')});
+ target.querySelectorAll('[data-library-action]').forEach(button=>button.onclick=()=>handleLibraryFolderAction(button.dataset.libraryAction,button.dataset.libraryPath));
+ target.querySelectorAll('.library-folder-row').forEach(row=>{
+  let holdTimer;
+  row.addEventListener('contextmenu',event=>{const details=row.querySelector('.library-context');if(details){event.preventDefault();details.open=true}});
+  row.addEventListener('pointerdown',event=>{if(!event.target.closest('.library-folder-toggle'))return;holdTimer=setTimeout(()=>{const details=row.querySelector('.library-context');if(details){details.open=true;row.querySelector('[data-library-folder]')?.setAttribute('data-long-pressed','true')}},500)});
+  for(const type of ['pointerup','pointerleave','pointercancel'])row.addEventListener(type,()=>clearTimeout(holdTimer));
+ });
+ target.querySelectorAll('[data-preview]').forEach(button=>button.onclick=()=>previewAsset(button.dataset.preview).catch(error=>notify(`Sample preview failed: ${error.message}`)));
+ target.querySelectorAll('[data-add]').forEach(button=>button.onclick=()=>insertSampleAtPlayhead(button.dataset.add));
+ target.querySelectorAll('[data-hide-sample]').forEach(button=>button.onclick=()=>removeAssetFromLibrary(button.dataset.hideSample));
+ target.querySelectorAll('[data-move-sample]').forEach(select=>select.onchange=()=>{try{if(!mutateSampleLibrary(()=>moveLibraryAsset(sampleLibrary,select.dataset.moveSample,select.value)))return;drawList($('#search')?.value||'')}catch(error){notify(error.message)}});
+ target.querySelectorAll('[data-asset]').forEach(element=>element.ondragstart=event=>event.dataTransfer.setData('text/sample',element.dataset.asset));
+}
+let librarySearch='';
+async function handleLibraryFolderAction(action,path){
+ const userPath=path==='User'?'':path;
+ if(action.startsWith('import-')){
+  if(!mutateSampleLibrary(()=>{sampleLibrary.selected=userPath?`User/${userPath}`:'User'}))return;
+  if(action==='import-files')$('#importFiles').click();
+  else if(action==='import-folder')connectFolder();
+  else $('#samplePackInput').click();
+  drawList($('#search')?.value||'');return;
+ }
+ try{
+  if(action==='create'){
+   const result=await openSampleLibraryDialog({title:'Create sample folder',description:'Create a folder here without changing existing sample audio.',label:'Folder name'});
+   if(!result)return;
+   mutateSampleLibrary(()=>{const next=normalizeLibraryPath(userPath?`${userPath}/${result.value}`:result.value);if(!next||sampleLibrary.folders.includes(next))throw new Error('That folder already exists or the name is empty.');sampleLibrary.folders.push(next);sampleLibrary.selected=`User/${next}`;sampleLibrary.expanded[path]=true;sampleLibrary.expanded[next]=true});
+  }else if(action==='rename'){
+   const result=await openSampleLibraryDialog({title:'Rename sample folder',description:`Rename "${path}" without changing its samples or audio.`,label:'Folder name',value:path.split('/').at(-1)});
+   if(!result)return;mutateSampleLibrary(()=>{sampleLibrary.selected=`User/${renameLibraryFolder(sampleLibrary,path,result.value)}`});
+  }else if(action==='move'){
+   const folders=[{value:'',label:'My Samples root'},...sampleLibrary.folders.filter(folder=>folder!==path&&!folder.startsWith(`${path}/`)).map(folder=>({value:folder,label:folder}))];
+   const result=await openSampleLibraryDialog({title:'Move sample folder',description:`Choose where to move "${path}".`,folders,confirmLabel:'Move'});
+   if(!result)return;mutateSampleLibrary(()=>{sampleLibrary.selected=`User/${moveLibraryFolder(sampleLibrary,path,result.destination)}`});
+  }else if(action==='remove'){
+   const confirmed=await openSampleLibraryDialog({title:'Remove sample folder?',description:`Remove "${path}" from the folder tree? Its samples and audio remain in the library and move to the parent folder.`,confirmLabel:'Remove'});
+   if(!confirmed)return;mutateSampleLibrary(()=>removeLibraryFolder(sampleLibrary,path));
+  }
+  drawList($('#search')?.value||'');
+ }catch(error){notify(error.message)}
+}
+function openSampleLibraryDialog({title,description,label='',value='',folders=null,confirmLabel='Save'}){
+ const dialog=$('#sampleLibraryDialog'),form=dialog.querySelector('form'),input=$('#sampleLibraryFolderName'),select=$('#sampleLibraryFolderParent');
+ dialog.querySelector('h2').textContent=title;dialog.querySelector('.library-dialog-description').textContent=description;
+ const inputLabel=input.closest('label'),selectLabel=select.closest('label');
+ inputLabel.hidden=!label;inputLabel.querySelector('span').textContent=label;input.value=value;
+ selectLabel.hidden=!folders;select.innerHTML=folders?folders.map(folder=>`<option value="${esc(folder.value)}">${esc(folder.label)}</option>`).join(''):'';
+ const confirm=dialog.querySelector('[value="confirm"]');confirm.textContent=confirmLabel;
+ form.onsubmit=event=>{event.preventDefault();dialog.close('confirm')};
+ dialog.querySelector('[value="cancel"]').onclick=()=>dialog.close('cancel');
+ return new Promise(resolve=>{
+  dialog.addEventListener('close',()=>resolve(dialog.returnValue==='confirm'?{value:input.value,destination:select.value}:null),{once:true});
+  dialog.returnValue='';
+  dialog.showModal();(label?input:confirm).focus();
+ });
+}
 function drawList(filter=''){
  const el=$('#sampleList');if(!el)return;
- arrangementWorkspaceState.libraryFilter=filter;
+ const browser=el.closest('.browser'),actions=$('.browser-actions');
+ if(!$('#samplePackInput')){
+  const zipInput=document.createElement('input');zipInput.id='samplePackInput';zipInput.type='file';zipInput.accept='.zip,application/zip,application/x-zip-compressed';zipInput.hidden=true;browser.append(zipInput);
+  const status=document.createElement('output');status.id='sampleImportStatus';status.className='sample-import-status';browser.insertBefore(status,$('#sampleList'));
+  const cancel=document.createElement('button');cancel.id='cancelSampleImport';cancel.textContent='Cancel import';cancel.hidden=true;browser.insertBefore(cancel,$('#sampleList'));
+  const folderDialog=document.createElement('dialog');folderDialog.id='sampleLibraryDialog';folderDialog.className='library-folder-dialog';folderDialog.innerHTML='<form><h2></h2><p class="library-dialog-description"></p><label><span></span><input id="sampleLibraryFolderName" maxlength="80"></label><label><span>Move into</span><select id="sampleLibraryFolderParent"></select></label><div class="library-dialog-actions"><button type="button" value="cancel">Cancel</button><button type="submit" value="confirm">Save</button></div></form>';browser.append(folderDialog);
+  const folderMenu=document.createElement('div');folderMenu.id='folderImportMenu';folderMenu.className='folder-import-menu';folderMenu.hidden=true;folderMenu.innerHTML='<button data-folder-action="create">Create Folder</button><button data-folder-action="import-folder">Import Folder</button><button data-folder-action="import-zip">Import ZIP Pack</button>';actions.append(folderMenu);
+  $('#connectFolder').onclick=()=>{folderMenu.hidden=!folderMenu.hidden};
+  folderMenu.querySelector('[data-folder-action="create"]').onclick=()=>{folderMenu.hidden=true;handleLibraryFolderAction('create',selectedUserFolder()||'User')};
+  folderMenu.querySelector('[data-folder-action="import-folder"]').onclick=()=>{folderMenu.hidden=true;connectFolder()};
+  folderMenu.querySelector('[data-folder-action="import-zip"]').onclick=()=>{folderMenu.hidden=true;handleLibraryFolderAction('import-zip',selectedUserFolder()||'User')};
+  $('#addFiles').onclick=()=>$('#importFiles').click();
+  zipInput.onchange=async()=>{const file=zipInput.files?.[0];zipInput.value='';if(!file)return;const selected=selectedUserFolder();const cancelButton=$('#cancelSampleImport');assetImportController=new AbortController();cancelButton.hidden=false;$('#sampleImportStatus').textContent='Checking ZIP sample pack…';try{const entries=await unpackSamplePack(file,{signal:assetImportController.signal,onProgress:progress=>{const output=$('#sampleImportStatus');if(output)output.textContent=`Checking ${progress.completed}/${progress.total}: ${progress.path}`}});await importFiles(entries.map(entry=>({...entry,folder:[selected,entry.folder].filter(Boolean).join('/')})),{progressLabel:'ZIP samples'})}catch(error){notify(`Sample pack import failed: ${error.message}`)}finally{if(!assetImportPending)assetImportController=null;cancelButton.hidden=true;$('#sampleImportStatus').textContent=''}};
+  $('#cancelSampleImport').onclick=()=>{assetImportController?.abort(new DOMException('Sample import cancelled.','AbortError'));if(!assetImportController)notify('No sample import is active.')};
+ }
+ arrangementWorkspaceState.libraryFilter=filter;librarySearch=filter.trim().toLowerCase();
  const search=$('#search');if(search)search.value=filter;
- const visible=[...assets.values()].filter(asset=>!hiddenLibraryAssets.has(asset.id)&&asset.name.toLowerCase().includes(filter.toLowerCase()));
- el.innerHTML=visible.map(asset=>`<div class="sample-item" draggable="true" data-asset="${esc(asset.id)}"><span title="${esc(asset.path)}"><small>${asset.factory?'Factory':'User'}</small> ♫ ${esc(asset.name)}</span><button data-preview="${esc(asset.id)}" title="Preview" aria-label="Preview ${esc(asset.name)}">▶</button><button data-add="${esc(asset.id)}" title="Add to selected track" aria-label="Add ${esc(asset.name)} to selected track">＋</button><button data-remove-sample="${esc(asset.id)}" title="Hide from library; project audio is retained" aria-label="Remove ${esc(asset.name)} from visible library">×</button></div>`).join('')||'<div class="empty">No visible samples. Connect a folder or import files.</div>';
- $$('[data-preview]').forEach(button=>button.onclick=()=>previewAsset(button.dataset.preview).catch(error=>notify(`Sample preview failed: ${error.message}`)));
- $$('[data-add]').forEach(button=>button.onclick=()=>insertSampleAtPlayhead(button.dataset.add));
- $$('[data-remove-sample]').forEach(button=>button.onclick=()=>removeAssetFromLibrary(button.dataset.removeSample));
- $$('[data-asset]').forEach(element=>element.ondragstart=event=>event.dataTransfer.setData('text/sample',element.dataset.asset));
+ drawLibraryFolders();
 }
 function stopLibraryPreview(){const source=previewSource;previewSource=null;if(!source)return;source.onended=null;try{source.stop()}catch(error){if(error.name!=='InvalidStateError')throw error}source.disconnect()}
 async function previewAsset(id){await engine.init();await assets.get(id)?.load?.();stopLibraryPreview();const b=buffers.get(id);if(!b)return notify('Missing sample');const s=engine.ctx.createBufferSource();s.buffer=b;s.connect(engine.ctx.destination);s.onended=()=>{s.disconnect();if(previewSource===s)previewSource=null};s.start();previewSource=s}
@@ -764,6 +911,7 @@ function wireArrange(){
  $$('[data-solo]').forEach(button=>{button.title='Solo Track — Listen to this track only';button.setAttribute('aria-label',`Solo ${project.tracks[Number(button.dataset.solo)].name}`);button.setAttribute('aria-pressed',String(project.tracks[Number(button.dataset.solo)].solo))});
  $$('[data-remove]').forEach(button=>{button.title='Delete Track';button.setAttribute('aria-label',`Delete ${project.tracks[Number(button.dataset.remove)].name}`)});
  $('#connectFolder').onclick=connectFolder;$('#addFiles').onclick=()=>$('#importFiles').click();$('#search').oninput=e=>drawList(e.target.value);$('#recordOwn').onclick=()=>{view='sample';render()};
+ $('#openMasteringFromRack')?.addEventListener('click',()=>navigateWorkspace('master'));
  $('#addTrack').onclick=()=>openTrackSetup();
  $('#zoomIn').onclick=event=>setArrangementZoom(zoom*1.25,event.clientX);$('#zoomOut').onclick=event=>setArrangementZoom(zoom/1.25,event.clientX);
  $$('[data-track]').forEach(e=>e.onclick=()=>selectArrangementTrack(+e.dataset.track));
@@ -783,7 +931,7 @@ function wireArrange(){
  $('#moveClip').onclick=()=>{const bar=Number($('#clipBar').value),target=$('#clipTrack').value;if(!Number.isFinite(bar)||bar<0)return notify('Enter a non-negative clip bar position.');if(!project.tracks.some(track=>track.id===target))return notify('Choose a valid destination track.');try{checkpointArrangement();if(!moveClipTo(project.tracks,c.id,target,bar)){arrangementHistory.undo(project.tracks);return notify('Could not move this clip.')}selectedTrack=project.tracks.findIndex(track=>track.id===target);commitArrangement()}catch(error){notify(error.message)}};
  $('#deleteClip').onclick=deleteSelectedClip;
 }
-async function connectFolder(){if('showDirectoryPicker'in window){try{folderHandle=await showDirectoryPicker({mode:'readwrite'});const files=[];async function walk(dir,prefix='',depth=0){if(depth>8)return;for await(const [name,h] of dir.entries()){if(h.kind==='directory')await walk(h,prefix+name+'/',depth+1);else if(/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(name)){const f=await h.getFile();files.push(f)}}}await walk(folderHandle);await importFiles(files);notify(`Connected ${folderHandle.name}; ${files.length} files. Save-back enabled when permitted.`)}catch(e){if(e.name!=='AbortError')notify(e.message)}}else{$('#importFolder').click();notify('Folder import fallback: direct folder write is not available in this browser.')}}
+async function connectFolder(){if('showDirectoryPicker'in window){try{folderHandle=await showDirectoryPicker({mode:'readwrite'});const base=selectedUserFolder(),files=[];async function walk(dir,prefix='',depth=0){if(depth>8)return;for await(const [name,h] of dir.entries()){if(h.kind==='directory')await walk(h,prefix+name+'/',depth+1);else if(/\.(wav|mp3|ogg|m4a|aac|flac)$/i.test(name)){const f=await h.getFile();files.push({file:f,folder:[base,prefix.replace(/\/$/,'')].filter(Boolean).join('/')})}}}await walk(folderHandle);await importFiles(files);notify(`Connected ${folderHandle.name}; ${files.length} files. Save-back enabled when permitted.`)}catch(e){if(e.name!=='AbortError')notify(e.message)}}else{$('#importFolder').click();notify('Folder import fallback: direct folder write is not available in this browser.')}}
 function tick(t){const bar=t/barSeconds(),p=$('#playhead'),ruler=$('#ruler'),arrangement=$('.arrangement');if(p&&ruler&&arrangement){arrangementWorkspace?.ensureBeat(t*project.bpm/60+8);const x=timelineContentOrigin(ruler,arrangement)+timelineScale().timeToPixels(t);p.style.left=`${x}px`;p.setAttribute('aria-valuenow',String(t));p.setAttribute('aria-valuetext',`${t.toFixed(3)} seconds`);if(engine.playing&&arrangementWorkspaceState.follow&&!arrangementWorkspaceState.pinchActive&&x-arrangement.scrollLeft>arrangement.clientWidth-230)arrangement.scrollLeft=Math.max(0,x-arrangement.clientWidth/2)}const clock=$('#clock');if(clock)clock.textContent=`${Math.floor(bar)+1}.${Math.floor((bar%1)*4)+1}.1`;const elapsed=$('#elapsedTime'),text=formatTransportTime(t);if(elapsed&&elapsed.textContent!==text)elapsed.textContent=text}
 window.addEventListener('resize',()=>tick(playhead),{passive:true});
 matchMedia('(max-width:850px)').addEventListener('change',()=>{if(view==='arrange')render()});

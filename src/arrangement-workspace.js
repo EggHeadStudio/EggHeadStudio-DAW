@@ -452,22 +452,27 @@ export function mountArrangementWorkspace(options){
           startClipEdit(event,edge);return;
         }
         if(explicitMode==='trim')return;
-        let cancelled=false,moved=false;
+        let cancelled=false,mode='pending',lastX=event.clientX,lastY=event.clientY;
         const pointerId=event.pointerId,startX=event.clientX,startY=event.clientY;
         const clear=()=>{
           clearTimeout(timer);document.removeEventListener('pointermove',onMove,true);document.removeEventListener('pointerup',onUp,true);document.removeEventListener('pointercancel',onCancel,true);
           element.classList.remove('clip-move-active');if(state.cancelClipPointer===cancelPending)state.cancelClipPointer=null;
         };
-        const cancelPending=()=>{cancelled=true;clear()};
+        const cancelPending=()=>{if(cancelled)return;cancelled=true;mode='cancelled';clear()};
         const onMove=next=>{
           if(next.pointerId!==pointerId||cancelled)return;
-          if(!moved&&Math.hypot(next.clientX-startX,next.clientY-startY)>10){moved=true;cancelPending()}
+          if(mode==='pending'&&Math.hypot(next.clientX-startX,next.clientY-startY)>10){mode='pan';arrangement.scrollLeft-=next.clientX-startX;arrangement.scrollTop-=next.clientY-startY;lastX=next.clientX;lastY=next.clientY;clearTimeout(timer);return}
+          if(mode==='pan'){
+            next.preventDefault();
+            arrangement.scrollLeft-=next.clientX-lastX;arrangement.scrollTop-=next.clientY-lastY;
+            lastX=next.clientX;lastY=next.clientY;
+          }
         };
-        const onUp=next=>{if(next.pointerId!==pointerId||cancelled)return;clear();if(!moved&&Math.hypot(next.clientX-startX,next.clientY-startY)<=10)selectTappedClip()};
+        const onUp=next=>{if(next.pointerId!==pointerId||cancelled)return;const tapped=mode==='pending'&&Math.hypot(next.clientX-startX,next.clientY-startY)<=10;clear();if(tapped)selectTappedClip()};
         const onCancel=next=>{if(next.pointerId===pointerId)cancelPending()};
         const timer=setTimeout(()=>{
-          if(cancelled)return;
-          clear();element.classList.add('clip-move-active');startClipEdit(event,null);
+          if(cancelled||mode!=='pending')return;
+          mode='move';clear();element.classList.add('clip-move-active');startClipEdit(event,null);
         },350);
         state.cancelClipPointer=cancelPending;
         document.addEventListener('pointermove',onMove,true);document.addEventListener('pointerup',onUp,true);document.addEventListener('pointercancel',onCancel,true);

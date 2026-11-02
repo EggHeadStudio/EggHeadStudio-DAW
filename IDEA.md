@@ -199,7 +199,7 @@ No miniature desktop clone. Bottom navigation or tabs: Arrange, Samples, Record,
 | 002 | Sample-based instruments, pitch detection, Piano Roll and Drum Rack sequencing | Notes/pads persist and produce sample audio | PARTIAL — sampler, internal note editor, 16-pad rack and shared step/piano pattern exist; unit tests pass, but full workflow acceptance remains incomplete |
 | 003 | Professional mixing/effects architecture, arrangement clip editing, live/offline consistency | Reorderable tested device chains and equivalent live/offline signal measurements | COMPLETE — 45 local Node tests pass; generated-audio Chromium acceptance verified Sample Studio processing/save, Sampler and Drum Rack patterns, independent track effects, mixer mute/solo, non-silent WAV export, project reload, and mobile-emulated timeline seek/alignment. Physical-device checks, remote CI and quantitative live/offline parity tolerances remain release follow-ups, not claims of completion |
 | 004 | Mastering Studio | Measurement-driven mastering chain, validated export and A/B | FUNCTIONALLY COMPLETE — Phases 1–6 implemented; Phase 6 boundary suite passed 110/110. Deterministic eight-track acceptance, clean IndexedDB `.EHS` restore/reopen, unchanged asset hashes, four-format mastered export and Release ZIP verified in Chromium. Independent standards/device/deployment and medium/large-project performance checks remain release/Batch 005 work; see [BATCH_004_FINAL_ACCEPTANCE.md](./docs/archive/batch-004/BATCH_004_FINAL_ACCEPTANCE.md) |
-| 005 | Performance, Mobile Experience & Production Reliability (005A/005B) | Measured performance/memory improvements, safe large archives, responsive editing, reliable recovery and real-device evidence | IN PROGRESS — Earlier foundations retain their reported scope. QA-01.2 adds real live pinch geometry, picker-refresh fixes, horizontal graphical devices, deterministic factory WAVs and loaded-build/PWA lifecycle improvements. Connected Chromium Sample/Recording/Mastering/WAV/MP3 and clean-origin `.EHS` checks now pass within documented scope; seven-size functional EQ checks are not a full production matrix. Fresh musical-touch/lifecycle, delayed-worker, broader regression and physical/installed-device gates remain open. See [QA-01.2 report](./QA-01_2_REPORT.md), [physical checklist](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md) and earlier [5F.5 report](./BATCH_005B_5F_5_REPORT.md). |
+| 005 | Performance, Mobile Experience & Production Reliability (005A/005B) | Measured performance/memory improvements, safe large archives, responsive editing, reliable recovery and real-device evidence | IN PROGRESS — QA-01.3 adds the hierarchical Sample Library, a fixed Arrangement Master row and repeat-Stop behavior; 359 Node tests and two matching deterministic builds pass. Source/built Chromium checked library workflows and Master output metering. Arrangement touch-move acceptance, connected clean-origin `.EHS`, physical/installed-device and broader cross-browser gates remain open. See [QA-01.3 report](./QA-01_3_REPORT.md), [Sample Library](./SAMPLE_LIBRARY.md), [physical checklist](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md), [QA-01.2](./QA-01_2_REPORT.md) and earlier [5F.5 report](./BATCH_005B_5F_5_REPORT.md). |
 | 006 | Persistence and portable projects | Versioned save/reopen, sample relink and media archive round-trip | PARTIAL — JSON/localStorage plus versioned `.EHS` archives with embedded/deduplicated media, checksums and schema migration; automated and Chromium round-trips pass, broader compatibility/missing-media acceptance remains |
 | 007 | Mobile UX, accessibility and performance | End-to-end workflow on physical desktop and mobile browsers | PARTIAL — browser-emulated responsive smoke checks only; physical devices, long recordings and memory budgets unverified |
 | 008 | GitHub Pages release verification | Static deployment smoke checks at repository subpath across target browsers | PARTIAL — local static requests passed for the app, workers, worklets and vendors; the previously published revision was checked, but this unpushed worktree has not been deployed |
@@ -692,3 +692,28 @@ touch/lifecycle, deliberate worker delays, full artwork/release regression,
 dedicated Edge/WebKit and installed/physical-device checks remain open.
 See [QA-01.2 report](./QA-01_2_REPORT.md) and
 [user test checklist](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md).
+
+## QA-01.3 continuation - 2026-11-02
+
+The Sample Browser now has separate Factory/User roots and nested User folders,
+with in-app create/move/rename/remove dialogs, safe relative-path ZIP sample
+packs, import progress/cancellation and locally persisted folder metadata.
+Referenced audio remains in the existing IndexedDB store; the library tree is
+not part of `.EHS`. The Arrangement now presents a fixed 84px Master row using
+the existing master volume and post-mastering stereo output taps. Pressing
+Stop while playing holds the current position; pressing it again returns to
+the beginning.
+
+The full Node suite passes 359/359. Two deterministic builds match at
+`b016c028fb6c25deb17f` (80 assets). Source and built Chromium checked nested
+ZIP import, folder operations/reload persistence, Master selection and output
+meter response, and repeat-Stop behavior. Source layout checks covered
+320x740, 360x800, 390x844, 430x932, 768x1024, 1280x900 and 844x390. A source
+touch-move attempt received `pointercancel` before moving its clip; mobile
+Arrangement gesture acceptance therefore remains open. Physical devices,
+installed PWA, and a connected clean-origin `.EHS` round trip were not tested
+in this continuation. Official competitor-documentation search was blocked by
+an HTTP 504 response.
+
+See [QA-01.3](./QA-01_3_REPORT.md), [Sample Library](./SAMPLE_LIBRARY.md) and
+[the physical-device checklist](./MOBILE_PHYSICAL_DEVICE_TEST_CHECKLIST.md).

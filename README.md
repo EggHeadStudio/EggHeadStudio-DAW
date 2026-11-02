@@ -6,12 +6,12 @@ Historical batch reports, audits and design notes are indexed in the
 [documentation archive](./docs/archive/README.md). Current mobile milestone
 reports remain in the repository root.
 
-Latest continuation: [QA-01.2](./QA-01_2_REPORT.md), with 354 passing Node tests,
-live timeline pinch geometry, picker-refresh fixes, a compact horizontal
-graphical Device Rack and nine original factory WAVs. Connected Chromium
-audio/recording/export/portable-project results are documented with their exact
-scope. Physical iPhone/installed-PWA retests and remaining acceptance gates are
-open; this is not a certified release.
+Latest continuation: [QA-01.3](./QA-01_3_REPORT.md), with 359 passing Node
+tests and matching deterministic builds. The hierarchical [Sample
+Library](./SAMPLE_LIBRARY.md), Arrangement Master row/output meter and
+repeat-Stop behavior were exercised in source and built Chromium. Arrangement
+touch-move acceptance and physical-device retests remain open; this is not a
+certified release.
 
 ## Run locally
 
@@ -150,6 +150,12 @@ Roll's offset drag-handle stroke is scoped out of the Arrangement.
 On phones, tap a clip for its **Move / Trim / Duplicate / Delete** actions;
 long-press the body to move it, choose **Trim** to enable edge handles, or
 pinch the ruler, a clip, loop control or lane to zoom around the fingers.
+The Arrangement Sample Browser uses one compact, collapsible Factory/User
+folder tree; its toolbar is limited to **＋ Folder** and **＋ Files**. Folder
+actions live in a contextual menu (desktop right-click, touch long-press, or
+the visible three-dot control), while samples keep Preview and snapped-playhead
+Add actions. Nested folder and ZIP imports preserve their paths. See the
+[Sample Library guide](./SAMPLE_LIBRARY.md).
 Sample Browser **+** uses the snapped playhead position. See the [mobile Arrangement gesture guide](./MOBILE_ARRANGEMENT_GESTURES.md)
 and [005B.5F.4 report](./BATCH_005B_5F_4_REPORT.md). That continuation remains
 incomplete pending full multi-viewport, connected-workflow and physical-device

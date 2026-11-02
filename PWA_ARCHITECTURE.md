@@ -7,6 +7,12 @@ the manifest, icons, service worker, versioned JavaScript/CSS, Workers and
 AudioWorklets inside the repository subpath. Runtime code is content-versioned
 under `assets/<build-version>/`.
 
+The Sample Library's folder tree, selection and expanded folders are
+browser-local metadata in `localStorage` (`pulse-sample-library-v1`). User
+audio remains in the existing IndexedDB asset store. Neither is included in
+the service-worker shell cache; see [Sample Library](./SAMPLE_LIBRARY.md) for
+ZIP-pack limits and portability boundaries.
+
 The service worker caches only the application shell: the built entry page,
 manifest, version file, icons, versioned application/vendor assets and the nine
 bundled original factory WAVs. Factory files use the same content version and

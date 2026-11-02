@@ -64,3 +64,14 @@ built-pinch gate, not all lost-capture/native scrolling/device gestures.
 Arrangement now uses its normal mobile transport and layout instead of a
 redundant Focus surface. Touch Device Panel resizing/cancellation also passed.
 See [QA-01.2](./QA-01_2_REPORT.md) for exact scope and outstanding tests.
+
+## QA-01.3 verification note
+
+Source Chromium at 390x844 selected an Audio clip and entered Edit Clips mode.
+The attempted CDP touch drag emitted `pointercancel` after the first move and
+left the clip position unchanged. This is not a passing move test, and it does
+not establish whether the same cancellation occurs on a physical device.
+Source and built Arrangement move/resize, pinch/cancel, cross-track,
+nonzero-scroll and undo/redo acceptance remain open. Do not treat the prior
+pinch checks above as full gesture acceptance. See
+[QA-01.3](./QA-01_3_REPORT.md).

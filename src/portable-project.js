@@ -20,10 +20,11 @@ const encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
 const CRC_TABLE=Uint32Array.from({length:256},(_,index)=>{let value=index;for(let bit=0;bit<8;bit++)value=(value&1)?0xedb88320^(value>>>1):value>>>1;return value>>>0});
 function crc32(bytes){let value=0xffffffff;for(const byte of bytes)value=CRC_TABLE[(value^byte)&0xff]^(value>>>8);return(value^0xffffffff)>>>0}
 
-function assertSafePath(path){
- if(typeof path!=='string'||!path||path.length>1024||path.includes('\0')||path.includes('\\')||path.startsWith('/')||/^[A-Za-z]:/.test(path))throw new Error('Archive contains an unsafe path.');
- const parts=path.split('/');
- if(parts.some(part=>!part||part==='.'||part==='..'))throw new Error('Archive path traversal is not allowed.');
+function assertSafePath(path,{directory=false}={}){
+ const normalized=directory&&typeof path==='string'&&path.endsWith('/')?path.slice(0,-1):path;
+ if(typeof normalized!=='string'||!normalized||normalized.length>1024||normalized.includes('\0')||normalized.includes('\\')||normalized.startsWith('/')||/^[A-Za-z]:/.test(normalized))throw new Error('Archive contains an unsafe path.');
+ const parts=normalized.split('/');
+ if(parts.some(part=>!part||part==='.'||part==='..'||part==='__proto__'||part==='constructor'||part==='prototype'))throw new Error('Archive path traversal or object-prototype paths are not allowed.');
 }
 function validImageBytes(bytes,mime){
  return mime==='image/png'
@@ -31,7 +32,8 @@ function validImageBytes(bytes,mime){
   :mime==='image/jpeg'&&bytes.length>=3&&bytes[0]===0xff&&bytes[1]===0xd8&&bytes[2]===0xff;
 }
 
-function zipCentralDirectory(bytes){
+function zipCentralDirectory(bytes,{allowDirectories=false,maxArchiveBytes=MAX_EHS_ARCHIVE_BYTES,maxUncompressedBytes=MAX_EHS_UNCOMPRESSED_BYTES,maxEntries=MAX_EHS_FILE_COUNT,maxCompressionRatio=MAX_EHS_COMPRESSION_RATIO}={}){
+ if(bytes.byteLength>maxArchiveBytes)throw new RangeError('ZIP archive exceeds the compressed size limit.');
  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),minimum=Math.max(0,bytes.length-65557);
  let end=-1;
  for(let offset=bytes.length-22;offset>=minimum;offset--)if(view.getUint32(offset,true)===0x06054b50){end=offset;break}
@@ -39,7 +41,7 @@ function zipCentralDirectory(bytes){
  if(end+22+view.getUint16(end+20,true)!==bytes.length)throw new Error('ZIP end record or archive comment is truncated.');
  if(view.getUint16(end+4,true)!==0||view.getUint16(end+6,true)!==0)throw new Error('Multi-disk ZIP archives are not supported.');
  const entryCount=view.getUint16(end+10,true),totalCount=view.getUint16(end+8,true),centralSize=view.getUint32(end+12,true),centralOffset=view.getUint32(end+16,true);
- if(entryCount!==totalCount||entryCount>MAX_EHS_FILE_COUNT||entryCount===0xffff||centralSize===0xffffffff||centralOffset===0xffffffff)throw new Error('ZIP entry count or ZIP64 layout is unsupported.');
+ if(entryCount!==totalCount||entryCount>maxEntries||entryCount===0xffff||centralSize===0xffffffff||centralOffset===0xffffffff)throw new Error('ZIP entry count or ZIP64 layout is unsupported.');
  if(centralOffset+centralSize>end)throw new Error('Invalid ZIP central directory bounds.');
  if(centralOffset+centralSize!==end)throw new Error('ZIP central directory bounds are invalid or contain unsupported records.');
  const entries=[],paths=new Set(),localRanges=[];let offset=centralOffset,totalUncompressed=0;
@@ -52,14 +54,16 @@ function zipCentralDirectory(bytes){
   if(compressedSize===0xffffffff||uncompressedSize===0xffffffff||localOffset===0xffffffff)throw new Error('ZIP64 entries are not supported.');
   if(offset+46+nameLength+extraLength+commentLength>centralOffset+centralSize)throw new Error('Truncated ZIP directory entry.');
   let path;try{path=decoder.decode(bytes.subarray(offset+46,offset+46+nameLength))}catch{throw new Error('ZIP entry path is not valid UTF-8.')}
-  assertSafePath(path);
+  const directory=path.endsWith('/');
+  if(directory&&!allowDirectories)throw new Error('Archive directory entries are not supported.');
+  assertSafePath(path,{directory});
   if(((externalAttributes>>>16)&0xf000)===0xa000)throw new Error('Symbolic-link ZIP entries are not supported.');
   if((path==='manifest.json'&&uncompressedSize>2*1024*1024)||(path==='project.json'&&uncompressedSize>16*1024*1024)||path.startsWith('presets/')&&uncompressedSize>2*1024*1024)throw new Error(`ZIP entry ${path} exceeds its JSON size limit.`);
   if(paths.has(path))throw new Error('ZIP archive contains duplicate paths.');
   paths.add(path);
-  if(uncompressedSize>0&&(!compressedSize||uncompressedSize/compressedSize>MAX_EHS_COMPRESSION_RATIO))throw new Error('ZIP compression ratio exceeds the safety limit.');
+  if(uncompressedSize>0&&(!compressedSize||uncompressedSize/compressedSize>maxCompressionRatio))throw new Error('ZIP compression ratio exceeds the safety limit.');
   totalUncompressed+=uncompressedSize;
-  if(totalUncompressed>MAX_EHS_UNCOMPRESSED_BYTES)throw new Error('ZIP archive exceeds the uncompressed size limit.');
+  if(totalUncompressed>maxUncompressedBytes)throw new Error('ZIP archive exceeds the uncompressed size limit.');
   if(localOffset+30>centralOffset||view.getUint32(localOffset,true)!==0x04034b50)throw new Error('ZIP local file header is invalid.');
   const localNameLength=view.getUint16(localOffset+26,true),localExtraLength=view.getUint16(localOffset+28,true),dataStart=localOffset+30+localNameLength+localExtraLength;
   if(localNameLength!==nameLength||localOffset+30+localNameLength+localExtraLength>centralOffset||!bytes.subarray(localOffset+30,localOffset+30+localNameLength).every((value,index)=>value===bytes[offset+46+index]))throw new Error('ZIP local and central paths do not match.');
@@ -72,7 +76,7 @@ function zipCentralDirectory(bytes){
   }
   if(!(flags&8)&&(view.getUint32(localOffset+14,true)!==crc||view.getUint32(localOffset+18,true)!==compressedSize||view.getUint32(localOffset+22,true)!==uncompressedSize))throw new Error('ZIP local and central sizes or checksums disagree.');
   localRanges.push([localOffset,dataEnd+descriptorBytes]);
-  entries.push({path,method,crc,compressedSize,uncompressedSize});
+  entries.push({path,method,crc,compressedSize,uncompressedSize,directory});
   offset+=46+nameLength+extraLength+commentLength;
  }
  if(offset!==centralOffset+centralSize)throw new Error('ZIP directory size does not match its entries.');
@@ -413,8 +417,8 @@ export function createReleaseZip(files,{signal,onProgress=()=>{}}={}){
  });
 }
 
-export function inspectZipEntries(input){
+export function inspectZipEntries(input,options){
  const bytes=input instanceof Uint8Array?input:new Uint8Array(input);
- return zipCentralDirectory(bytes).map(({path,compressedSize,uncompressedSize,method})=>({path,compressedSize,uncompressedSize,method}));
+ return zipCentralDirectory(bytes,options).map(({path,compressedSize,uncompressedSize,method,crc,directory})=>({path,compressedSize,uncompressedSize,method,crc,directory}));
 }
 import {validateRecordingClip} from './recording-model.js';

@@ -41,7 +41,7 @@ export function syncArrangementActions(root,track,clip,range){
   const row=root.querySelector('.range-toolbar');if(row)row.hidden=!state.range;
 }
 
-export function mountArrangementChrome({root,project,selectedTrack,selectedClip,state,addTrack,addEffect,selectContext,moveTrack}){
+export function mountArrangementChrome({root,project,selectedTrack,selectedClip,state,addTrack,addEffect,selectContext,moveTrack,selectMaster}){
   const track=project.tracks[selectedTrack],clip=track?.clips.find(item=>item.id===selectedClip),tools=root.querySelector('.editor-tools');
   const edit=createCommandDisclosure('Edit','arrangement-edit-menu'),body=document.createElement('div');body.className='disclosure-body';
   for(const id of ['openPiano','splitClip','duplicateClip','copyClip','pasteClip','linkedDuplicate','unlinkPattern','clearRange','cutRange','deleteRange','setLoopRange','selectLoopRange','playInsertion']){
@@ -81,7 +81,20 @@ export function mountArrangementChrome({root,project,selectedTrack,selectedClip,
   }
   const instrument=root.querySelector('.selected-instrument'),chain=root.querySelector('.device-chain-scroll');
   const master=root.querySelector('.master-strip');
-  master.classList.add('right-mixer');master.hidden=!state.mixerOpen;root.querySelector('.ruler-row').append(master);
+  master.classList.add('right-mixer');master.hidden=false;
+  const masterRow=document.createElement('div');masterRow.className='track-row master-track-row';
+  const masterLabel=document.createElement('div');masterLabel.className=`track-label master-track-label${state.masterSelected?' track-selected':''}`;
+  const masterSelect=document.createElement('button');masterSelect.className='track-select';masterSelect.textContent='Master';masterSelect.setAttribute('aria-label','Select Master track');masterSelect.setAttribute('aria-pressed',String(Boolean(state.masterSelected)));
+  const description=document.createElement('small');description.textContent='Final output · fixed bus';masterLabel.append(masterSelect,description);
+  const masterLane=document.createElement('div');masterLane.className='lane master-track-lane';masterLane.style.width=root.querySelector('#ruler').style.width;
+  masterRow.append(masterLabel,masterLane,master);
+  root.querySelector('#playhead').before(masterRow);
+  const masterMeter=document.createElement('div');masterMeter.className='stereo-meter master-output-meter';masterMeter.dataset.meter='master';masterMeter.dataset.trackName='Master';masterMeter.setAttribute('aria-label','Master stereo output level');masterMeter.innerHTML='<span class="meter-channel"><i data-meter-left></i></span><span class="meter-channel"><i data-meter-right></i></span><b data-clip-warning hidden>CLIP</b>';
+  master.append(masterMeter);
+  const activateMaster=()=>selectMaster?.();
+  masterSelect.onclick=activateMaster;
+  master.onclick=event=>{if(!event.target.closest('input,button'))activateMaster()};
+  for(const label of root.querySelectorAll('.track-label[data-track]'))label.classList.toggle('track-selected',!state.masterSelected&&Number(label.dataset.track)===selectedTrack);
   root.querySelector('.bottom-panel>.mixer').remove();
   for(const strip of root.querySelectorAll('.right-mixer')){
     const index=Number(strip.dataset.mixerTrack),name=strip===master?'Master':project.tracks[index].name;
@@ -99,6 +112,7 @@ export function mountArrangementChrome({root,project,selectedTrack,selectedClip,
   mountTrackLayout(root,project,state,moveTrack);
   mountDevicePanelLayout(root,state);
   const deviceHead=root.querySelector('.bottom-panel>.pane-head'),deviceTitle=root.querySelector('.effect-chain-title');
+  if(state.masterSelected)deviceHead.querySelector('span').textContent='Selected: Master';
   if(deviceTitle){
     deviceTitle.querySelector('strong').remove();
     deviceHead.insertBefore(deviceTitle,deviceHead.querySelector('.device-panel-controls'));
@@ -110,7 +124,7 @@ export function mountArrangementChrome({root,project,selectedTrack,selectedClip,
     card.append(heading,context,instrument);chain.append(card);
   }
   const search=root.querySelector('#search');search.setAttribute('aria-label','Search samples');
-  const browser=root.querySelector('.browser'),samplePane=document.createElement('div');samplePane.className='browser-category';
+  const browser=root.querySelector('.browser'),samplePane=document.createElement('div');samplePane.className='browser-category sample-browser-category';
   while(browser.firstChild)samplePane.append(browser.firstChild);
   const tabs=document.createElement('div');tabs.className='browser-tabs';tabs.setAttribute('role','group');tabs.setAttribute('aria-label','Browser category');
   browser.append(tabs,samplePane);

@@ -278,7 +278,73 @@ button:disabled,.parameter-disabled{opacity:.55}
   .workspace .track-label .track-actions button,.workspace .track-label [data-new-pattern]{min-height:26px}
   .track-layout-controls button{min-height:26px}
   .workspace .track-row:not(.track-expanded) .right-mixer:not(.mobile-expanded-editor) .track-actions button{min-height:36px}
+  .workspace .track-label{width:132px;min-width:132px}
 }
+.workspace .clip-handle{width:9px;background:transparent;opacity:0}
+.workspace .clip-handle::after{display:none}
+.workspace .clip-selected:hover .clip-handle,.workspace .clip-selected:focus-within .clip-handle{opacity:1;background:#ffffff20}
+.workspace .mobile-clip-trim-mode .clip-selected .clip-handle{width:24px;opacity:1;background:#ffffff25}
+.workspace .mobile-clip-trim-mode .clip-selected .clip-handle::after{display:block;left:3px;width:2px;background:#fff}
+.workspace .browser{overflow-x:auto;overflow-y:hidden}
+.browser-category.sample-browser-category{overflow:hidden}
+.browser-actions{position:relative;gap:6px}
+.browser-actions button{min-height:30px;padding:4px 8px}
+.folder-import-menu{position:absolute;z-index:20;top:calc(100% + 3px);left:0;display:grid;min-width:155px;padding:4px;border:1px solid var(--border);border-radius:5px;background:var(--surface-raised);box-shadow:0 6px 16px #0008}
+.folder-import-menu[hidden]{display:none}
+.folder-import-menu button{text-align:left;min-height:32px}
+.browser #sampleList.sample-folder-tree{display:block;flex:1;min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain;border:1px solid var(--border-subtle);padding:3px}
+.library-node{display:block}
+.library-folder-row{display:flex;align-items:center;gap:3px;min-width:0;padding-left:calc(var(--folder-depth)*10px);min-height:26px}
+.library-folder-row.library-folder-selected{background:#ffffff0b}
+.library-folder-toggle{display:flex;align-items:center;gap:5px;flex:1;min-width:0;min-height:26px;padding:2px 3px;text-align:left;background:transparent;border:0;border-radius:3px;font-size:11px}
+.library-folder-toggle:hover{background:#ffffff0a}
+.library-folder-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-chevron{width:10px;flex:none;color:var(--text-secondary)}
+.library-folder-icon{display:inline-flex;flex:none;width:14px;height:13px;color:var(--accent)}
+.library-folder-icon svg{display:block;width:100%;height:100%;overflow:visible}
+.library-folder-icon .folder-tab{fill:#b8f2e5;stroke:#4a8f82;stroke-width:.7;stroke-linejoin:round}
+.library-folder-icon .folder-body{fill:var(--accent);stroke:#4a8f82;stroke-width:.7;stroke-linejoin:round}
+.library-folder-row small{flex:none;color:var(--text-muted);font-size:9px}
+.library-context{position:relative;flex:none}
+.library-context>summary{display:flex;align-items:center;justify-content:center;width:25px;min-width:25px;min-height:25px;padding:0;border:0;background:transparent;color:var(--text-secondary);font-size:17px;line-height:1;list-style:none}
+.library-context>summary::-webkit-details-marker{display:none}
+.library-context>div{position:absolute;right:0;top:100%;z-index:30;display:grid;gap:2px;min-width:155px;padding:4px;border:1px solid var(--border);border-radius:5px;background:var(--surface-raised);box-shadow:0 6px 16px #0008}
+.library-context>div button,.library-context>div select{min-height:30px;padding:4px 7px;text-align:left;font-size:10px}
+.library-context>div label{display:grid;gap:3px;padding:4px;color:var(--text-secondary);font-size:10px}
+.library-sample-row{padding:1px 2px 1px calc(var(--folder-depth)*10px);min-height:27px}
+.library-sample-row>span{min-width:0;font-size:10px}
+.library-sample-row>button{flex:none;min-height:24px;padding:2px 6px}
+.library-sample-context>div{min-width:170px}
+@media(hover:hover){
+ .library-folder-row>.library-context>summary{opacity:.55}
+ .library-folder-row:hover>.library-context>summary,.library-folder-row>.library-context:focus-within>summary{opacity:1}
+}
+@media(max-width:850px){
+ .workspace .browser{height:280px;max-height:280px;overflow:hidden}
+ .browser #sampleList.sample-folder-tree{min-height:96px}
+ .library-folder-row>.library-context>summary{opacity:1}
+}
+.sample-import-status{display:block;min-height:1em;font-size:10px;color:var(--text-secondary)}
+.sample-item select{max-width:90px;min-height:28px;padding:1px}
+.library-folder-dialog{width:min(420px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:0;border:1px solid var(--border);border-radius:8px;color:var(--text);background:var(--surface);box-shadow:0 12px 40px #000b}
+.library-folder-dialog::backdrop{background:#0009}
+.library-folder-dialog form{display:grid;gap:12px;padding:18px}
+.library-folder-dialog h2{margin:0;font-size:17px}
+.library-folder-dialog .library-dialog-description{margin:0;color:var(--text-secondary);line-height:1.5}
+.library-folder-dialog label{display:grid;gap:6px;color:var(--text-secondary)}
+.library-folder-dialog input,.library-folder-dialog select{width:100%;min-height:42px}
+.library-dialog-actions{display:flex;justify-content:flex-end;gap:8px}
+.master-track-row{height:84px;min-height:84px;max-height:84px;background:#1a222e;border-top:2px solid var(--accent)}
+.master-track-row .master-track-label{display:grid;align-content:center;gap:4px;position:sticky;left:0;z-index:6;background:#263142;border-left:3px solid var(--accent)}
+.master-track-label .track-select{font-weight:800;text-align:left}
+.master-track-label small{color:var(--text-secondary);font-size:10px}
+.master-track-lane{height:100%;background:#18212d}
+.master-track-row .master-strip{height:100%;min-height:0;box-sizing:border-box}
+.master-output-meter{grid-column:1/-1;min-height:16px}
+.master-device-context ol{display:flex;gap:8px;flex-wrap:wrap;list-style:none;padding:0}
+.master-device-context li{display:flex;gap:7px;align-items:center;padding:5px 8px;border:1px solid var(--border-subtle);border-radius:4px}
+.master-device-context li output{font-size:10px;color:var(--text-secondary)}
+.master-device-context p{max-width:640px}
 .workflow-nav{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
 .workflow-nav button{min-height:40px}
 .workflow-stage{border:1px solid var(--border-subtle);background:var(--surface);padding:12px;margin:12px 0;min-width:0;scroll-margin-top:12px}
@@ -455,3 +521,7 @@ button:disabled,.parameter-disabled{opacity:.55}
   .workspace .effect-chain-title>label{gap:4px}
   .workspace .effect-chain-title select{width:130px;margin-left:0}
 }
+.workspace .master-track-row{height:84px;min-height:84px}
+.workspace .master-track-row>.master-track-label,.workspace .master-track-row>.master-track-lane{height:84px;min-height:84px}
+.workspace .master-track-row>.master-strip{width:226px;min-width:226px;padding:4px 8px;align-content:center}
+.workspace .master-track-row>.master-strip label{display:flex;gap:6px;align-items:center}

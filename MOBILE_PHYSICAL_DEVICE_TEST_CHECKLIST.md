@@ -18,7 +18,10 @@
 
 ## How to run and report
 
-QA-01.2's Chromium measurements do not populate any physical Pass result here.
+QA-01.2 and QA-01.3 Chromium measurements do not populate any physical Pass
+result here. QA-01.3 additionally checked Sample Library folder/ZIP operations,
+the Arrangement Master row and repeat-Stop behavior in source/build Chromium;
+mobile clip movement remains open after a synthetic pointer cancellation.
 Retest the approved deployed build, not merely the older user-tested release;
 record the footer's full build ID and actual browser/PWA version. See
 [QA-01.2 scope and open gates](./QA-01_2_REPORT.md).
@@ -51,6 +54,8 @@ record the footer's full build ID and actual browser/PWA version. See
 | Downward drag visibility | Select Move; drag a clip down across several compatible lanes, then release on one. | Floating preview stays above lane contents; destination remains visible; only the selected destination receives the clip. | High | Not tested | |
 | Sample insertion | Select an Audio track, set a non-default grid, seek to a nonzero beat, use Sample Browser **+**. | New clip appears on the selected track at the snapped playhead and retains the correct source. | High | Not tested | |
 | Mixer access | Select a track; open Selected track Mixer; adjust volume/pan; mute/solo; return to Arrangement. | Selected controls remain usable; mute/solo affect playback; opening/closing Mixer does not move clips or hide essential controls. | High | Not tested | |
+| Permanent Master row | Scroll to the bottom of Arrangement; select Master; adjust its volume and play a non-silent clip while watching both output channels. | Master remains a fixed, non-removable row; the fader changes the shared output; stereo meters respond to actual output. | High | Not tested | |
+| Stop position | Start playback; tap Stop once, note the playhead, then tap Stop again. Also use To Start. | First Stop holds the position; second Stop and To Start return to zero without interrupting recording safety. | Medium | Not tested | |
 | Device Panel resize/compact | Drag the Device Panel separator up and down; use Arrow keys/Home/End; enable Compact devices and open a long effect editor. | Panel follows the pointer and keyboard within its bounds; compact cards remain horizontal without nested vertical scrolling; full parameters remain reachable in the expanded editor. | Medium | Not tested | |
 | Live pinch geometry | At nonzero scroll, pinch on a clip/ruler/loop; watch labels and markers during the gesture; cancel another pinch. | Clip/ruler/grid/loop/playhead scale together without stretched fonts; Zoom % updates; midpoint stays anchored; cancellation restores zoom and scroll. | High | Not tested | |
 | Graphical EQ and all bands | Add EQ; play non-silent audio; select and drag every band plus Low/High Cut; edit Frequency/Gain/Q; toggle band/device bypass; scroll the rack to Expand; repeat after rotation. | Response curve and actual FFT remain visible; axes/nodes stay aligned; applicable numeric controls synchronize and audio changes; full editor is reachable with no distorted coordinates. | High | Not tested | |
@@ -62,6 +67,8 @@ record the footer's full build ID and actual browser/PWA version. See
 | Check | Exact user actions | Expected result | Severity | Result (Pass / Fail / Not tested) | Reproduction / evidence |
 |---|---|---|---|---|---|
 | Import and search | Import a disposable audio file through the picker; search by part of its filename. | Sample appears once, search returns the correct item, and the library remains available after workspace changes. | Medium | Not tested | |
+| Nested folders and persistence | Create two User folders; move one inside the other; rename it; browse the nested samples; remove the folder; reload the app. | Folder actions work in the in-app dialogs; removal preserves audio and moves samples to the parent; folder state persists after reload. | Medium | Not tested | |
+| ZIP sample pack | Import a disposable ZIP containing samples in at least two nested folders; browse each folder; cancel a larger import if needed. | Safe relative folder paths are preserved, samples decode and appear once, and cancellation leaves completed entries intact without changing project references. | High | Not tested | |
 | Immediate refresh and repeat import | Import a sample while the browser is open; repeat the same import and keep a search filter active. | New item appears immediately without changing workspaces; repeated import does not create duplicate visible entries; filter remains useful. | Medium | Not tested | |
 | Preview and insertion | Preview the sample; choose an Audio track; set a nonzero playhead and grid; tap **+**. | Preview is audible; insertion uses the selected track and snapped playhead. | High | Not tested | |
 | Non-destructive library removal | Add a sample to a clip or instrument, use its Remove action, then play the project and reload. | Library entry is hidden; a reference warning is shown; the active project and stored audio remain playable and unchanged. | Critical | Not tested | |
